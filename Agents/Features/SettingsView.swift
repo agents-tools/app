@@ -1,0 +1,52 @@
+import SwiftUI
+
+struct SettingsView: View {
+  @Bindable var model: AppModel
+
+  var body: some View {
+    TabView {
+      Form {
+        Section("Projects") {
+          if model.preferences.projects.isEmpty {
+            Text("No project directories added.").foregroundStyle(.secondary)
+          }
+          ForEach(model.preferences.projects, id: \.self) { url in
+            LabeledContent(url.lastPathComponent) {
+              Button("Remove") { model.removeProject(url) }
+            }
+            Text(url.path).font(.caption).foregroundStyle(.secondary)
+          }
+          Button("Add Project…") { chooseProject(for: model) }
+          Text("Adding and removing directories only changes the app’s project list.")
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        Section("Appearance") {
+          Toggle("Show inspector", isOn: Bindable(model.preferences).inspectorVisible)
+        }
+      }
+      .formStyle(.grouped)
+      .tabItem { Label("General", systemImage: "gearshape") }
+
+      Form {
+        Section("Agent Clients") {
+          Text("Client detection is unavailable in this build.")
+          Text("Browsing configuration does not start clients or test connections.")
+            .foregroundStyle(.secondary)
+        }
+      }
+      .formStyle(.grouped)
+      .tabItem { Label("Agent Clients", systemImage: "desktopcomputer") }
+
+      Form {
+        Section("On-device Assistance") {
+          Toggle("Allow on-device assistance", isOn: Bindable(model.preferences).assistanceEnabled)
+          Text("Assistance actions are unavailable in this build. No model requests are made.")
+            .foregroundStyle(.secondary)
+        }
+      }
+      .formStyle(.grouped)
+      .tabItem { Label("Assistance", systemImage: "sparkles") }
+    }
+    .padding(16)
+  }
+}
