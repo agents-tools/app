@@ -13,8 +13,17 @@ struct InstructionsView: View {
         }
         ForEach(snapshot.instructions) { item in
           DisclosureGroup {
-            RecordFields(record: item.record)
+            RecordFields(
+              record: item.record, pointer: item.pointer,
+              authored: snapshot.document.map { AuthoredFields(sourceMap: $0.sourceMap) })
             Button("Inspect Declaration") { model.selectedItem = item.id }
+            ForEach(
+              item.record["chatGPT"]?.elements?.compactMap(\.record).compactMap {
+                $0["name"]?.string
+              } ?? [], id: \.self
+            ) { name in
+              Button("Generate “\(name)”…") { model.previewPrompt(name: name, in: snapshot.scope) }
+            }
           } label: {
             Label(item.container + " · Instructions", systemImage: "doc.text")
           }
@@ -29,9 +38,8 @@ struct InstructionsView: View {
             ForEach(own) { item in
               DisclosureGroup(item.heading) {
                 Text(item.description)
-                LabeledContent("Location", value: item.authorFile.path)
+                LabeledContent("Location") { PathView(url: item.authorFile, scope: model.scope) }
                 LabeledContent("Paths", value: item.paths.joined(separator: ", "))
-                LabeledContent("Content hash", value: item.hash)
                 Button("Open Author File") { NSWorkspace.shared.open(item.authorFile) }
               }
             }
@@ -44,6 +52,7 @@ struct InstructionsView: View {
         ForEach(snapshot.mappings) { mapping in
           DisclosureGroup {
             Text(mapping.status).foregroundStyle(.secondary)
+            Button("Copy Mapping") { copyText(mapping.copyText) }
             ForEach(mapping.targets) { target in
               DisclosureGroup(target.id) {
                 LabeledContent("Agents", value: target.agents)
@@ -68,8 +77,7 @@ struct InstructionsView: View {
                   _, section in
                   Text(section)
                 }
-                Text("Prompt generation is unavailable in this build.")
-                  .foregroundStyle(.secondary)
+                Button("Generate Preview…") { model.previewPrompt(name: name, in: mapping.scope) }
               }
             }
           } label: {
@@ -81,7 +89,25 @@ struct InstructionsView: View {
     .textSelection(.enabled)
     .toolbar {
       ToolbarItem {
-        Button("Edit Instructions…") { model.presentedIntent = .editStructure }
+        if model.scope.kind == .project {
+          Button("New Local Instructions…", systemImage: "plus") {
+            model.beginCreation(.instructions)
+          }
+        }
+      }
+      ToolbarItem {
+        Button("Choose Mapping Projects…") { model.chooseMappings() }
+      }
+      ToolbarItem {
+        Button("Copy All Mappings") {
+          copyText(snapshot.mappings.map(\.copyText).joined(separator: "\n\n"))
+        }
+      }
+      ToolbarItem {
+        Button("Draft Instructions…") {
+          model.beginDraft(.component)
+          model.manifestDraft?.component.kind = .instructions
+        }
       }
     }
   }

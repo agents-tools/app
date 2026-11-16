@@ -125,7 +125,7 @@ struct CoreReader: Sendable {
     return [AppDiagnostic(scope: scope, operation: operation, message: message)]
   }
 
-  private static func items(_ document: DeclarationDocument) -> [DeclarationItem] {
+  static func items(_ document: DeclarationDocument) -> [DeclarationItem] {
     var output: [DeclarationItem] = []
     func append(
       _ records: [DeclarationRecord], at base: String, category: String, container: String
@@ -133,7 +133,8 @@ struct CoreReader: Sendable {
       for (index, record) in records.enumerated() {
         let pointer = base + "/\(index)"
         guard let node = document.node(at: pointer) else { continue }
-        let title = record["name"]?.string ?? record["source"]?.string ?? record.kind
+        let title =
+          record["name"]?.string ?? record["source"]?.string ?? DeclarationLabels.kind(record.kind)
         output.append(
           DeclarationItem(
             id: node, pointer: pointer, title: title,
@@ -157,7 +158,7 @@ struct CoreReader: Sendable {
     return output
   }
 
-  private static func mapping(_ value: InstructionMapping) -> MappingItem {
+  static func mapping(_ value: InstructionMapping) -> MappingItem {
     let status: String
     switch value.status {
     case .locked: status = "Locked mapping; disk status is reported in Diagnostics"
@@ -168,6 +169,7 @@ struct CoreReader: Sendable {
     return MappingItem(
       id: value.scope.rawValue + ":" + value.root.path,
       title: value.scope == .user ? "User Configuration" : value.root.lastPathComponent,
+      scope: WorkspaceScope(kind: value.scope == .user ? .user : .project, root: value.root),
       status: status,
       targets: value.targets.map {
         MappingTarget(

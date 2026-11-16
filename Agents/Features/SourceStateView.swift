@@ -11,7 +11,7 @@ struct SourceStateView: View {
           ForEach(resolved.sources.keys.sorted(), id: \.self) { id in
             if let source = resolved.sources[id] {
               DisclosureGroup(id) {
-                LabeledContent("Kind", value: source.kind.rawValue)
+                LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
                 if let location = source.url { LabeledContent("Location", value: location) }
                 if let path = source.path { LabeledContent("Search path", value: path) }
                 if let requirement = source.requirement {

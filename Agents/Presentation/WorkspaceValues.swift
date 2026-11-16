@@ -86,6 +86,7 @@ struct InventoryItem: Identifiable, Sendable {
 struct MappingItem: Identifiable, Sendable {
   let id: String
   let title: String
+  let scope: WorkspaceScope
   let status: String
   let targets: [MappingTarget]
   let unplaced: [String]
@@ -143,26 +144,19 @@ enum WorkspaceLoadState {
 }
 
 enum WorkspaceIntent: String, Identifiable {
-  case configure, addComponent, addSource, editStructure, importConfiguration, reviewChanges,
-    testConnection
+  case importConfiguration, reviewChanges, testConnection
   var id: Self { self }
   var title: String {
     switch self {
-    case .configure: "Configure This Scope"
-    case .addComponent: "Add Component"
-    case .addSource: "Add from Source"
-    case .editStructure: "Edit Declaration"
-    case .importConfiguration: "Import Configuration"
     case .reviewChanges: "Review Changes"
+    case .importConfiguration: "Import Configuration"
     case .testConnection: "Test Connection"
     }
   }
   var unavailableReason: String {
     switch self {
-    case .configure, .addComponent, .editStructure, .reviewChanges:
-      "Configuration editing is not available in this build. Browsing does not create or change configuration."
-    case .addSource:
-      "Source discovery and adding selected content are not available in this build."
+    case .reviewChanges:
+      "Previewing and applying configuration changes is not available in this build. Local declaration drafts can be validated separately."
     case .importConfiguration:
       "Configuration import is not available in this build."
     case .testConnection:

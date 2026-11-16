@@ -76,6 +76,10 @@ struct WorkspaceView: View {
       InspectorView(model: model)
         .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
     }
+    .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
+    .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
+    .sheet(item: $model.creationSession) { _ in CreationView(model: model) }
+    .sheet(item: $model.promptSession) { _ in PromptPreviewView(model: model) }
     .sheet(item: $model.presentedIntent) { intent in
       VStack(alignment: .leading, spacing: 16) {
         Text(intent.title).font(.headline)
@@ -162,7 +166,7 @@ struct WorkspaceView: View {
     } else if !model.operations.isEmpty {
       HStack {
         ProgressView().controlSize(.small)
-        Text("Waiting for configuration reads to finish…")
+        Text(model.operations.values.first?.title ?? "Waiting for operations to finish…")
         Spacer()
       }.padding(8).background(.bar)
     }
@@ -180,14 +184,17 @@ struct OverviewView: View {
       } description: {
         Text("This scope has no declaration or resolved state. Browsing leaves it unchanged.")
       } actions: {
-        Button("Configure This Scope…") { model.presentedIntent = .configure }
+        Button("Draft Configuration…") { model.beginDraft(.defaults) }
+        Button("New Local Skill…") { model.beginCreation(.skill) }
+        if model.scope.kind == .project {
+          Button("New Local Instructions…") { model.beginCreation(.instructions) }
+        }
         Button("Import…") { model.presentedIntent = .importConfiguration }
       }
     } else {
       Form {
         Section("Scope") {
-          LabeledContent("Location", value: snapshot.scope.root.path)
-          LabeledContent("Manifest", value: snapshot.manifestURL.path)
+          LabeledContent("Location") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }
           LabeledContent(
             "Read", value: snapshot.readAt.formatted(date: .abbreviated, time: .standard))
           LabeledContent(
@@ -208,10 +215,14 @@ struct OverviewView: View {
           LabeledContent(
             "Exports", value: snapshot.document?.declaration.exports.joined(separator: ", ") ?? "")
           Button("View Declaration") { model.page = .components }
+          Button("New Local Skill…") { model.beginCreation(.skill) }
+          if model.scope.kind == .project {
+            Button("New Local Instructions…") { model.beginCreation(.instructions) }
+          }
         }
         Section("Read Status") {
           if let inventory = snapshot.inventory {
-            LabeledContent("Managed skill deployments", value: String(inventory.count))
+            LabeledContent("Skill inventory entries", value: String(inventory.count))
           } else {
             Label("Skill inventory unavailable", systemImage: "exclamationmark.triangle")
           }

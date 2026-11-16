@@ -17,7 +17,7 @@ struct DeclarationListView: View {
       } else {
         Table(model.filteredItems, selection: $model.selectedItem) {
           TableColumn("Name", value: \.title)
-          TableColumn("Kind") { item in Text(item.record.kind) }
+          TableColumn("Kind") { item in Text(DeclarationLabels.kind(item.record.kind)) }
           TableColumn("Container", value: \.container)
         }
         .accessibilityIdentifier("declaration.table")
@@ -36,7 +36,9 @@ struct DeclarationListView: View {
             TableColumn("Agent") { Text($0.id.agent.displayName) }
             TableColumn("Status", value: \.status)
             TableColumn("Mode") { Text($0.mode ?? "Unmanaged") }
-            TableColumn("Location") { Text($0.id.path).help($0.id.path) }
+            TableColumn("Location") {
+              PathView(url: URL(fileURLWithPath: $0.id.path), scope: model.scope)
+            }
           }.frame(minHeight: 120, maxHeight: 240)
         }.padding(16)
       }
@@ -44,12 +46,17 @@ struct DeclarationListView: View {
     .searchable(text: $model.search, prompt: "Search \(model.page.title.lowercased())")
     .toolbar {
       ToolbarItem {
-        Button(model.page == .sources ? "Add Source…" : "Add Component…", systemImage: "plus") {
-          model.presentedIntent = model.page == .sources ? .addSource : .addComponent
+        Button(model.page == .sources ? "Draft Source…" : "Draft Component…", systemImage: "plus") {
+          model.beginDraft(model.page == .sources ? .source : .component)
         }
       }
       ToolbarItem {
-        Button("Edit Structure…") { model.presentedIntent = .editStructure }
+        if model.page == .components {
+          Button("New Local Skill…") { model.beginCreation(.skill) }
+        }
+      }
+      ToolbarItem {
+        Button("Draft Declaration…") { model.beginDraft(.component) }
       }
     }
   }
@@ -62,12 +69,13 @@ struct InspectorView: View {
     Form {
       if let item = model.selectedDeclaration {
         Section(item.title) {
-          LabeledContent("Kind", value: item.record.kind)
+          LabeledContent("Kind", value: DeclarationLabels.kind(item.record.kind))
           LabeledContent("Container", value: item.container)
-          LabeledContent("Declaration node", value: item.pointer)
         }
         Section("Declared Values") {
-          RecordFields(record: item.record)
+          RecordFields(
+            record: item.record, pointer: item.pointer,
+            authored: model.snapshot?.document.map { AuthoredFields(sourceMap: $0.sourceMap) })
         }
         if item.record.kind == "mcpServer" {
           Section("Connection") {
@@ -77,24 +85,26 @@ struct InspectorView: View {
           }
         }
         Section {
-          Button("Edit Declaration…") { model.presentedIntent = .editStructure }
+          if item.category == "Component" {
+            Button("Draft Move or Removal…") {
+              model.beginDraft(.structure)
+              model.manifestDraft?.structuralNode = item.id
+            }
+          }
         }
       } else {
         Section("Scope") {
           LabeledContent("Name", value: model.scope.title)
-          LabeledContent("Location", value: model.scope.root.path)
-          LabeledContent("Kind", value: model.scope.kind.rawValue)
+          LabeledContent("Location") { PathView(url: model.scope.root, scope: model.scope) }
+          LabeledContent("Kind", value: model.scope.kind == .user ? "User" : "Project")
         }
         if let snapshot = model.snapshot {
           Section("Configuration Files") {
-            LabeledContent("Declaration", value: snapshot.manifestURL.path)
-            LabeledContent("Resolved", value: snapshot.resolvedURL.path)
-            LabeledContent("Subscriptions", value: snapshot.watchURL.path)
-          }
-          if let digest = snapshot.document?.digest {
-            Section("Read Identity") {
-              Text(digest).font(.caption).textSelection(.enabled)
+            LabeledContent("Declaration") {
+              PathView(url: snapshot.manifestURL, scope: model.scope)
             }
+            LabeledContent("Resolved") { PathView(url: snapshot.resolvedURL, scope: model.scope) }
+            LabeledContent("Subscriptions") { PathView(url: snapshot.watchURL, scope: model.scope) }
           }
         }
         Section {
@@ -106,19 +116,33 @@ struct InspectorView: View {
     .formStyle(.grouped)
     .textSelection(.enabled)
     .accessibilityIdentifier("workspace.inspector")
+    .contextMenu {
+      if let snapshot = model.snapshot, let digest = snapshot.document?.digest {
+        Button("Copy Manifest Digest") { copyText(digest) }
+        if let item = model.selectedDeclaration {
+          Button("Copy Declaration Location") {
+            copyText(snapshot.manifestURL.path + "#" + item.pointer)
+          }
+        }
+      }
+    }
   }
 }
 
 struct RecordFields: View {
   let record: DeclarationRecord
   var sensitive = false
+  var pointer = ""
+  var authored: AuthoredFields?
 
   var body: some View {
     ForEach(record.fields.keys.sorted(), id: \.self) { key in
-      if let value = record[key] {
+      let child = AuthoredFields.child(key, of: pointer)
+      if let value = record[key], authored?.contains(child) ?? true {
         DeclarationField(
-          name: key, value: value,
-          sensitive: sensitive || key == "environment" || key == "headers")
+          name: DeclarationLabels.field(key), value: value,
+          sensitive: sensitive || key == "environment" || key == "headers",
+          pointer: child, authored: authored)
       }
     }
   }
@@ -128,36 +152,53 @@ struct DeclarationField: View {
   let name: String
   let value: DeclarationValue
   var sensitive = false
+  var pointer = ""
+  var authored: AuthoredFields?
 
   var body: some View {
     switch value {
     case .string(let text):
-      LabeledContent(name, value: sensitive ? "Value hidden" : text)
+      if ["Path", "URL", "Executable", "Search Path"].contains(name), !sensitive {
+        LabeledContent(name) {
+          Text(text).lineLimit(1).truncationMode(.middle).help(text).accessibilityLabel(text)
+            .contextMenu { Button("Copy Value") { copyText(text) } }
+        }
+      } else {
+        LabeledContent(name, value: sensitive ? "Value hidden" : text)
+      }
     case .integer(let number):
       LabeledContent(name, value: String(number))
     case .boolean(let enabled):
       LabeledContent(name, value: enabled ? "true" : "false")
     case .null:
-      LabeledContent(name, value: "null")
+      LabeledContent(name, value: "Explicit null")
     case .requirement(let requirement):
-      LabeledContent(name, value: String(describing: requirement))
+      LabeledContent(name, value: DeclarationLabels.requirement(requirement))
     case .array(let values):
       DisclosureGroup(name + " (\(values.count))") {
         ForEach(Array(values.enumerated()), id: \.offset) { index, value in
-          DeclarationField(name: String(index + 1), value: value, sensitive: sensitive)
+          DeclarationField(
+            name: String(index + 1), value: value, sensitive: sensitive,
+            pointer: pointer + "/\(index)", authored: authored)
         }
       }
     case .dictionary(let values):
       DisclosureGroup(name) {
         ForEach(values.keys.sorted(), id: \.self) { key in
           if let value = values[key] {
-            DeclarationField(name: key, value: value, sensitive: sensitive)
+            DeclarationField(
+              name: key, value: value, sensitive: sensitive,
+              pointer: AuthoredFields.child(key, of: pointer), authored: authored)
           }
         }
       }
     case .record(let record):
-      DisclosureGroup(name + " · " + record.kind) {
-        RecordFields(record: record, sensitive: sensitive)
+      if record.kind == "null" {
+        LabeledContent(name, value: "Explicit null")
+      } else {
+        DisclosureGroup(name + " · " + DeclarationLabels.kind(record.kind)) {
+          RecordFields(record: record, sensitive: sensitive, pointer: pointer, authored: authored)
+        }
       }
     }
   }

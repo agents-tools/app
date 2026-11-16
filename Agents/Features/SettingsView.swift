@@ -14,7 +14,7 @@ struct SettingsView: View {
             LabeledContent(url.lastPathComponent) {
               Button("Remove") { model.removeProject(url) }
             }
-            Text(url.path).font(.caption).foregroundStyle(.secondary)
+            PathView(url: url).font(.caption).foregroundStyle(.secondary)
           }
           Button("Add Project…") { chooseProject(for: model) }
           Text("Adding and removing directories only changes the app’s project list.")
@@ -40,8 +40,13 @@ struct SettingsView: View {
       Form {
         Section("On-device Assistance") {
           Toggle("Allow on-device assistance", isOn: Bindable(model.preferences).assistanceEnabled)
-          Text("Assistance actions are unavailable in this build. No model requests are made.")
-            .foregroundStyle(.secondary)
+          Text(AssistanceAvailability.status)
+          Text(
+            model.preferences.assistanceEnabled
+              ? "Assistance actions are not available in this build."
+              : "On-device assistance is turned off."
+          )
+          .foregroundStyle(.secondary)
         }
       }
       .formStyle(.grouped)
