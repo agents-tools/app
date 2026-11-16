@@ -17,7 +17,7 @@ struct CreationSession: Identifiable {
   enum Stage {
     case input, confirmation, running
     case created(URL)
-    case failed, cancelled
+    case failed, unconfirmed, cancelled
   }
   let id = UUID()
   let scope: WorkspaceScope
@@ -54,6 +54,7 @@ struct PromptSession: Identifiable {
 
 enum ContentOutput: Sendable {
   case created(CreationRequest, URL)
+  case creationUnconfirmed(CreationRequest)
   case prompt(PromptRequest, String)
   case validatedDraft(UUID, String)
   case mappings(UUID, [MappingItem])

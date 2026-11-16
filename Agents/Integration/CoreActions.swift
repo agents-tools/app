@@ -10,15 +10,23 @@ struct CoreActions: Sendable {
 
   func create(_ request: CreationRequest) -> CoreCompletion {
     do {
+      try ProjectRootAccess.requireAvailable(request.scope)
+      if request.kind == .instructions, request.scope.kind != .project {
+        throw CoreError.unsupported("Local instructions can only be created in a project.")
+      }
+    } catch {
+      return CoreCompletion(
+        disposition: .failed,
+        diagnostics: CoreReader.diagnostics(
+          error, scope: request.scope, operation: "Create " + request.kind.title))
+    }
+    do {
       let url: URL
       switch request.kind {
       case .skill:
         url = try SkillOperations.initializeSkill(
           named: request.name.isEmpty ? nil : request.name, directory: request.directory)
       case .instructions:
-        guard request.scope.kind == .project else {
-          throw CoreError.unsupported("Local instructions can only be created in a project.")
-        }
         url = try InstructionOperations.initializeInstructions(
           named: request.name, environment: environment(for: request.scope))
       }
@@ -34,7 +42,7 @@ struct CoreActions: Sendable {
         disposition: .failed,
         diagnostics: CoreReader.diagnostics(
           error, scope: request.scope,
-          operation: "Create " + request.kind.title))
+          operation: "Create " + request.kind.title), output: .creationUnconfirmed(request))
     }
   }
 
@@ -75,15 +83,27 @@ struct CoreActions: Sendable {
   func mappings(_ request: MappingRequest) -> CoreCompletion {
     let values = InstructionOperations.export(
       projectRoots: request.projects, environment: environment(for: request.context))
-    let diagnostics = values.compactMap { value -> AppDiagnostic? in
-      guard case .unavailable(let reason) = value.status else { return nil }
-      return AppDiagnostic(
-        scope: .init(kind: value.scope == .user ? .user : .project, root: value.root),
-        operation: "Read instruction mapping", message: reason)
+    var diagnostics: [AppDiagnostic] = []
+    let mappings = values.map { value in
+      let scope = WorkspaceScope(kind: value.scope == .user ? .user : .project, root: value.root)
+      var rootIssue: AppDiagnostic?
+      do {
+        try ProjectRootAccess.requireAvailable(scope)
+      } catch {
+        let issues = CoreReader.diagnostics(
+          error, scope: scope, operation: "Read instruction mapping")
+        diagnostics += issues
+        rootIssue = issues.first
+      }
+      if case .unavailable(let reason) = value.status {
+        diagnostics.append(
+          AppDiagnostic(scope: scope, operation: "Read instruction mapping", message: reason))
+      }
+      return CoreReader.mapping(value, rootIssue: rootIssue)
     }
     return CoreCompletion(
       disposition: .completed, diagnostics: diagnostics,
-      output: .mappings(request.id, values.map(CoreReader.mapping)))
+      output: .mappings(request.id, mappings))
   }
 
   private func environment(for scope: WorkspaceScope) -> RuntimeEnvironment {

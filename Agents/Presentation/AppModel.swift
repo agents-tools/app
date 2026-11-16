@@ -241,6 +241,7 @@ final class AppModel {
       creationSession?.messages = result.diagnostics
       switch result.output {
       case .created(_, let url): creationSession?.stage = .created(url)
+      case .creationUnconfirmed: creationSession?.stage = .unconfirmed
       default:
         creationSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
       }

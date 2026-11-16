@@ -44,6 +44,10 @@ struct ContentActionTests {
     try await idle(model)
     #expect(try fixture.entries() == created)
     #expect(model.diagnostics.contains { $0.message.contains("already exists") })
+    guard case .unconfirmed = model.creationSession?.stage else {
+      Issue.record("A thrown initializer result was presented as confirmed not-created")
+      return
+    }
 
     model.beginCreation(.skill)
     model.creationSession?.stage = .confirmation

@@ -72,9 +72,10 @@ struct ResourceEditor: View {
 
 struct ExecutableEditor: View {
   @Binding var value: ExecutableDeclaration
+  var arguments: Binding<[String]> { $value.arguments }
   var body: some View {
     TextField("Executable", text: $value.executable)
-    LinesEditor(title: "Arguments", values: $value.arguments)
+    ArgumentsEditor(values: arguments)
     DisclosureGroup("Environment Bindings") { BindingDictionaryEditor(values: $value.environment) }
     Toggle(
       "Specify working directory",

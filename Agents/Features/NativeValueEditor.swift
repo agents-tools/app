@@ -61,15 +61,9 @@ struct NativeValueEditor: View {
         Button("Add Item") { value = .array(values + [.string("")]) }
       case .object(let values):
         ForEach(values.keys.sorted(), id: \.self) { key in
-          DisclosureGroup(key) {
+          DisclosureGroup(Self.objectKeyLabel(key)) {
             NativeValueEditor(
-              value: Binding(
-                get: { values[key] ?? .null },
-                set: { new in
-                  var values = values
-                  values[key] = new
-                  value = .object(values)
-                }))
+              value: objectValue(for: key))
             Button("Remove Value") {
               var values = values
               values.removeValue(forKey: key)
@@ -80,15 +74,34 @@ struct NativeValueEditor: View {
         HStack {
           TextField("New key", text: $newKey)
           Button("Add") {
-            var values = values
-            values[newKey] = .string("")
-            value = .object(values)
+            addObjectKey(newKey)
             newKey = ""
           }
-          .disabled(newKey.isEmpty || values[newKey] != nil)
+          .disabled(values[newKey] != nil)
         }
       }
     }
+  }
+
+  static func objectKeyLabel(_ key: String) -> String { key.isEmpty ? "Empty key" : key }
+
+  func addObjectKey(_ key: String) {
+    guard case .object(var object) = value, object[key] == nil else { return }
+    object[key] = .string("")
+    value = .object(object)
+  }
+
+  func objectValue(for key: String) -> Binding<NativeValue> {
+    Binding(
+      get: {
+        guard case .object(let object) = value else { return .null }
+        return object[key] ?? .null
+      },
+      set: { new in
+        guard case .object(var object) = value else { return }
+        object[key] = new
+        value = .object(object)
+      })
   }
 
   private var kind: String {

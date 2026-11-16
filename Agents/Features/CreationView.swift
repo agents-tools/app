@@ -71,7 +71,16 @@ struct CreationView: View {
             Spacer()
             Button("Done") { closeAndRefresh(session) }.keyboardShortcut(.defaultAction)
           }
-        case .failed, .cancelled:
+        case .failed, .unconfirmed, .cancelled:
+          if case .unconfirmed = session.stage {
+            Text(
+              "Creation returned an error without a confirmed outcome. Content may already exist. Inspect the directory before retrying."
+            )
+            .foregroundStyle(.secondary)
+            Button("Show Directory in Finder") {
+              NSWorkspace.shared.activateFileViewerSelecting([session.directory])
+            }
+          }
           ForEach(session.messages) { Text($0.message).textSelection(.enabled) }
           if case .cancelled = session.stage { Text("Creation was cancelled before it started.") }
           HStack {

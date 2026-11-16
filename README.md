@@ -2,9 +2,9 @@
 
 A native macOS app for managing Agents configuration. Requires macOS 15 or later.
 
-Select user configuration or add a project directory, then browse declarations, component structure, sources, skill inventory, instruction mappings and diagnostics. The inspector shows authored values and conditions. Adding or removing a project changes only the app’s directory preferences.
+Select user configuration or add a project directory, then browse declarations, component structure, sources, skill inventory, instruction mappings and diagnostics. The inspector shows authored values and conditions. Adding or removing a project changes only the app’s directory preferences. A missing or unreadable registered project remains listed with an unavailable diagnostic.
 
-Explicit actions can create a new local skill or project instructions through Core, with confirmation and no overwrite. Named prompts use Core rendering and can be previewed and copied. Instruction mappings can be read and copied across selected projects. Typed declaration forms produce local drafts and validate against the captured document; they do not publish configuration. Source discovery, import, applying changes, connection tests, client detection and automatic file monitoring await public Core integration.
+Explicit actions can create a new local skill or project instructions through Core, with confirmation and no overwrite. An initialization error has an unconfirmed outcome; inspect the directory before retrying. Named prompts use Core rendering and can be previewed and copied. Instruction mappings can be read and copied across selected projects. Typed declaration forms produce local drafts and validate against the captured document; they do not publish configuration. Source discovery, import, applying changes, connection tests, client detection and automatic file monitoring await public Core integration.
 
 Settings includes an opt-out preference and an availability check for on-device assistance on macOS 26 or later. The app makes no model requests.
 

@@ -14,6 +14,7 @@ struct CoreReader: Sendable {
       environment: processEnvironment)
     let store = StateStore(scope: scope.installScope, environment: runtime)
     do {
+      try ProjectRootAccess.requireAvailable(scope)
       let document = try store.loadManifest()
       var diagnostics =
         document?.diagnostics.map {
@@ -84,7 +85,7 @@ struct CoreReader: Sendable {
         } : nil
       let mappings = InstructionOperations.export(
         projectRoots: scope.kind == .project ? [scope.root] : [], environment: runtime
-      ).map(Self.mapping)
+      ).map { Self.mapping($0) }
       let defaults = Declaration(
         agents: document?.declaration.defaultAgents?.compactMap(AgentID.init(rawValue:))
       )
@@ -107,6 +108,12 @@ struct CoreReader: Sendable {
   static func diagnostics(_ error: any Error, scope: WorkspaceScope, operation: String)
     -> [AppDiagnostic]
   {
+    if let issue = error as? ProjectRootUnavailable {
+      return [
+        AppDiagnostic(
+          scope: scope, operation: operation, message: issue.message, path: issue.root.path)
+      ]
+    }
     if let failure = error as? ManifestFailure {
       return failure.diagnostics.map {
         AppDiagnostic(
@@ -158,13 +165,17 @@ struct CoreReader: Sendable {
     return output
   }
 
-  static func mapping(_ value: InstructionMapping) -> MappingItem {
+  static func mapping(_ value: InstructionMapping, rootIssue: AppDiagnostic? = nil) -> MappingItem {
     let status: String
-    switch value.status {
-    case .locked: status = "Locked mapping; disk status is reported in Diagnostics"
-    case .missingLock: status = "No resolved instruction mapping"
-    case .pendingRecovery: status = "Recovery pending"
-    case .unavailable(let reason): status = "Unavailable: " + reason
+    if let rootIssue {
+      status = "Unavailable: " + rootIssue.message
+    } else {
+      switch value.status {
+      case .locked: status = "Locked mapping; disk status is reported in Diagnostics"
+      case .missingLock: status = "No resolved instruction mapping"
+      case .pendingRecovery: status = "Recovery pending"
+      case .unavailable(let reason): status = "Unavailable: " + reason
+      }
     }
     return MappingItem(
       id: value.scope.rawValue + ":" + value.root.path,
