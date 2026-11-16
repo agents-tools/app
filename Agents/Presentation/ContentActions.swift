@@ -54,6 +54,7 @@ struct PromptSession: Identifiable {
 }
 
 enum ContentOutput: Sendable {
+  case assistance(UUID, String)
   case created(CreationRequest, URL)
   case creationUnconfirmed(CreationRequest)
   case prompt(PromptRequest, String)

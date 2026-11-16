@@ -1,6 +1,7 @@
 import AgentsCore
 import AgentsManifest
 import AgentsUpdates
+import CoreServices
 import Foundation
 import Observation
 
@@ -8,6 +9,7 @@ import Observation
 final class AppModel {
   enum TerminationDecision { case now, later, cancel }
   enum OperationPurpose {
+    case assistance(UUID)
     case workspace
     case creation(UUID)
     case prompt(UUID)
@@ -33,6 +35,16 @@ final class AppModel {
   private let executor: CoreExecutor
   private let reader: CoreReader
   private let actions: CoreActions
+  private let assistance: AssistanceService
+  @ObservationIgnored private var assistanceTasks: [UUID: Task<Void, Never>] = [:]
+  @ObservationIgnored private var readMonitor: ReadMonitor?
+  private var monitoredScope: WorkspaceScope?
+  private var readBoundary: FSEventStreamEventId = 0
+  private(set) var readsStale = false
+  private var refreshScheduled = false
+  var assistanceSession: AssistanceSession?
+  var assistanceAvailable: Bool { preferences.assistanceEnabled && assistance.available() }
+
   private(set) var scope: WorkspaceScope
   private(set) var loadState: WorkspaceLoadState = .idle
   private(set) var operations: [UUID: ActiveOperation] = [:]
@@ -61,18 +73,20 @@ final class AppModel {
     }
   }
   var canModify: Bool {
-    !isTerminating && !isApplying && snapshot?.inspection.recovery.pending == false
+    !isTerminating && !isApplying && !readsStale && snapshot?.inspection.recovery.pending == false
   }
   var availableComponentSelection: [ComponentInspection] { snapshot?.inspection.components ?? [] }
   @ObservationIgnored var terminationReply: (@MainActor (Bool) -> Void)?
 
   init(
     home: URL, preferences: AppPreferences, executor: CoreExecutor = CoreExecutor(),
-    processEnvironment: [String: String] = ProcessInfo.processInfo.environment
+    processEnvironment: [String: String] = ProcessInfo.processInfo.environment,
+    assistance: AssistanceService = .onDevice
   ) {
     self.home = home
     self.preferences = preferences
     self.executor = executor
+    self.assistance = assistance
     reader = CoreReader(home: home, processEnvironment: processEnvironment)
     actions = CoreActions(home: home, processEnvironment: processEnvironment)
     let user = WorkspaceScope(kind: .user, root: home)
@@ -110,6 +124,8 @@ final class AppModel {
 
   func select(_ scope: WorkspaceScope) {
     guard self.scope != scope, !isTerminating, !isApplying else { return }
+    stopMonitoring()
+    cancelAssistance()
     self.scope = scope
     preferences.selectedScopeID = scope.id
     selectedItem = nil
@@ -139,8 +155,10 @@ final class AppModel {
     }
     if case .review = updateSession?.stage { updateSession?.stage = .stale }
     generation = UUID()
-    selectedItem = nil
-    loadState = .loading
+    readsStale = true
+    if snapshot?.scope != scope { loadState = .loading }
+    readBoundary = FSEventsGetCurrentEventId()
+    monitor(reader.stateLocations(scope: scope), since: readBoundary)
     let scope = scope
     let reader = reader
     startOperation(
@@ -217,6 +235,9 @@ final class AppModel {
     draft.defaultAgents = snapshot?.document?.declaration.defaultAgents?.compactMap(
       AgentID.init(rawValue:))
     draft.exports = snapshot?.document?.declaration.exports ?? []
+    if let declaration = snapshot?.inspection.declaration {
+      draft.captureReferences(from: declaration)
+    }
     manifestDraft = draft
   }
 
@@ -248,9 +269,11 @@ final class AppModel {
   }
 
   func previewDraft() {
-    guard canModify, let draft = manifestDraft, draft.scope == scope,
-      draft.kind != .structure || draft.structuralNode != nil
+    guard canModify, let draft = manifestDraft, draft.canReview(against: snapshot),
+      draft.scope == scope,
+      draft.kind != .structure || draft.structuralReady
     else { return }
+    manifestDraft?.isStale = false
     previewUpdate(title: "Edit Configuration", request: draft.updateRequest(home: home))
   }
 
@@ -317,6 +340,16 @@ final class AppModel {
     _ operation: ActiveOperation, result: CoreCompletion, currentSelection: Bool
   ) {
     switch operation.purpose {
+    case .assistance(let id) where assistanceSession?.id == id:
+      if !currentSelection || !preferences.assistanceEnabled {
+        assistanceSession?.stage = .outdated
+      } else if result.disposition == .cancelled {
+        assistanceSession?.stage = .cancelled
+      } else if case .assistance(_, let text) = result.output {
+        assistanceSession?.stage = .finished(text)
+      } else {
+        assistanceSession?.stage = .failed
+      }
     case .creation(let id) where creationSession?.id == id:
       creationSession?.messages = result.diagnostics
       switch result.output {
@@ -393,8 +426,104 @@ final class AppModel {
     }
   }
 
+  func setAssistanceEnabled(_ enabled: Bool) {
+    preferences.assistanceEnabled = enabled
+    if !enabled {
+      cancelAssistance()
+      assistanceSession = nil
+    }
+  }
+
+  func reviewAssistance(_ input: AssistanceInput) {
+    guard assistanceAvailable, !isTerminating, assistanceTasks.isEmpty else { return }
+    assistanceSession = .init(scope: scope, input: input)
+  }
+
+  func generateAssistance() {
+    guard assistanceAvailable, !isTerminating, let session = assistanceSession,
+      session.scope == scope, case .review = session.stage, session.input.withinLimit,
+      assistanceTasks.isEmpty
+    else { return }
+    let id = UUID()
+    operationSequence += 1
+    let operation = ActiveOperation(
+      id: id, scope: scope, selectionScope: scope,
+      purpose: .assistance(session.id), generation: generation, sequence: operationSequence,
+      title: session.input.action.rawValue, admission: OperationAdmission())
+    operations[id] = operation
+    assistanceSession?.stage = .running
+    let service = assistance
+    assistanceTasks[id] = Task { [self] in
+      let result: CoreCompletion
+      do {
+        try Task.checkCancellation()
+        let text = try await service.generate(session.input)
+        try Task.checkCancellation()
+        result = .init(disposition: .completed, output: .assistance(session.id, text))
+      } catch is CancellationError { result = .cancelled } catch {
+        // Model errors can quote prompt text; diagnostics intentionally retain no provider payload.
+        result = .init(
+          disposition: .failed,
+          diagnostics: [
+            .init(
+              scope: operation.scope,
+              operation: operation.title,
+              message: "On-device assistance could not complete. No changes were applied.")
+          ])
+      }
+      assistanceTasks[id] = nil
+      finish(id, result: result)
+    }
+  }
+
+  func cancelAssistance() { for task in assistanceTasks.values { task.cancel() } }
+
+  private func monitor(_ locations: [URL], since: FSEventStreamEventId) {
+    guard !isTerminating else { return }
+    if readMonitor == nil || monitoredScope != scope {
+      stopMonitoring()
+      let watchedScope = scope
+      readMonitor = ReadMonitor { [weak self] in
+        Task { @MainActor [weak self] in self?.inputsChanged(in: watchedScope) }
+      }
+      monitoredScope = scope
+    }
+    do { try readMonitor?.replace(locations: locations, since: since) } catch {
+      diagnostics.append(
+        .init(
+          scope: scope, operation: "Automatic refresh", severity: .warning,
+          message: error.localizedDescription))
+    }
+  }
+
+  private func stopMonitoring() {
+    readMonitor?.stop()
+    readMonitor = nil
+    monitoredScope = nil
+  }
+
+  private func inputsChanged(in watchedScope: WorkspaceScope) {
+    guard watchedScope == scope, !isTerminating else { return }
+    readsStale = true
+    manifestDraft?.isStale = true
+    if let session = updateSession, session.stage == .review || session.stage == .preparing {
+      updateSession?.stage = .stale
+      updateSession?.bindingInputs = [:]
+    }
+    guard !isApplying, !refreshScheduled else { return }
+    refreshScheduled = true
+    Task { @MainActor [weak self] in
+      guard let self else { return }
+      // Coalesce one native event batch without polling the file system.
+      await Task.yield()
+      refreshScheduled = false
+      if !isTerminating && !isApplying { refresh() }
+    }
+  }
+
   func cancelQueuedOperations() {
     for operation in operations.values { operation.admission.cancel() }
+    cancelAssistance()
   }
 
   func requestTermination() -> TerminationDecision {
@@ -403,6 +532,7 @@ final class AppModel {
       return .cancel
     }
     isTerminating = true
+    stopMonitoring()
     cancelQueuedOperations()
     return operations.isEmpty ? .now : .later
   }
@@ -445,6 +575,11 @@ final class AppModel {
     if currentSelection {
       if let snapshot = result.snapshot {
         loadState = .loaded(snapshot)
+        readsStale = false
+        if let selectedItem, !snapshot.items.contains(where: { $0.id == selectedItem }) {
+          self.selectedItem = nil
+        }
+        monitor(snapshot.inspection.readLocations, since: readBoundary)
       } else if case .workspace = operation.purpose, case .failed = result.disposition {
         loadState = .failed(result.diagnostics)
       } else if case .workspace = operation.purpose, case .cancelled = result.disposition {
@@ -457,7 +592,12 @@ final class AppModel {
     if isTerminating, operations.isEmpty {
       let mayQuit = !hasBlockingCleanup
       terminationBlocked = !mayQuit
-      if !mayQuit { isTerminating = false }
+      if !mayQuit {
+        isTerminating = false
+        monitor(
+          snapshot?.inspection.readLocations ?? reader.stateLocations(scope: scope),
+          since: readBoundary)
+      }
       terminationReply?(mayQuit)
     }
   }

@@ -8,10 +8,21 @@ struct ManifestDraft: Identifiable {
     var id: Self { self }
   }
   enum StructuralAction: String, CaseIterable { case move, remove }
+  var isStale = false
+  var insertBefore: NodeID?
+  var destinationNode: NodeID?
+  var originalName: String?
   var structuralAction: StructuralAction = .move
   var structuralNode: NodeID?
   var replacingNode: NodeID?
-  var destinationGroup: NodeID?
+  var destinationGroup: NodeID? {
+    didSet {
+      if destinationGroup != oldValue {
+        insertBefore = nil
+        destinationNode = nil
+      }
+    }
+  }
   var insertFirst = false
   let id = UUID()
   let scope: WorkspaceScope
@@ -37,7 +48,9 @@ struct ManifestDraft: Identifiable {
     switch kind {
     case .defaults: return [.setDefaultAgents(defaultAgents)]
     case .source:
-      return [
+      let removal: [ManifestEdit] =
+        originalName.map { $0 != sourceAlias ? [.removeSource(alias: $0)] : [] } ?? []
+      return removal + [
         .upsertSource(
           .init(
             name: sourceAlias,
@@ -48,29 +61,97 @@ struct ManifestDraft: Identifiable {
       ]
     case .component:
       if let replacingNode { return [.replaceComponent(replacingNode, with: component.value)] }
-      return [.insertComponent(component.value, into: .root, at: .last)]
-    case .group:
       return [
+        .insertComponent(
+          component.value, into: destinationGroup.map(ContainerID.group) ?? .root, at: .last)
+      ]
+    case .group:
+      let removal: [ManifestEdit] =
+        originalName.map { $0 != groupName ? [.removeGroup(name: $0)] : [] } ?? []
+      return removal + [
         .upsertGroup(
           .init(
             name: groupName, components: groupComponents, uses: groupUses, condition: groupCondition
           ))
       ]
     case .reference:
-      return [
+      let removal: [ManifestEdit] = replacingNode.map { [.removeGroupReference($0)] } ?? []
+      return removal + [
         .insertGroupReference(
           .init(
             name: referenceName, source: referenceSource,
-            condition: referenceCondition), into: .root, at: .last)
+            condition: referenceCondition),
+          into: destinationGroup.map(ContainerID.group) ?? .root,
+          at: insertBefore.map(InsertionPosition.before) ?? .last)
       ]
     case .exports: return [.setExports(exports)]
     case .structure:
       guard let node = structuralNode else { return [] }
-      if structuralAction == .remove { return [.removeComponent(node)] }
+      guard let item = structuralItems.first(where: { $0.id == node }) else { return [] }
+      if structuralAction == .remove {
+        switch item.category {
+        case "Source": return [.removeSource(alias: item.title)]
+        case "Group": return [.removeGroup(name: item.title)]
+        case "Group Reference": return [.removeGroupReference(node)]
+        case "Section": return [.removeSection(node)]
+        default: return [.removeComponent(node)]
+        }
+      }
+      let position: InsertionPosition =
+        destinationNode.map {
+          insertFirst ? .before($0) : .after($0)
+        } ?? (insertFirst ? .first : .last)
+      if item.category == "Section" { return [.moveSection(node, at: position)] }
       let container: ContainerID = destinationGroup.map(ContainerID.group) ?? .root
-      return [.moveComponent(node, into: container, at: insertFirst ? .first : .last)]
+      if item.category == "Group Reference" {
+        guard let reference = reference(at: item.pointer) else { return [] }
+        return [
+          .removeGroupReference(node),
+          .insertGroupReference(reference, into: container, at: position),
+        ]
+      }
+      return [.moveComponent(node, into: container, at: position)]
     }
   }
+
+  var structuralItems: [DeclarationItem] {
+    guard let document else { return [] }
+    return CoreReader.items(document) + CoreReader.sectionItems(document)
+  }
+
+  func canReview(against snapshot: WorkspaceSnapshot?) -> Bool {
+    guard let snapshot, snapshot.scope == scope else { return false }
+    // Re-review can retain exact nodes only when Core's document digest is identical.
+    return !isStale || snapshot.document?.digest == document?.digest
+  }
+
+  var structuralCanMove: Bool {
+    guard let item = structuralItems.first(where: { $0.id == structuralNode }) else { return false }
+    return ["Component", "Group Reference", "Section"].contains(item.category)
+  }
+  var structuralReady: Bool {
+    structuralNode != nil && (structuralAction == .remove || structuralCanMove)
+  }
+  var positionItems: [DeclarationItem] {
+    guard let selected = structuralItems.first(where: { $0.id == structuralNode }) else {
+      return []
+    }
+    let parent: String
+    if selected.category == "Section" {
+      parent = "/" + selected.pointer.split(separator: "/").dropLast().joined(separator: "/")
+    } else {
+      let group = structuralItems.first { $0.id == destinationGroup }
+      parent = (group?.pointer ?? "") + (selected.category == "Component" ? "/components" : "/uses")
+    }
+    return structuralItems.filter {
+      $0.id != selected.id && $0.category == selected.category
+        && "/" + $0.pointer.split(separator: "/").dropLast().joined(separator: "/") == parent
+    }
+  }
+
+  func reference(at pointer: String) -> GroupUseDeclaration? { referenceValues[pointer] }
+
+  var referenceValues: [String: GroupUseDeclaration] = [:]
 }
 
 struct ComponentDraft: Equatable {

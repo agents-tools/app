@@ -17,8 +17,7 @@ struct UpdateFlowTests {
     let before = try fixture.entries()
     model.beginDraft(.defaults)
     model.manifestDraft?.defaultAgents = []
-    model.previewDraft()
-    try await idle(model)
+    try await reviewed(model) { model.previewDraft() }
     #expect(try fixture.entries() == before)
     #expect(model.updateSession?.report?.hasChanges == true)
     model.confirmUpdate()
@@ -78,8 +77,7 @@ struct UpdateFlowTests {
     rows.text(for: ids[1]).wrappedValue = "changed\nargument"
     model.manifestDraft?.component.transport = .stdio(executable)
     let before = try fixture.entries()
-    model.previewDraft()
-    try await idle(model)
+    try await reviewed(model) { model.previewDraft() }
     #expect(try fixture.entries() == before)
     model.confirmUpdate()
     try await idle(model)
@@ -104,8 +102,7 @@ struct UpdateFlowTests {
     let model = await loadedModel(fixture)
     model.beginDraft(.defaults)
     model.manifestDraft?.defaultAgents = [.codex]
-    model.previewDraft()
-    try await idle(model)
+    try await reviewed(model) { model.previewDraft() }
     #expect(model.updateSession?.report != nil)
     try fixture.writeManifest("# External change\nversion: 1\ndefaultAgents: []\n")
     let before = try fixture.entries()
@@ -176,15 +173,15 @@ struct UpdateFlowTests {
           agents: [codex]
       """)
     let model = await loadedModel(fixture)
-    model.previewUpdate(title: "Initial update")
-    try await idle(model)
+    try await reviewed(model) { model.previewUpdate(title: "Initial update") }
     model.confirmUpdate()
     try await idle(model)
     let target = try #require(model.snapshot?.inspection.deployments.first?.location)
     let original = try Data(contentsOf: target)
     try FileManager.default.removeItem(at: target)
-    model.previewUpdate(title: "Restore", request: .init(operation: .restore))
-    try await idle(model)
+    try await reviewed(model) {
+      model.previewUpdate(title: "Restore", request: .init(operation: .restore))
+    }
     #expect(model.updateSession?.report?.hasChanges == true)
     model.confirmUpdate()
     try await idle(model)
@@ -243,8 +240,7 @@ struct UpdateFlowTests {
     model.manifestDraft?.component.agents = [.codex]
     model.manifestDraft?.component.transport = .stdio(
       .init(executable: "fixture-command", environment: ["TOKEN": .secret("FixtureSecret")]))
-    model.previewDraft()
-    try await idle(model)
+    try await reviewed(model) { model.previewDraft() }
     #expect(model.updateSession?.requiredBindings == ["FixtureSecret"])
     let before = try fixture.entries()
     model.confirmUpdate()
@@ -351,8 +347,7 @@ struct UpdateFlowTests {
     model.select(.init(kind: .project, root: fixture.project))
     try await idle(model)
     let before = try fixture.entries()
-    model.previewDraft()
-    try await idle(model)
+    try await reviewed(model) { model.previewDraft() }
     #expect(model.updateSession == nil)
     #expect(try fixture.entries() == before)
     #expect(model.manifestDraft?.scope.kind == .user)
@@ -364,7 +359,28 @@ struct UpdateFlowTests {
       processEnvironment: fixture.environment)
     model.select(.init(kind: .project, root: fixture.project))
     try? await idle(model)
+    for _ in 0..<2000 {
+      if model.canModify { break }
+      try? await Task.sleep(for: .milliseconds(5))
+    }
     return model
+  }
+
+  private func reviewed(_ model: AppModel, prepare: () -> Void) async throws {
+    // Native events can invalidate a preview between preparation and a user click. Exercise
+    // explicit re-review against the unchanged document, never bypassing the App's stale gate.
+    for _ in 0..<4 {
+      for _ in 0..<2000 {
+        if model.canModify { break }
+        try await Task.sleep(for: .milliseconds(5))
+      }
+      prepare()
+      try await idle(model)
+      if model.updateSession?.stage == .review { return }
+      guard model.updateSession?.stage == .stale else { return }
+      model.closeUpdateReview()
+    }
+    Issue.record("Native inputs did not settle enough to review the Core report")
   }
 
   private func idle(_ model: AppModel) async throws {

@@ -91,13 +91,16 @@ struct InspectorView: View {
           }
         }
         Section {
-          if ["Component", "Source", "Group"].contains(item.category) {
+          if ["Component", "Source", "Group", "Group Reference"].contains(item.category) {
             Button("Edit…") { model.editSelectedDeclaration() }.disabled(!model.canModify)
           }
-          if item.category == "Component" {
+          if ["Component", "Source", "Group", "Group Reference"].contains(item.category) {
             Button("Draft Move or Removal…") {
               model.beginDraft(.structure)
               model.manifestDraft?.structuralNode = item.id
+              if ["Source", "Group"].contains(item.category) {
+                model.manifestDraft?.structuralAction = .remove
+              }
             }
           }
         }

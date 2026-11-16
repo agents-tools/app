@@ -119,6 +119,40 @@ struct CoreReader: Sendable {
     return [AppDiagnostic(scope: scope, operation: operation, message: message)]
   }
 
+  func stateLocations(scope: WorkspaceScope) -> [URL] {
+    let store = StateStore(
+      scope: scope.installScope,
+      environment: .init(
+        projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment))
+    return [store.declarationURL, store.resolvedURL, store.watchURL]
+  }
+
+  static func sectionItems(_ document: DeclarationDocument) -> [DeclarationItem] {
+    var result: [DeclarationItem] = []
+    func appendSections(_ values: [DeclarationValue], at base: String, title: String) {
+      for (index, value) in values.enumerated() {
+        let pointer = base + "/sections/\(index)"
+        guard let node = document.node(at: pointer), let record = value.record else { continue }
+        result.append(
+          .init(
+            id: node, pointer: pointer,
+            title: record["name"]?.string ?? "Section", category: "Section", record: record,
+            container: title))
+      }
+    }
+    for component in items(document) where component.record.kind == "instructions" {
+      appendSections(
+        component.record["sections"]?.elements ?? [], at: component.pointer, title: component.title)
+      for (index, value) in (component.record["chatGPT"]?.elements ?? []).enumerated() {
+        guard let prompt = value.record else { continue }
+        appendSections(
+          prompt["sections"]?.elements ?? [], at: component.pointer + "/chatGPT/\(index)",
+          title: prompt["name"]?.string ?? "Prompt")
+      }
+    }
+    return result
+  }
+
   static func items(_ document: DeclarationDocument) -> [DeclarationItem] {
     var output: [DeclarationItem] = []
     func append(

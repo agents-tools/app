@@ -3,11 +3,20 @@ import AgentsUpdates
 import SwiftUI
 
 struct ManagedStateView: View {
+  let model: AppModel
   let snapshot: WorkspaceSnapshot
   var body: some View {
     Section("Managed State") {
       ForEach(snapshot.inspection.components, id: \.record) { component in
         DisclosureGroup(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name) {
+          if model.assistanceAvailable {
+            if let input = AssistanceInput.skill(component, action: .explainSkill) {
+              Button("Explain This Skill…") { model.reviewAssistance(input) }
+            }
+            if let input = AssistanceInput.skill(component, action: .translateDescription) {
+              Button("Translate Description…") { model.reviewAssistance(input) }
+            }
+          }
           LabeledContent("Source") { CompactText(text: component.source) }
           if let revision = component.revision {
             LabeledContent("Revision") { CompactText(text: revision) }

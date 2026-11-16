@@ -1,6 +1,11 @@
 import FoundationModels
 
 struct AssistanceAvailability {
+  static var isAvailable: Bool {
+    guard #available(macOS 26, *) else { return false }
+    if case .available = SystemLanguageModel.default.availability { return true }
+    return false
+  }
   static var status: String {
     guard #available(macOS 26, *) else { return "Requires macOS 26 or later." }
     switch SystemLanguageModel.default.availability {

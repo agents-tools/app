@@ -81,6 +81,7 @@ struct WorkspaceView: View {
         get: { model.manifestDraft == nil ? model.updateSession : nil },
         set: { model.updateSession = $0 })
     ) { _ in UpdateReviewView(model: model) }
+    .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
     .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
     .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
@@ -231,7 +232,7 @@ struct OverviewView: View {
             Button("New Local Instructions…") { model.beginCreation(.instructions) }
           }
         }
-        ManagedStateView(snapshot: snapshot)
+        ManagedStateView(model: model, snapshot: snapshot)
         Section("Read Status") {
           if let inventory = snapshot.inventory {
             LabeledContent("Skill inventory entries", value: String(inventory.count))
@@ -241,7 +242,7 @@ struct OverviewView: View {
           LabeledContent(
             "Diagnostics in this session", value: String(model.currentDiagnostics.count))
           Text(
-            "Declaration and managed state share one read generation. Refresh after external changes."
+            "Declaration and managed state share one read generation. External changes refresh these reads automatically."
           )
           .foregroundStyle(.secondary)
           Button("Show Diagnostics") { model.page = .diagnostics }

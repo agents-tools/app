@@ -20,6 +20,16 @@ struct UpdateReviewView: View {
         case .review:
           if let report = session.report {
             UpdateReportView(report: report, scope: session.proposal.scope)
+            if model.assistanceAvailable {
+              HStack {
+                Button("Summarize Update…") {
+                  model.reviewAssistance(.changes(report, action: .summarizeUpdate))
+                }
+                Button("Explain Configuration Changes…") {
+                  model.reviewAssistance(.changes(report, action: .explainConfiguration))
+                }
+              }
+            }
             if !session.requiredBindings.isEmpty {
               Text("Runtime inputs are used for this apply only.").font(.caption).foregroundStyle(
                 .secondary)
@@ -73,6 +83,7 @@ struct UpdateReviewView: View {
           }
         }
       }.padding(24).frame(width: 680, height: 620)
+        .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
         .interactiveDismissDisabled(model.isApplying)
         .textSelection(.enabled)
     }

@@ -41,11 +41,15 @@ struct SettingsView: View {
 
       Form {
         Section("On-device Assistance") {
-          Toggle("Allow on-device assistance", isOn: Bindable(model.preferences).assistanceEnabled)
+          Toggle(
+            "Allow on-device assistance",
+            isOn: Binding(
+              get: { model.preferences.assistanceEnabled }, set: { model.setAssistanceEnabled($0) })
+          )
           Text(AssistanceAvailability.status)
           Text(
             model.preferences.assistanceEnabled
-              ? "Assistance actions are not available in this build."
+              ? "Selected skill explanations, description translation and change explanations use only reviewed content on this Mac. Generated text never applies changes."
               : "On-device assistance is turned off."
           )
           .foregroundStyle(.secondary)

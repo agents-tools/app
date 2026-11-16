@@ -16,6 +16,14 @@ struct ManifestDraftView: View {
           Text("This draft belongs to another scope. Return to that scope or close this draft.")
             .foregroundStyle(.secondary)
         }
+        if draft.isStale {
+          Text(
+            draft.canReview(against: model.snapshot)
+              ? "Inputs changed. Your edits and exact document nodes are retained. Review again before applying."
+              : "The declaration changed outside this draft. Your edits are retained. Close this draft and create a new one from the refreshed declaration before applying."
+          )
+          .foregroundStyle(.secondary)
+        }
         Text(
           "Edit configuration here, then review Core’s proposed changes before applying."
         )
@@ -28,7 +36,7 @@ struct ManifestDraftView: View {
             Text("Group").tag(ManifestDraft.Kind.group)
             Text("Group Reference").tag(ManifestDraft.Kind.reference)
             Text("Exports").tag(ManifestDraft.Kind.exports)
-            Text("Move or Remove Component").tag(ManifestDraft.Kind.structure)
+            Text("Move or Remove Declaration").tag(ManifestDraft.Kind.structure)
           }
           switch draft.kind {
           case .defaults: AgentsEditor(value: binding(\.defaultAgents))
@@ -42,7 +50,16 @@ struct ManifestDraftView: View {
             TextField("Location", text: binding(\.sourceLocation))
             OptionalText(title: "search path", value: binding(\.sourcePath))
             RequirementEditor(value: binding(\.requirement))
-          case .component: ComponentDraftEditor(value: binding(\.component))
+          case .component:
+            ComponentDraftEditor(value: binding(\.component))
+            if draft.replacingNode == nil, let document = draft.document {
+              Picker("Container", selection: binding(\.destinationGroup)) {
+                Text("Scope").tag(nil as NodeID?)
+                ForEach(CoreReader.items(document).filter { $0.category == "Group" }) {
+                  Text($0.title).tag(Optional($0.id))
+                }
+              }
+            }
           case .group:
             TextField("Name", text: binding(\.groupName))
             ConditionEditor(value: binding(\.groupCondition))
@@ -66,30 +83,57 @@ struct ManifestDraftView: View {
             TextField("Group", text: binding(\.referenceName))
             OptionalText(title: "source", value: binding(\.referenceSource))
             ConditionEditor(value: binding(\.referenceCondition))
-          case .exports: LinesEditor(title: "Exported groups", values: binding(\.exports))
-          case .structure:
             if let document = draft.document {
-              let items = CoreReader.items(document)
-              Picker("Component", selection: binding(\.structuralNode)) {
-                Text("Choose a component").tag(nil as NodeID?)
-                ForEach(items.filter { $0.category == "Component" }) { item in
-                  Text(item.container + " · " + item.title).tag(Optional(item.id))
+              Picker("Container", selection: binding(\.destinationGroup)) {
+                Text("Scope").tag(nil as NodeID?)
+                ForEach(CoreReader.items(document).filter { $0.category == "Group" }) {
+                  Text($0.title).tag(Optional($0.id))
+                }
+              }
+            }
+          case .exports:
+            DraftRows(values: binding(\.exports)) { row, actions in
+              TextField("Exported group", text: row)
+              DraftRowButtons(actions: actions)
+            }
+            Button("Add Export") { model.manifestDraft?.exports.append("") }
+          case .structure:
+            if draft.document != nil {
+              let items = draft.structuralItems
+              Picker("Declaration", selection: binding(\.structuralNode)) {
+                Text("Choose a declaration").tag(nil as NodeID?)
+                ForEach(items) { item in
+                  Text(item.category + " · " + item.container + " · " + item.title).tag(
+                    Optional(item.id))
                 }
               }
               Picker("Action", selection: binding(\.structuralAction)) {
-                Text("Move").tag(ManifestDraft.StructuralAction.move)
+                Text("Move").tag(ManifestDraft.StructuralAction.move).disabled(
+                  !draft.structuralCanMove)
                 Text("Remove").tag(ManifestDraft.StructuralAction.remove)
               }
-              if draft.structuralAction == .move {
+              if let item = items.first(where: { $0.id == draft.structuralNode }),
+                ["Source", "Group"].contains(item.category)
+              {
+                Text("This declaration supports removal. Edit its contents using its native form.")
+                Button("Choose Removal") { model.manifestDraft?.structuralAction = .remove }
+              }
+              if draft.structuralAction == .move && draft.structuralCanMove {
                 Picker("Destination", selection: binding(\.destinationGroup)) {
                   Text("Scope").tag(nil as NodeID?)
                   ForEach(items.filter { $0.category == "Group" }) {
                     Text($0.title).tag(Optional($0.id))
                   }
                 }
+                Picker("Relative to", selection: binding(\.destinationNode)) {
+                  Text("Container boundary").tag(nil as NodeID?)
+                  ForEach(draft.positionItems) {
+                    Text($0.container + " · " + $0.title).tag(Optional($0.id))
+                  }
+                }
                 Picker("Position", selection: binding(\.insertFirst)) {
-                  Text("First").tag(true)
-                  Text("Last").tag(false)
+                  Text(draft.destinationNode == nil ? "First" : "Before").tag(true)
+                  Text(draft.destinationNode == nil ? "Last" : "After").tag(false)
                 }
               }
             }
@@ -103,8 +147,9 @@ struct ManifestDraftView: View {
 
           Button("Review Changes…") { model.previewDraft() }
             .disabled(
-              !model.canModify || draft.scope != model.scope
-                || (draft.kind == .structure && draft.structuralNode == nil))
+              !model.canModify || !draft.canReview(against: model.snapshot)
+                || draft.scope != model.scope
+                || (draft.kind == .structure && !draft.structuralReady))
         }
       }
       .padding(24)

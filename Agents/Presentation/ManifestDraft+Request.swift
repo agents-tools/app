@@ -40,12 +40,30 @@ extension ManifestDraft {
     return UpdateRequest(operation: .declaration(declaration), expectedDeclarationDigest: "absent")
   }
 
+  mutating func captureReferences(from declaration: Declaration) {
+    for (index, value) in declaration.uses.enumerated() {
+      referenceValues["/uses/\(index)"] = value
+    }
+    for (group, value) in declaration.groups.enumerated() {
+      for (index, reference) in value.uses.enumerated() {
+        referenceValues["/groups/\(group)/uses/\(index)"] = reference
+      }
+    }
+  }
+
+  func nextSibling(of item: DeclarationItem) -> NodeID? {
+    let parts = item.pointer.split(separator: "/")
+    guard let index = parts.last.flatMap({ Int($0) }) else { return nil }
+    return document?.node(at: "/" + parts.dropLast().joined(separator: "/") + "/\(index + 1)")
+  }
+
   mutating func load(_ item: DeclarationItem, from declaration: Declaration) {
     switch item.category {
     case "Source":
       guard let source = declaration.sourceDeclarations.first(where: { $0.name == item.title })
       else { return }
       kind = .source
+      originalName = source.name
       sourceAlias = source.name
       sourceKind = source.source.kind
       sourceLocation = source.source.location
@@ -54,10 +72,21 @@ extension ManifestDraft {
     case "Group":
       guard let group = declaration.groups.first(where: { $0.name == item.title }) else { return }
       kind = .group
+      originalName = group.name
       groupName = group.name
       groupComponents = group.components
       groupUses = group.uses
       groupCondition = group.condition
+    case "Group Reference":
+      guard let reference = referenceValues[item.pointer] else { return }
+      kind = .reference
+      replacingNode = item.id
+      referenceName = reference.name
+      referenceSource = reference.source
+      referenceCondition = reference.condition
+      let parts = item.pointer.split(separator: "/")
+      if parts.count == 4 { destinationGroup = document?.node(at: "/groups/" + parts[1]) }
+      insertBefore = nextSibling(of: item)
     case "Component":
       let parts = item.pointer.split(separator: "/")
       let values: [ComponentDeclaration]
