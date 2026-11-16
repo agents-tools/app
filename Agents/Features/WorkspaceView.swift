@@ -52,7 +52,7 @@ struct WorkspaceView: View {
       }
       .listStyle(.sidebar)
       .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 300)
-      .disabled(model.isTerminating)
+      .disabled(model.isTerminating || model.isApplying)
     } detail: {
       workspace
         .navigationTitle(model.page.title)
@@ -60,7 +60,7 @@ struct WorkspaceView: View {
         .toolbar {
           ToolbarItem {
             Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
-              .disabled(model.isTerminating)
+              .disabled(model.isTerminating || model.isApplying)
               .help("Read configuration again")
           }
           ToolbarItem {
@@ -76,6 +76,12 @@ struct WorkspaceView: View {
       InspectorView(model: model)
         .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
     }
+    .sheet(
+      item: Binding(
+        get: { model.manifestDraft == nil ? model.updateSession : nil },
+        set: { model.updateSession = $0 })
+    ) { _ in UpdateReviewView(model: model) }
+    .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
     .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
     .sheet(item: $model.creationSession) { _ in CreationView(model: model) }
@@ -124,14 +130,7 @@ struct WorkspaceView: View {
         case .overview: OverviewView(model: model, snapshot: snapshot)
         case .components, .sources: DeclarationListView(model: model)
         case .instructions: InstructionsView(model: model, snapshot: snapshot)
-        case .changes:
-          ContentUnavailableView {
-            Label("No Change Review", systemImage: "doc.text.magnifyingglass")
-          } description: {
-            Text("Configuration previews and applying changes are not available in this build.")
-          } actions: {
-            Button("About Configuration Changes…") { model.presentedIntent = .reviewChanges }
-          }
+        case .changes: ChangesView(model: model)
         case .diagnostics: DiagnosticsView(model: model)
         }
       }
@@ -174,6 +173,7 @@ struct WorkspaceView: View {
 }
 
 struct OverviewView: View {
+  @State private var confirmsRecovery = false
   let model: AppModel
   let snapshot: WorkspaceSnapshot
 
@@ -193,6 +193,17 @@ struct OverviewView: View {
       }
     } else {
       Form {
+        if snapshot.inspection.recovery.pending {
+          Section("Recovery Pending") {
+            Text(snapshot.inspection.recovery.diagnostic ?? "Core reports an incomplete operation.")
+            Button("Recover and Recheck…") { confirmsRecovery = true }.disabled(
+              model.isApplying || model.isTerminating)
+            Text(
+              "Core will attempt its existing recovery under the scope lock. No new changes are applied."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
+        }
         Section("Scope") {
           LabeledContent("Location") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }
           LabeledContent(
@@ -220,6 +231,7 @@ struct OverviewView: View {
             Button("New Local Instructions…") { model.beginCreation(.instructions) }
           }
         }
+        ManagedStateView(snapshot: snapshot)
         Section("Read Status") {
           if let inventory = snapshot.inventory {
             LabeledContent("Skill inventory entries", value: String(inventory.count))
@@ -228,13 +240,24 @@ struct OverviewView: View {
           }
           LabeledContent(
             "Diagnostics in this session", value: String(model.currentDiagnostics.count))
-          Text("Reads are coordinated individually. Refresh after external changes.")
-            .foregroundStyle(.secondary)
+          Text(
+            "Declaration and managed state share one read generation. Refresh after external changes."
+          )
+          .foregroundStyle(.secondary)
           Button("Show Diagnostics") { model.page = .diagnostics }
         }
       }
       .formStyle(.grouped)
       .textSelection(.enabled)
+      .confirmationDialog(
+        "Recover this configuration?", isPresented: $confirmsRecovery, titleVisibility: .visible
+      ) {
+        Button("Recover and Recheck") { model.recoverScope(in: snapshot.scope) }
+      } message: {
+        Text(
+          "Core will attempt recovery for " + snapshot.scope.root.path
+            + ". No new configuration changes will be applied.")
+      }
     }
   }
 }

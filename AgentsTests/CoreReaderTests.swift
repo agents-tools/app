@@ -7,13 +7,6 @@ import Testing
 
 @Suite("Core read projections", .serialized)
 struct CoreReaderTests {
-  @Test func bundledSchemaIsReadable() throws {
-    let bytes = try ManifestSchemaResource.encodedJSON()
-    let object = try JSONSerialization.jsonObject(with: Data(bytes)) as? [String: Any]
-    #expect(object?["$schema"] is String)
-    #expect(object?["properties"] is [String: Any])
-  }
-
   @Test func emptyAndInvalidScopesDoNotCreateState() throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

@@ -13,6 +13,7 @@
 		A00000000000000000000084 /* AgentsInstructions in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000074 /* AgentsInstructions */; };
 		A00000000000000000000085 /* AgentsCore in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000075 /* AgentsCore */; };
 		A00000000000000000000086 /* AgentsManifest in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000076 /* AgentsManifest */; };
+		A00000000000000000000087 /* AgentsUpdates in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000077 /* AgentsUpdates */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -71,6 +72,7 @@
 				A00000000000000000000082 /* AgentsManifest in Frameworks */,
 				A00000000000000000000083 /* AgentsSkills in Frameworks */,
 				A00000000000000000000084 /* AgentsInstructions in Frameworks */,
+				A00000000000000000000087 /* AgentsUpdates in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +139,7 @@
 				A00000000000000000000072 /* AgentsManifest */,
 				A00000000000000000000073 /* AgentsSkills */,
 				A00000000000000000000074 /* AgentsInstructions */,
+				A00000000000000000000077 /* AgentsUpdates */,
 			);
 			productName = "Agents App";
 			productReference = A00000000000000000000020 /* Agents App.app */;
@@ -474,7 +477,7 @@
 			repositoryURL = "https://github.com/agents-tools/core";
 			requirement = {
 				kind = revision;
-				revision = 953bf63f6f0fa9bd468bc72fab1c6cbe1d0fb1da;
+				revision = ae464cf528e862ee351e591cfba2d4641e963629;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -509,6 +512,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
 			productName = AgentsManifest;
+		};
+		A00000000000000000000077 /* AgentsUpdates */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsUpdates;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

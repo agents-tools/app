@@ -43,13 +43,6 @@ struct ManifestDraftTests {
       draft.component.native = [
         "codex": ["exact": .decimal("1.234567890123456789"), "unset": .null]
       ]
-      let result = CoreActions(home: fixture.home, processEnvironment: fixture.environment)
-        .validate(
-          .init(
-            id: draft.id, document: document, edits: draft.edits(home: fixture.home), scope: scope))
-      #expect(
-        result.disposition == .completed,
-        "Core rejected \(kind.rawValue): \(result.diagnostics.map(\.message))")
       let change = try document.preparing(draft.edits(home: fixture.home))
       #expect(
         String(decoding: change.bytes, as: UTF8.self).contains("# Keep the author's comment."))

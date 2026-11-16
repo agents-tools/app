@@ -2,6 +2,7 @@ import AgentsCore
 import AgentsInstructions
 import AgentsManifest
 import AgentsSkills
+import AgentsUpdates
 import Foundation
 
 struct CoreActions: Sendable {
@@ -64,22 +65,6 @@ struct CoreActions: Sendable {
     }
   }
 
-  func validate(_ request: DraftValidationRequest) -> CoreCompletion {
-    do {
-      let change = try request.document.preparing(request.edits)
-      let message =
-        change.delta.changedPointers.isEmpty
-        ? "This draft does not change the declaration."
-        : "The draft is valid for this declaration snapshot. It has not been applied."
-      return CoreCompletion(disposition: .completed, output: .validatedDraft(request.id, message))
-    } catch {
-      return CoreCompletion(
-        disposition: .failed,
-        diagnostics: CoreReader.diagnostics(
-          error, scope: request.scope, operation: "Validate declaration draft"))
-    }
-  }
-
   func mappings(_ request: MappingRequest) -> CoreCompletion {
     let values = InstructionOperations.export(
       projectRoots: request.projects, environment: environment(for: request.context))
@@ -106,7 +91,7 @@ struct CoreActions: Sendable {
       output: .mappings(request.id, mappings))
   }
 
-  private func environment(for scope: WorkspaceScope) -> RuntimeEnvironment {
+  func environment(for scope: WorkspaceScope) -> RuntimeEnvironment {
     RuntimeEnvironment(
       projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment)
   }

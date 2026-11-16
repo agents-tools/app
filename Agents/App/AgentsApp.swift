@@ -39,12 +39,12 @@ struct AgentsApp: App {
       CommandGroup(after: .newItem) {
         Button("Add Project…") { chooseProject(for: model) }
           .keyboardShortcut("o", modifiers: [.command, .shift])
-          .disabled(model.isTerminating)
+          .disabled(model.isTerminating || model.isApplying)
       }
       CommandGroup(after: .toolbar) {
         Button("Refresh Configuration") { model.refresh() }
           .keyboardShortcut("r", modifiers: .command)
-          .disabled(model.isTerminating)
+          .disabled(model.isTerminating || model.isApplying)
         Toggle("Show Inspector", isOn: Bindable(model.preferences).inspectorVisible)
           .keyboardShortcut("i", modifiers: [.command, .option])
       }

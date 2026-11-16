@@ -10,6 +10,7 @@ struct ManifestDraft: Identifiable {
   enum StructuralAction: String, CaseIterable { case move, remove }
   var structuralAction: StructuralAction = .move
   var structuralNode: NodeID?
+  var replacingNode: NodeID?
   var destinationGroup: NodeID?
   var insertFirst = false
   let id = UUID()
@@ -26,13 +27,11 @@ struct ManifestDraft: Identifiable {
   var groupName = ""
   var groupComponents: [ComponentDeclaration] = []
   var groupUses: [GroupUseDeclaration] = []
-  var isValidating = false
   var groupCondition: DeclarationCondition?
   var referenceName = ""
   var referenceSource: String?
   var referenceCondition: DeclarationCondition?
   var exports: [String] = []
-  var validation: String?
 
   func edits(home: URL) -> [ManifestEdit] {
     switch kind {
@@ -47,7 +46,9 @@ struct ManifestDraft: Identifiable {
               path: sourcePath,
               environment: .init(projectDirectory: scope.root, homeDirectory: home))))
       ]
-    case .component: return [.insertComponent(component.value, into: .root, at: .last)]
+    case .component:
+      if let replacingNode { return [.replaceComponent(replacingNode, with: component.value)] }
+      return [.insertComponent(component.value, into: .root, at: .last)]
     case .group:
       return [
         .upsertGroup(
@@ -147,11 +148,4 @@ struct ComponentDraft: Equatable {
         exclude: pluginExclusions, agents: agents, condition: condition, native: native)
     }
   }
-}
-
-struct DraftValidationRequest: Sendable {
-  let id: UUID
-  let document: DeclarationDocument
-  let edits: [ManifestEdit]
-  let scope: WorkspaceScope
 }

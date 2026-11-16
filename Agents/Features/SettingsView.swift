@@ -12,11 +12,13 @@ struct SettingsView: View {
           }
           ForEach(model.preferences.projects, id: \.self) { url in
             LabeledContent(url.lastPathComponent) {
-              Button("Remove") { model.removeProject(url) }
+              Button("Remove") { model.removeProject(url) }.disabled(
+                model.isApplying || model.isTerminating)
             }
             PathView(url: url).font(.caption).foregroundStyle(.secondary)
           }
-          Button("Add Project…") { chooseProject(for: model) }
+          Button("Add Project…") { chooseProject(for: model) }.disabled(
+            model.isApplying || model.isTerminating)
           Text("Adding and removing directories only changes the app’s project list.")
             .font(.caption).foregroundStyle(.secondary)
         }

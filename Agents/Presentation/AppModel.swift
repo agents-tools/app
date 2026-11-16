@@ -1,5 +1,6 @@
 import AgentsCore
 import AgentsManifest
+import AgentsUpdates
 import Foundation
 import Observation
 
@@ -10,7 +11,9 @@ final class AppModel {
     case workspace
     case creation(UUID)
     case prompt(UUID)
-    case draft(UUID)
+    case discovery(UUID)
+    case preview(UUID)
+    case apply(UUID)
     case mappings(UUID)
     case other
   }
@@ -20,6 +23,7 @@ final class AppModel {
     let selectionScope: WorkspaceScope
     let purpose: OperationPurpose
     let generation: UUID
+    let sequence: Int
     let title: String
     let admission: OperationAdmission
   }
@@ -36,6 +40,9 @@ final class AppModel {
   private(set) var isTerminating = false
   private(set) var terminationBlocked = false
   private var generation = UUID()
+  private var operationSequence = 0
+  private var recoverySequence: [WorkspaceScope: Int] = [:]
+  private var unresolvedCoreRecovery: Set<WorkspaceScope> = []
   var page: WorkspacePage = .overview
   var selectedItem: NodeID?
   var search = ""
@@ -44,6 +51,19 @@ final class AppModel {
   var promptSession: PromptSession?
   var manifestDraft: ManifestDraft?
   var mappingSession: MappingSession?
+  var updateSession: UpdateSession?
+  var discoverySession: DiscoverySession?
+  private(set) var updateRecords: [UpdateRecord] = []
+  var isApplying: Bool {
+    operations.values.contains {
+      if case .apply = $0.purpose { return true }
+      return false
+    }
+  }
+  var canModify: Bool {
+    !isTerminating && !isApplying && snapshot?.inspection.recovery.pending == false
+  }
+  var availableComponentSelection: [ComponentInspection] { snapshot?.inspection.components ?? [] }
   @ObservationIgnored var terminationReply: (@MainActor (Bool) -> Void)?
 
   init(
@@ -89,7 +109,7 @@ final class AppModel {
   }
 
   func select(_ scope: WorkspaceScope) {
-    guard self.scope != scope, !isTerminating else { return }
+    guard self.scope != scope, !isTerminating, !isApplying else { return }
     self.scope = scope
     preferences.selectedScopeID = scope.id
     selectedItem = nil
@@ -98,13 +118,13 @@ final class AppModel {
   }
 
   func addProject(_ url: URL) {
-    guard !isTerminating else { return }
+    guard !isTerminating, !isApplying else { return }
     preferences.addProject(url)
     select(WorkspaceScope(kind: .project, root: url.standardizedFileURL))
   }
 
   func removeProject(_ url: URL) {
-    guard !isTerminating else { return }
+    guard !isTerminating, !isApplying else { return }
     preferences.removeProject(url)
     if scope.root == url, scope.kind == .project {
       select(WorkspaceScope(kind: .user, root: home))
@@ -112,11 +132,12 @@ final class AppModel {
   }
 
   func refresh() {
-    guard !isTerminating else { return }
+    guard !isTerminating, !isApplying else { return }
     // Superseded queued reads still report a terminal; running reads are allowed to finish.
     for operation in operations.values where operation.title == "Read configuration" {
       operation.admission.cancel()
     }
+    if case .review = updateSession?.stage { updateSession?.stage = .stale }
     generation = UUID()
     selectedItem = nil
     loadState = .loading
@@ -132,15 +153,16 @@ final class AppModel {
   @discardableResult
   func startOperation(
     title: String, scope: WorkspaceScope, generation: UUID? = nil,
-    purpose: OperationPurpose = .other,
+    purpose: OperationPurpose = .other, admission: OperationAdmission? = nil,
     work: @escaping @Sendable () -> CoreCompletion
   ) -> UUID? {
     guard !isTerminating else { return nil }
     let id = UUID()
+    operationSequence += 1
     let operation = ActiveOperation(
       id: id, scope: scope, selectionScope: self.scope, purpose: purpose,
-      generation: generation ?? self.generation,
-      title: title, admission: OperationAdmission())
+      generation: generation ?? self.generation, sequence: operationSequence,
+      title: title, admission: admission ?? OperationAdmission())
     operations[id] = operation
     executor.submit(admission: operation.admission, work: work) { result in
       Task { @MainActor [self] in finish(id, result: result) }
@@ -149,7 +171,9 @@ final class AppModel {
   }
 
   func beginCreation(_ kind: CreationRequest.Kind) {
-    guard !isTerminating, kind != .instructions || scope.kind == .project else { return }
+    guard !isTerminating, !isApplying, snapshot?.inspection.recovery.pending != true,
+      kind != .instructions || scope.kind == .project
+    else { return }
     creationSession = CreationSession(scope: scope, kind: kind, directory: scope.root)
   }
 
@@ -160,7 +184,8 @@ final class AppModel {
   }
 
   func confirmCreation() {
-    guard !isTerminating, let session = creationSession, case .confirmation = session.stage,
+    guard !isTerminating, !isApplying, snapshot?.inspection.recovery.pending != true,
+      let session = creationSession, case .confirmation = session.stage,
       session.kind == .instructions || session.directorySelected
     else {
       return
@@ -186,7 +211,7 @@ final class AppModel {
   }
 
   func beginDraft(_ kind: ManifestDraft.Kind = .component) {
-    guard !isTerminating else { return }
+    guard canModify else { return }
     var draft = ManifestDraft(scope: scope, document: snapshot?.document)
     draft.kind = kind
     draft.defaultAgents = snapshot?.document?.declaration.defaultAgents?.compactMap(
@@ -195,20 +220,75 @@ final class AppModel {
     manifestDraft = draft
   }
 
-  func validateDraft() {
-    guard !isTerminating, let draft = manifestDraft, !draft.isValidating,
-      draft.kind != .structure || draft.structuralNode != nil,
-      let document = draft.document
+  func editSelectedDeclaration() {
+    guard canModify, let item = selectedDeclaration,
+      let declaration = snapshot?.inspection.declaration
     else { return }
-    manifestDraft?.isValidating = true
-    let request = DraftValidationRequest(
-      id: draft.id, document: document, edits: draft.edits(home: home), scope: draft.scope)
+    beginDraft()
+    manifestDraft?.load(item, from: declaration)
+  }
+
+  func discoverComponents() {
+    guard canModify, let declaration = snapshot?.inspection.declaration else { return }
+    let id = UUID()
+    let scope = scope
     let actions = actions
-    startOperation(
-      title: "Validate declaration draft", scope: draft.scope, purpose: .draft(draft.id)
-    ) {
-      actions.validate(request)
+    discoverySession = .init(id: id, scope: scope)
+    startOperation(title: "Discover declared components", scope: scope, purpose: .discovery(id)) {
+      actions.discover(id: id, scope: scope, declaration: declaration)
     }
+  }
+
+  func previewDiscovery() {
+    guard let session = discoverySession, session.scope == scope,
+      let discovery = session.discovery, canModify
+    else { return }
+    discoverySession = nil
+    previewUpdate(title: "Apply Discovered Components", request: discovery.updateRequest())
+  }
+
+  func previewDraft() {
+    guard canModify, let draft = manifestDraft, draft.scope == scope,
+      draft.kind != .structure || draft.structuralNode != nil
+    else { return }
+    previewUpdate(title: "Edit Configuration", request: draft.updateRequest(home: home))
+  }
+
+  func previewUpdate(title: String, request: UpdateRequest = UpdateRequest()) {
+    guard canModify else { return }
+    let proposal = UpdateProposal(id: UUID(), scope: scope, title: title, request: request)
+    updateSession = UpdateSession(proposal: proposal)
+    let actions = actions
+    startOperation(title: "Prepare " + title, scope: scope, purpose: .preview(proposal.id)) {
+      actions.preview(proposal)
+    }
+  }
+
+  func confirmUpdate() {
+    guard canModify, let session = updateSession, case .review = session.stage,
+      session.proposal.scope == scope, session.bindingsReady, let report = session.report
+    else { return }
+    updateSession?.stage = .applying
+    let proposal = session.proposal
+    let actions = actions
+    let admission = OperationAdmission()
+    let bindings = session.bindingInputs.mapValues { Data($0.utf8) }
+    updateSession?.bindingInputs = [:]
+    startOperation(
+      title: proposal.title, scope: proposal.scope, purpose: .apply(proposal.id),
+      admission: admission
+    ) {
+      actions.apply(
+        proposal, fingerprint: report.displayedFingerprint, admission: admission, bindings: bindings
+      )
+    }
+  }
+
+  func closeUpdateReview() {
+    guard !isApplying else { return }
+    let committed = updateSession?.terminal?.disposition == .committed
+    updateSession = nil
+    if committed { manifestDraft = nil }
   }
 
   func chooseMappings() {
@@ -262,18 +342,54 @@ final class AppModel {
       } else {
         mappingSession?.stage = .cancelled
       }
-    case .draft(let id) where manifestDraft?.id == id:
-      manifestDraft?.isValidating = false
-      if !currentSelection {
-        manifestDraft?.validation = "Selection changed. Open a new draft for the current scope."
-      } else if case .validatedDraft(_, let message) = result.output {
-        manifestDraft?.validation = message
-      } else if result.disposition == .cancelled {
-        manifestDraft?.validation = "Validation was cancelled before it started."
-      } else {
-        manifestDraft?.validation = result.diagnostics.map(\.message).joined(separator: "\n")
+    case .discovery(let id) where discoverySession?.id == id:
+      discoverySession?.isLoading = false
+      discoverySession?.messages = result.diagnostics
+      if currentSelection, case .discovery(_, let value) = result.output {
+        discoverySession?.discovery = value
+      } else if !currentSelection {
+        discoverySession?.messages.append(
+          .init(
+            scope: operation.scope, operation: "Discovery",
+            message: "Selection changed. Discover again for the selected scope."))
       }
+    case .preview(let id) where updateSession?.id == id:
+      updateSession?.messages = result.diagnostics
+      if !currentSelection {
+        updateSession?.stage = .stale
+      } else if case .updatePreview(_, let report) = result.output {
+        updateSession?.report = report
+        updateSession?.stage = .review
+      } else {
+        updateSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
+      }
+    case .apply(let id) where updateSession?.id == id:
+      updateSession?.messages = result.diagnostics
+      updateSession?.terminal = result.updateTerminal
+      updateSession?.stage = result.disposition == .cancelled ? .cancelled : .finished
     default: break
+    }
+  }
+
+  func recoverScope(in confirmedScope: WorkspaceScope) {
+    guard confirmedScope == scope, !isTerminating, !isApplying,
+      snapshot?.inspection.recovery.pending == true
+    else { return }
+    let proposal = UpdateProposal(
+      id: UUID(), scope: scope, title: "Recover Configuration", request: .init())
+    updateSession = UpdateSession(proposal: proposal, stage: .applying)
+    let admission = OperationAdmission()
+    let actions = actions
+    startOperation(
+      title: proposal.title, scope: scope, purpose: .apply(proposal.id), admission: admission
+    ) {
+      actions.apply(proposal, fingerprint: "", admission: admission, recoveryOnly: true)
+    }
+  }
+
+  private var hasBlockingCleanup: Bool {
+    diagnostics.contains {
+      $0.blocksTermination && (!$0.coreRecovery || unresolvedCoreRecovery.contains($0.scope))
     }
   }
 
@@ -282,13 +398,24 @@ final class AppModel {
   }
 
   func requestTermination() -> TerminationDecision {
-    if diagnostics.contains(where: \.blocksTermination) {
+    if hasBlockingCleanup {
       terminationBlocked = true
       return .cancel
     }
     isTerminating = true
     cancelQueuedOperations()
     return operations.isEmpty ? .now : .later
+  }
+
+  private func observeRecovery(_ recovery: RecoveryInspection, scope: WorkspaceScope, sequence: Int)
+  {
+    guard sequence >= (recoverySequence[scope] ?? 0) else { return }
+    recoverySequence[scope] = sequence
+    if recovery.pending {
+      unresolvedCoreRecovery.insert(scope)
+    } else {
+      unresolvedCoreRecovery.remove(scope)
+    }
   }
 
   private func finish(_ id: UUID, result: CoreCompletion) {
@@ -303,6 +430,15 @@ final class AppModel {
         diagnostics.append(diagnostic)
       }
     }
+    if let terminal = result.updateTerminal {
+      observeRecovery(terminal.recovery, scope: operation.scope, sequence: operation.sequence)
+      updateRecords.append(
+        .init(id: id, scope: operation.scope, title: operation.title, terminal: terminal))
+    }
+    if let snapshot = result.snapshot {
+      observeRecovery(
+        snapshot.inspection.recovery, scope: snapshot.scope, sequence: operation.sequence)
+    }
     operations.removeValue(forKey: id)
     let currentSelection = operation.selectionScope == scope && operation.generation == generation
     finishContent(operation, result: result, currentSelection: currentSelection)
@@ -315,8 +451,11 @@ final class AppModel {
         loadState = .idle
       }
     }
+    if case .apply = operation.purpose, !isTerminating, currentSelection {
+      refresh()
+    }
     if isTerminating, operations.isEmpty {
-      let mayQuit = !diagnostics.contains(where: \.blocksTermination)
+      let mayQuit = !hasBlockingCleanup
       terminationBlocked = !mayQuit
       if !mayQuit { isTerminating = false }
       terminationReply?(mayQuit)

@@ -7,24 +7,20 @@ struct SourceStateView: View {
   var body: some View {
     Form {
       Section("Recorded Source State") {
-        if let resolved = snapshot.resolved {
-          ForEach(resolved.sources.keys.sorted(), id: \.self) { id in
-            if let source = resolved.sources[id] {
-              DisclosureGroup(id) {
-                LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
-                if let location = source.url { LabeledContent("Location", value: location) }
-                if let path = source.path { LabeledContent("Search path", value: path) }
-                if let requirement = source.requirement {
-                  DeclarationField(name: "Requirement", value: .requirement(requirement))
-                }
-              }
+        ForEach(snapshot.inspection.sources, id: \.record) { source in
+          DisclosureGroup {
+            LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
+            LabeledContent("Revision") { CompactText(text: source.revision) }
+            if let version = source.version { LabeledContent("Version", value: version) }
+            if let location = source.location {
+              LabeledContent("Location") { PathView(url: location, scope: snapshot.scope) }
             }
+          } label: {
+            Text(source.identity).lineLimit(1).truncationMode(.middle).help(source.identity)
           }
-          if resolved.sources.isEmpty {
-            Text("No sources recorded in resolved state.").foregroundStyle(.secondary)
-          }
-        } else {
-          Text("Resolved source state is unavailable. See Diagnostics.").foregroundStyle(.secondary)
+        }
+        if snapshot.inspection.sources.isEmpty {
+          Text("No sources recorded in resolved state.").foregroundStyle(.secondary)
         }
       }
       Section("Subscription Baselines") {

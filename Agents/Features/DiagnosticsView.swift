@@ -20,7 +20,7 @@ struct DiagnosticsView: View {
       }
       Section {
         Text(
-          "Reports come from Core reads. Diagnostic checks do not recover or change configuration."
+          "Reports retain Core reads and operation outcomes in their original scope. Reading diagnostics does not change configuration."
         )
         .font(.caption).foregroundStyle(.secondary)
       }
@@ -45,7 +45,7 @@ private struct DiagnosticRow: View {
         .font(.caption).foregroundStyle(.secondary)
       if let path = diagnostic.path { Text(path).font(.caption).foregroundStyle(.secondary) }
       if diagnostic.blocksTermination {
-        Text("Cleanup requires attention before quitting.").foregroundStyle(.red)
+        Text("This operation reported a cleanup failure.").foregroundStyle(.red)
       }
     }
     .padding(.vertical, 4)

@@ -29,7 +29,7 @@ struct DeclarationListView: View {
         Divider()
         VStack(alignment: .leading, spacing: 8) {
           Text("Skill Inventory").font(.headline)
-          Text("Managed, missing, drifted, and installed-only entries reported by Core.")
+          Text("Managed skill deployments and their current disk status reported by Core.")
             .font(.caption).foregroundStyle(.secondary)
           Table(inventory) {
             TableColumn("Skill") { Text($0.id.name) }
@@ -53,6 +53,12 @@ struct DeclarationListView: View {
       ToolbarItem {
         if model.page == .components {
           Button("New Local Skill…") { model.beginCreation(.skill) }
+        }
+      }
+      ToolbarItem {
+        if model.page == .sources {
+          Button("Discover Declared Components…") { model.discoverComponents() }
+            .disabled(!model.canModify || model.snapshot?.inspection.declaration == nil)
         }
       }
       ToolbarItem {
@@ -85,6 +91,9 @@ struct InspectorView: View {
           }
         }
         Section {
+          if ["Component", "Source", "Group"].contains(item.category) {
+            Button("Edit…") { model.editSelectedDeclaration() }.disabled(!model.canModify)
+          }
           if item.category == "Component" {
             Button("Draft Move or Removal…") {
               model.beginDraft(.structure)

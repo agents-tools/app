@@ -31,3 +31,11 @@ func copyText(_ text: String) {
   NSPasteboard.general.clearContents()
   NSPasteboard.general.setString(text, forType: .string)
 }
+
+struct CompactText: View {
+  let text: String
+  var body: some View {
+    Text(text).lineLimit(1).truncationMode(.middle).help(text).accessibilityLabel(text)
+      .contextMenu { Button("Copy Value") { copyText(text) } }
+  }
+}

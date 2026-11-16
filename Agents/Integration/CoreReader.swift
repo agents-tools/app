@@ -1,7 +1,7 @@
 import AgentsCore
 import AgentsInstructions
 import AgentsManifest
-import AgentsSkills
+import AgentsUpdates
 import Foundation
 
 struct CoreReader: Sendable {
@@ -15,7 +15,8 @@ struct CoreReader: Sendable {
     let store = StateStore(scope: scope.installScope, environment: runtime)
     do {
       try ProjectRootAccess.requireAvailable(scope)
-      let document = try store.loadManifest()
+      let inspection = try UpdateOperations.inspect(scope: scope.installScope, environment: runtime)
+      let document = inspection.document
       var diagnostics =
         document?.diagnostics.map {
           AppDiagnostic(
@@ -24,52 +25,39 @@ struct CoreReader: Sendable {
             message: "\($0.code): \($0.message) (line \($0.span.line), column \($0.span.column))",
             path: store.declarationURL.path)
         } ?? []
-      // Each public read is independently coordinated; this is not an atomic cross-domain snapshot.
+      // Supplemental own-content and cross-project mapping reads have their own read admission.
       func optionalRead<T>(_ name: String, _ body: () throws -> T) -> T? {
         do { return try body() } catch {
           diagnostics += Self.diagnostics(error, scope: scope, operation: name)
           return nil
         }
       }
-      let resolved = optionalRead("Resolved state") { try store.loadResolved() }
-      let watch = optionalRead("Subscription baselines") { try store.loadWatch() }
-      let inventory = optionalRead("Skill inventory") {
-        let managed = try SkillOperations.listManaged(
-          scope: scope.installScope, environment: runtime)
-        let installed = try SkillOperations.listInstalled(
-          scope: scope.installScope, environment: runtime)
-        var seen = Set<InventoryItem.ID>()
-        return (managed + installed).compactMap { skill -> InventoryItem? in
-          let id = InventoryItem.ID(
-            name: skill.name, agent: skill.agent, scope: skill.scope, path: skill.path)
-          guard seen.insert(id).inserted else { return nil }
-          return InventoryItem(
-            id: id, status: skill.status.rawValue,
-            mode: skill.mode?.rawValue, source: skill.sourceIdentity)
-        }
-      }
-      if let report = optionalRead(
-        "Skill diagnostics",
-        {
-          try SkillOperations.doctor(scope: scope.installScope, environment: runtime)
-        })
-      {
-        diagnostics += report.checks.map {
+      if inspection.recovery.pending {
+        diagnostics.append(
           AppDiagnostic(
-            scope: scope, operation: "Skills", severity: $0.status == .error ? .error : .warning,
-            message: "\($0.id): \($0.message)", path: $0.path)
-        }
+            scope: scope, operation: "Recovery",
+            message: inspection.recovery.diagnostic ?? "Recovery is pending.",
+            blocksTermination: inspection.recovery.requiresOwner, coreRecovery: true))
       }
-      if let report = optionalRead(
-        "Instruction diagnostics",
-        {
-          try InstructionOperations.doctor(scope: scope.installScope, environment: runtime)
-        })
-      {
-        diagnostics += report.diagnostics.map {
+      for deployment in inspection.deployments where deployment.status != .current {
+        diagnostics.append(
           AppDiagnostic(
-            scope: scope, operation: "Instructions", severity: .warning,
-            message: "\($0.kind.rawValue): \($0.message)", path: $0.path?.path)
+            scope: scope, operation: "Deployment", severity: .warning,
+            message: deployment.diagnostic ?? deployment.status.rawValue,
+            path: deployment.location.path))
+      }
+      let inventory = inspection.deployments.flatMap { deployment in
+        inspection.components.filter {
+          deployment.ownerRecords.contains($0.record) && $0.kind == .skills
+        }
+        .flatMap { component in
+          deployment.recipients.map { agent in
+            InventoryItem(
+              id: .init(
+                name: component.name, agent: agent, scope: scope.installScope,
+                path: deployment.location.path), status: deployment.status.rawValue,
+              mode: deployment.ownership, source: component.source)
+          }
         }
       }
       let ownInstructions: [OwnInstructionItem]? =
@@ -86,15 +74,12 @@ struct CoreReader: Sendable {
       let mappings = InstructionOperations.export(
         projectRoots: scope.kind == .project ? [scope.root] : [], environment: runtime
       ).map { Self.mapping($0) }
-      let defaults = Declaration(
-        agents: document?.declaration.defaultAgents?.compactMap(AgentID.init(rawValue:))
-      )
-      .defaultAgents
+      let defaults = inspection.declaration?.defaultAgents ?? Declaration().defaultAgents
       let snapshot = WorkspaceSnapshot(
         scope: scope, manifestURL: store.declarationURL, resolvedURL: store.resolvedURL,
         watchURL: store.watchURL, document: document, effectiveDefaultAgents: defaults,
-        items: document.map(Self.items) ?? [], inventory: inventory, resolved: resolved,
-        watch: watch,
+        items: document.map(Self.items) ?? [], inventory: inventory, inspection: inspection,
+        watch: inspection.watch,
         mappings: mappings, ownInstructions: ownInstructions, diagnostics: diagnostics,
         readAt: Date())
       return CoreCompletion(disposition: .completed, snapshot: snapshot, diagnostics: [])
@@ -126,6 +111,8 @@ struct CoreReader: Sendable {
       message = error.description
     } else if let error = error as? InstructionError {
       message = error.description
+    } else if let described = error as? any CustomStringConvertible {
+      message = described.description
     } else {
       message = error.localizedDescription
     }

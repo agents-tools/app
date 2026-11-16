@@ -16,7 +16,10 @@ struct InstructionsView: View {
             RecordFields(
               record: item.record, pointer: item.pointer,
               authored: snapshot.document.map { AuthoredFields(sourceMap: $0.sourceMap) })
-            Button("Inspect Declaration") { model.selectedItem = item.id }
+            Button("Edit Instructions…") {
+              model.selectedItem = item.id
+              model.editSelectedDeclaration()
+            }.disabled(!model.canModify)
             ForEach(
               item.record["chatGPT"]?.elements?.compactMap(\.record).compactMap {
                 $0["name"]?.string

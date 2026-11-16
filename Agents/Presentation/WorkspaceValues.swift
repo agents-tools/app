@@ -1,5 +1,6 @@
 import AgentsCore
 import AgentsManifest
+import AgentsUpdates
 import Foundation
 
 struct WorkspaceScope: Hashable, Codable, Sendable, Identifiable {
@@ -45,10 +46,12 @@ struct AppDiagnostic: Sendable, Identifiable, Equatable {
   let message: String
   let path: String?
   let blocksTermination: Bool
+  let coreRecovery: Bool
 
   init(
     scope: WorkspaceScope, operation: String, severity: Severity = .error,
-    message: String, path: String? = nil, blocksTermination: Bool = false
+    message: String, path: String? = nil, blocksTermination: Bool = false,
+    coreRecovery: Bool = false
   ) {
     id = UUID()
     self.scope = scope
@@ -57,6 +60,7 @@ struct AppDiagnostic: Sendable, Identifiable, Equatable {
     self.message = message
     self.path = path
     self.blocksTermination = blocksTermination
+    self.coreRecovery = coreRecovery
   }
 }
 
@@ -123,14 +127,14 @@ struct WorkspaceSnapshot: Sendable {
   let effectiveDefaultAgents: [AgentID]
   let items: [DeclarationItem]
   let inventory: [InventoryItem]?
-  let resolved: ResolvedState?
+  let inspection: ScopeInspection
   let watch: WatchState?
   let mappings: [MappingItem]
   let ownInstructions: [OwnInstructionItem]?
   let diagnostics: [AppDiagnostic]
   let readAt: Date
 
-  var isEmpty: Bool { document == nil }
+  var isEmpty: Bool { document == nil && !inspection.recovery.pending }
   var components: [DeclarationItem] { items.filter { $0.category == "Component" } }
   var sources: [DeclarationItem] { items.filter { $0.category == "Source" } }
   var instructions: [DeclarationItem] { components.filter { $0.record.kind == "instructions" } }
@@ -144,19 +148,16 @@ enum WorkspaceLoadState {
 }
 
 enum WorkspaceIntent: String, Identifiable {
-  case importConfiguration, reviewChanges, testConnection
+  case importConfiguration, testConnection
   var id: Self { self }
   var title: String {
     switch self {
-    case .reviewChanges: "Review Changes"
     case .importConfiguration: "Import Configuration"
     case .testConnection: "Test Connection"
     }
   }
   var unavailableReason: String {
     switch self {
-    case .reviewChanges:
-      "Previewing and applying configuration changes is not available in this build. Local declaration drafts can be validated separately."
     case .importConfiguration:
       "Configuration import is not available in this build."
     case .testConnection:

@@ -1,3 +1,4 @@
+import AgentsUpdates
 import Foundation
 
 struct CreationRequest: Sendable {
@@ -56,7 +57,8 @@ enum ContentOutput: Sendable {
   case created(CreationRequest, URL)
   case creationUnconfirmed(CreationRequest)
   case prompt(PromptRequest, String)
-  case validatedDraft(UUID, String)
+  case discovery(UUID, ComponentDiscovery)
+  case updatePreview(UUID, CombinedUpdateReport)
   case mappings(UUID, [MappingItem])
 }
 

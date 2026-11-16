@@ -11,8 +11,13 @@ struct ManifestDraftView: View {
     if let draft = model.manifestDraft {
       VStack(alignment: .leading, spacing: 16) {
         Text("Declaration Draft").font(.headline)
+        LabeledContent("Scope") { PathView(url: draft.scope.root, scope: draft.scope) }
+        if draft.scope != model.scope {
+          Text("This draft belongs to another scope. Return to that scope or close this draft.")
+            .foregroundStyle(.secondary)
+        }
         Text(
-          "This draft stays in memory. Applying configuration changes is not available in this build."
+          "Edit configuration here, then review Core’s proposed changes before applying."
         )
         .foregroundStyle(.secondary)
         Form {
@@ -43,14 +48,16 @@ struct ManifestDraftView: View {
             ConditionEditor(value: binding(\.groupCondition))
             DisclosureGroup("Components") {
               DraftRows(values: binding(\.groupComponents)) { row, actions in
-                Text(DeclarationLabels.kind(row.wrappedValue.kind.rawValue))
+                ComponentDraftEditor(
+                  value: Binding(
+                    get: { ComponentDraft(row.wrappedValue) }, set: { row.wrappedValue = $0.value })
+                )
                 DraftRowButtons(actions: actions)
               }
               DisclosureGroup("Add Component") {
                 ComponentDraftEditor(value: $groupChild)
                 Button("Add to Group") {
                   model.manifestDraft?.groupComponents.append(groupChild.value)
-                  model.manifestDraft?.validation = nil
                 }
               }
             }
@@ -89,26 +96,21 @@ struct ManifestDraftView: View {
           }
         }
         .formStyle(.grouped)
-        .disabled(draft.isValidating)
-        if draft.document == nil {
-          Text(
-            "This scope has no declaration. First-configuration validation and publishing are not available yet."
-          )
-          .font(.caption).foregroundStyle(.secondary)
-        }
-        if let message = draft.validation { Text(message).textSelection(.enabled) }
+        .disabled(model.isApplying)
         HStack {
           Button("Done") { model.manifestDraft = nil }.keyboardShortcut(.cancelAction)
           Spacer()
-          if draft.isValidating { ProgressView().controlSize(.small) }
-          Button("Validate Draft") { model.validateDraft() }
+
+          Button("Review Changes…") { model.previewDraft() }
             .disabled(
-              draft.document == nil || draft.isValidating || model.isTerminating
+              !model.canModify || draft.scope != model.scope
                 || (draft.kind == .structure && draft.structuralNode == nil))
         }
       }
       .padding(24)
       .frame(width: 640, height: 680)
+      .interactiveDismissDisabled(model.isApplying)
+      .sheet(item: $model.updateSession) { _ in UpdateReviewView(model: model) }
     }
   }
 
@@ -117,7 +119,6 @@ struct ManifestDraftView: View {
       get: { model.manifestDraft.map { $0[keyPath: path] } ?? fallback[keyPath: path] },
       set: {
         model.manifestDraft?[keyPath: path] = $0
-        model.manifestDraft?.validation = nil
       })
   }
 }
