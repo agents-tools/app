@@ -8,7 +8,7 @@ struct ManagedStateView: View {
   var body: some View {
     Section("Managed State") {
       ForEach(snapshot.inspection.components, id: \.record) { component in
-        DisclosureGroup(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name) {
+        DetailsGroup(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name) {
           if model.assistanceAvailable {
             if let input = AssistanceInput.skill(component, action: .explainSkill) {
               Button("Explain This Skill…") { model.reviewAssistance(input) }
@@ -24,11 +24,11 @@ struct ManagedStateView: View {
           LabeledContent(
             "Agents", value: component.recipients.map(\.displayName).joined(separator: ", "))
           if component.chatGPT { Label("Included in named prompts", systemImage: "text.quote") }
-          DisclosureGroup("Symbolic Configuration") {
+          DetailsGroup("Symbolic Configuration") {
             NativeInspectionValue(name: "Configuration", value: component.configuration)
           }
           ForEach(Array(component.occurrences.enumerated()), id: \.offset) { _, occurrence in
-            DisclosureGroup("Declared in " + occurrence.manifestPath) {
+            DetailsGroup("Declared in " + occurrence.manifestPath) {
               LabeledContent("Source") { CompactText(text: occurrence.declaringSource) }
               LabeledContent(
                 "Editing",
@@ -51,7 +51,7 @@ struct ManagedStateView: View {
         }
       }
       ForEach(snapshot.inspection.deployments, id: \.identity) { deployment in
-        DisclosureGroup(deployment.location.lastPathComponent) {
+        DetailsGroup(deployment.location.lastPathComponent) {
           LabeledContent("Target") { PathView(url: deployment.location, scope: snapshot.scope) }
           LabeledContent("Status", value: deployment.status.rawValue.capitalized)
           LabeledContent("Format", value: deployment.format)
@@ -67,9 +67,9 @@ struct ManagedStateView: View {
           if let message = deployment.diagnostic { Text(message) }
         }
       }
-      DisclosureGroup("Retained Resources") {
+      DetailsGroup("Retained Resources") {
         ForEach(snapshot.inspection.resources, id: \.identity) { resource in
-          DisclosureGroup(resource.path) {
+          DetailsGroup(resource.path) {
             LabeledContent("Kind", value: resource.kind)
             LabeledContent("Source") { CompactText(text: resource.source) }
             if let url = resource.location {
@@ -92,19 +92,19 @@ private struct NativeInspectionValue: View {
   let value: NativeValue
   var body: some View {
     switch value {
-    case .string(let text): LabeledContent(name, value: text)
+    case .string(let text): LabeledContent(name) { CompactText(text: text) }
     case .integer(let number): LabeledContent(name, value: String(number))
     case .decimal(let text): LabeledContent(name, value: text)
     case .boolean(let enabled): LabeledContent(name, value: enabled ? "true" : "false")
     case .null: LabeledContent(name, value: "Explicit null")
     case .array(let values):
-      DisclosureGroup(name) {
+      DetailsGroup(name) {
         ForEach(Array(values.enumerated()), id: \.offset) { index, item in
           NativeInspectionValue(name: String(index + 1), value: item)
         }
       }
     case .object(let values):
-      DisclosureGroup(name) {
+      DetailsGroup(name) {
         ForEach(values.keys.sorted(), id: \.self) { key in
           if let item = values[key] {
             NativeInspectionValue(name: key.isEmpty ? "Empty key" : key, value: item)

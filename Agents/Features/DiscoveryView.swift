@@ -8,7 +8,7 @@ struct DiscoveryView: View {
       VStack(alignment: .leading, spacing: 16) {
         Text("Discover Declared Components").font(.headline)
         Text(
-          "Core resolves the complete authored selection in temporary source storage. Discovery does not deploy components."
+          "Discover components from the declared sources without deploying them."
         )
         .foregroundStyle(.secondary)
         if session.isLoading { ProgressView("Resolving sources…") }

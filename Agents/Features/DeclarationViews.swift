@@ -29,7 +29,7 @@ struct DeclarationListView: View {
         Divider()
         VStack(alignment: .leading, spacing: 8) {
           Text("Skill Inventory").font(.headline)
-          Text("Managed skill deployments and their current disk status reported by Core.")
+          Text("Managed skill deployments and their current disk status.")
             .font(.caption).foregroundStyle(.secondary)
           Table(inventory) {
             TableColumn("Skill") { Text($0.id.name) }
@@ -46,7 +46,7 @@ struct DeclarationListView: View {
     .searchable(text: $model.search, prompt: "Search \(model.page.title.lowercased())")
     .toolbar {
       ToolbarItem {
-        Button(model.page == .sources ? "Draft Source…" : "Draft Component…", systemImage: "plus") {
+        Button(model.page == .sources ? "Add Source…" : "Add Component…", systemImage: "plus") {
           model.beginDraft(model.page == .sources ? .source : .component)
         }
       }
@@ -62,7 +62,7 @@ struct DeclarationListView: View {
         }
       }
       ToolbarItem {
-        Button("Draft Declaration…") { model.beginDraft(.component) }
+        Button("Edit Configuration…") { model.beginDraft(.defaults) }
       }
     }
   }
@@ -95,7 +95,7 @@ struct InspectorView: View {
             Button("Edit…") { model.editSelectedDeclaration() }.disabled(!model.canModify)
           }
           if ["Component", "Source", "Group", "Group Reference"].contains(item.category) {
-            Button("Draft Move or Removal…") {
+            Button("Move or Remove…") {
               model.beginDraft(.structure)
               model.manifestDraft?.structuralNode = item.id
               if ["Source", "Group"].contains(item.category) {
@@ -126,7 +126,6 @@ struct InspectorView: View {
       }
     }
     .formStyle(.grouped)
-    .textSelection(.enabled)
     .accessibilityIdentifier("workspace.inspector")
     .contextMenu {
       if let snapshot = model.snapshot, let digest = snapshot.document?.digest {
@@ -172,8 +171,7 @@ struct DeclarationField: View {
     case .string(let text):
       if ["Path", "URL", "Executable", "Search Path"].contains(name), !sensitive {
         LabeledContent(name) {
-          Text(text).lineLimit(1).truncationMode(.middle).help(text).accessibilityLabel(text)
-            .contextMenu { Button("Copy Value") { copyText(text) } }
+          CompactText(text: text)
         }
       } else {
         LabeledContent(name, value: sensitive ? "Value hidden" : text)
@@ -187,7 +185,7 @@ struct DeclarationField: View {
     case .requirement(let requirement):
       LabeledContent(name, value: DeclarationLabels.requirement(requirement))
     case .array(let values):
-      DisclosureGroup(name + " (\(values.count))") {
+      DetailsGroup(name + " (\(values.count))") {
         ForEach(Array(values.enumerated()), id: \.offset) { index, value in
           DeclarationField(
             name: String(index + 1), value: value, sensitive: sensitive,
@@ -195,7 +193,7 @@ struct DeclarationField: View {
         }
       }
     case .dictionary(let values):
-      DisclosureGroup(name) {
+      DetailsGroup(name) {
         ForEach(values.keys.sorted(), id: \.self) { key in
           if let value = values[key] {
             DeclarationField(
@@ -208,7 +206,7 @@ struct DeclarationField: View {
       if record.kind == "null" {
         LabeledContent(name, value: "Explicit null")
       } else {
-        DisclosureGroup(name + " · " + DeclarationLabels.kind(record.kind)) {
+        DetailsGroup(name + " · " + DeclarationLabels.kind(record.kind)) {
           RecordFields(record: record, sensitive: sensitive, pointer: pointer, authored: authored)
         }
       }

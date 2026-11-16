@@ -15,7 +15,7 @@ struct UpdateReviewView: View {
         case .preparing, .applying:
           ProgressView(
             session.stage == .applying ? "Preparing again and applying…" : "Preparing preview…")
-          Text("Waiting for the complete Core operation, including recovery and cleanup.")
+          Text("Waiting for the operation, including recovery and cleanup, to finish.")
             .foregroundStyle(.secondary)
         case .review:
           if let report = session.report {
@@ -49,7 +49,7 @@ struct UpdateReviewView: View {
               }
             }
             Text(
-              "Apply prepares again and checks this exact preview. Changed inputs require a new review."
+              "Changes to the inputs require another review before applying."
             )
             .font(.caption).foregroundStyle(.secondary)
           }
@@ -66,7 +66,7 @@ struct UpdateReviewView: View {
           Text(message.message).foregroundStyle(message.severity == .error ? .red : .secondary)
         }
         HStack {
-          Button(model.isApplying ? "Cancel Before Apply" : "Done") {
+          Button(model.isApplying ? "Cancel Before Apply" : session.closeTitle) {
             if model.isApplying {
               model.cancelQueuedOperations()
             } else {
@@ -85,7 +85,6 @@ struct UpdateReviewView: View {
       }.padding(24).frame(width: 680, height: 620)
         .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
         .interactiveDismissDisabled(model.isApplying)
-        .textSelection(.enabled)
     }
   }
 }
@@ -96,10 +95,9 @@ struct UpdateReportView: View {
   var body: some View {
     Form {
       Section("Proposed Changes") {
-        Text(report.hasChanges ? "Core has prepared changes for review." : "No changes are needed.")
-        if report.lockMissing { Text("Resolved state will be reconstructed.") }
+        Text(report.hasChanges ? "Review the changes below." : "No changes are needed.")
         ForEach(Array(report.skills.enumerated()), id: \.offset) { _, skill in
-          DisclosureGroup("Skill · " + skill.skill) {
+          DetailsGroup("Skill · " + skill.skill) {
             LabeledContent("Status", value: skill.changed ? "Changed" : "Unchanged")
             LabeledContent("Source") { CompactText(text: skill.sourceIdentity) }
             if let revision = skill.newRevision {
@@ -118,7 +116,7 @@ struct UpdateReportView: View {
           }
         }
         ForEach(Array(report.instructions.targets.enumerated()), id: \.offset) { _, target in
-          DisclosureGroup("Instructions · " + target.target) {
+          DetailsGroup("Instructions · " + target.target) {
             LabeledContent("Status", value: target.changed ? "Changed" : "Unchanged")
             LabeledContent("Location") { PathView(url: target.url, scope: scope) }
             LabeledContent(
@@ -130,7 +128,7 @@ struct UpdateReportView: View {
         }
         ForEach(report.instructions.changedPrompts, id: \.self) { Text("Named prompt · " + $0) }
         ForEach(Array(report.components.enumerated()), id: \.offset) { _, change in
-          DisclosureGroup(DeclarationLabels.kind(change.kind) + " · " + change.name) {
+          DetailsGroup(DeclarationLabels.kind(change.kind) + " · " + change.name) {
             LabeledContent("Status", value: change.changed ? "Changed" : "Unchanged")
             LabeledContent("Target") {
               PathView(url: URL(fileURLWithPath: change.path), scope: scope)
@@ -156,10 +154,16 @@ struct UpdateReportView: View {
                 value: String(permission.beforeOwner) + " → " + String(permission.afterOwner))
             }
             if let before = change.symbolicBefore {
-              DisclosureGroup("Before") { Text(before).font(.system(.body, design: .monospaced)) }
+              DetailsGroup("Before") {
+                Text(verbatim: before).font(.system(.body, design: .monospaced)).textSelection(
+                  .enabled)
+              }
             }
             if let after = change.symbolicAfter {
-              DisclosureGroup("After") { Text(after).font(.system(.body, design: .monospaced)) }
+              DetailsGroup("After") {
+                Text(verbatim: after).font(.system(.body, design: .monospaced)).textSelection(
+                  .enabled)
+              }
             }
             ForEach(Array(change.resources.enumerated()), id: \.offset) { _, resource in
               LabeledContent("Resource", value: resource.path)

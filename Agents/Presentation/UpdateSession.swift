@@ -51,6 +51,12 @@ struct UpdateSession: Identifiable {
   var requiredBindings: [String] {
     Array(Set(report?.components.flatMap(\.requiredBindings) ?? [])).sorted()
   }
+  var closeTitle: String {
+    switch stage {
+    case .preparing, .review, .stale, .applying: "Cancel"
+    case .finished, .failed, .cancelled: "Done"
+    }
+  }
   var bindingsReady: Bool { requiredBindings.allSatisfy { bindingInputs[$0] != nil } }
 }
 

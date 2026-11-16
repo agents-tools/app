@@ -185,7 +185,7 @@ struct OverviewView: View {
       } description: {
         Text("This scope has no declaration or resolved state. Browsing leaves it unchanged.")
       } actions: {
-        Button("Draft Configuration…") { model.beginDraft(.defaults) }
+        Button("Edit Configuration…") { model.beginDraft(.defaults) }
         Button("New Local Skill…") { model.beginCreation(.skill) }
         if model.scope.kind == .project {
           Button("New Local Instructions…") { model.beginCreation(.instructions) }
@@ -196,11 +196,11 @@ struct OverviewView: View {
       Form {
         if snapshot.inspection.recovery.pending {
           Section("Recovery Pending") {
-            Text(snapshot.inspection.recovery.diagnostic ?? "Core reports an incomplete operation.")
+            Text(snapshot.inspection.recovery.diagnostic ?? "An earlier operation is incomplete.")
             Button("Recover and Recheck…") { confirmsRecovery = true }.disabled(
               model.isApplying || model.isTerminating)
             Text(
-              "Core will attempt its existing recovery under the scope lock. No new changes are applied."
+              "Recover the incomplete operation before making further changes."
             )
             .font(.caption).foregroundStyle(.secondary)
           }
@@ -249,14 +249,13 @@ struct OverviewView: View {
         }
       }
       .formStyle(.grouped)
-      .textSelection(.enabled)
       .confirmationDialog(
         "Recover this configuration?", isPresented: $confirmsRecovery, titleVisibility: .visible
       ) {
         Button("Recover and Recheck") { model.recoverScope(in: snapshot.scope) }
       } message: {
         Text(
-          "Core will attempt recovery for " + snapshot.scope.root.path
+          "Recover the incomplete operation in " + snapshot.scope.root.path
             + ". No new configuration changes will be applied.")
       }
     }

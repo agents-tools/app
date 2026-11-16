@@ -20,6 +20,7 @@ struct UpdateFlowTests {
     try await reviewed(model) { model.previewDraft() }
     #expect(try fixture.entries() == before)
     #expect(model.updateSession?.report?.hasChanges == true)
+    #expect(model.updateSession?.closeTitle == "Cancel")
     model.confirmUpdate()
     try await idle(model)
     #expect(model.updateRecords.last?.terminal.disposition == .committed)
@@ -27,6 +28,7 @@ struct UpdateFlowTests {
     #expect(model.snapshot?.inspection.generation != nil)
     #expect(model.snapshot?.inspection.recovery.pending == false)
     #expect(model.updateSession?.terminal?.disposition == .committed)
+    #expect(model.updateSession?.closeTitle == "Done")
     #expect(model.manifestDraft != nil)
     model.closeUpdateReview()
     #expect(model.manifestDraft == nil)

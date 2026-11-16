@@ -10,26 +10,29 @@ struct ManifestDraftView: View {
   var body: some View {
     if let draft = model.manifestDraft {
       VStack(alignment: .leading, spacing: 16) {
-        Text("Declaration Draft").font(.headline)
+        Text(
+          draft.replacingNode == nil && draft.kind == .component
+            ? "Add Component" : "Edit Configuration"
+        ).font(.headline)
         LabeledContent("Scope") { PathView(url: draft.scope.root, scope: draft.scope) }
         if draft.scope != model.scope {
-          Text("This draft belongs to another scope. Return to that scope or close this draft.")
+          Text("These edits belong to another scope. Return to that scope or cancel.")
             .foregroundStyle(.secondary)
         }
         if draft.isStale {
           Text(
             draft.canReview(against: model.snapshot)
-              ? "Inputs changed. Your edits and exact document nodes are retained. Review again before applying."
-              : "The declaration changed outside this draft. Your edits are retained. Close this draft and create a new one from the refreshed declaration before applying."
+              ? "Inputs changed. Your edits are retained. Review again before applying."
+              : "Configuration changed outside this window. Your edits are retained. Cancel and reopen the refreshed configuration before applying."
           )
           .foregroundStyle(.secondary)
         }
         Text(
-          "Edit configuration here, then review Core’s proposed changes before applying."
+          "Review your changes before applying them."
         )
         .foregroundStyle(.secondary)
         Form {
-          Picker("Draft", selection: binding(\.kind)) {
+          Picker("Change", selection: binding(\.kind)) {
             Text("Default Agents").tag(ManifestDraft.Kind.defaults)
             Text("Source").tag(ManifestDraft.Kind.source)
             Text("Component").tag(ManifestDraft.Kind.component)
@@ -142,7 +145,7 @@ struct ManifestDraftView: View {
         .formStyle(.grouped)
         .disabled(model.isApplying)
         HStack {
-          Button("Done") { model.manifestDraft = nil }.keyboardShortcut(.cancelAction)
+          Button("Cancel") { model.manifestDraft = nil }.keyboardShortcut(.cancelAction)
           Spacer()
 
           Button("Review Changes…") { model.previewDraft() }

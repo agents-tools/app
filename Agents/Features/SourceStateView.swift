@@ -8,15 +8,13 @@ struct SourceStateView: View {
     Form {
       Section("Recorded Source State") {
         ForEach(snapshot.inspection.sources, id: \.record) { source in
-          DisclosureGroup {
+          DetailsGroup(source.identity) {
             LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
             LabeledContent("Revision") { CompactText(text: source.revision) }
             if let version = source.version { LabeledContent("Version", value: version) }
             if let location = source.location {
               LabeledContent("Location") { PathView(url: location, scope: snapshot.scope) }
             }
-          } label: {
-            Text(source.identity).lineLimit(1).truncationMode(.middle).help(source.identity)
           }
         }
         if snapshot.inspection.sources.isEmpty {
@@ -27,7 +25,7 @@ struct SourceStateView: View {
         if let watch = snapshot.watch {
           ForEach(watch.sources.keys.sorted(), id: \.self) { id in
             if let state = watch.sources[id] {
-              DisclosureGroup(id) {
+              DetailsGroup(id) {
                 switch state.seen {
                 case .revision(let revision): LabeledContent("Seen revision", value: revision)
                 case .artifacts(let artifacts):
@@ -50,6 +48,5 @@ struct SourceStateView: View {
       }
     }
     .formStyle(.grouped)
-    .textSelection(.enabled)
   }
 }

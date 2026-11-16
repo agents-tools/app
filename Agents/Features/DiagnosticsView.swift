@@ -20,7 +20,7 @@ struct DiagnosticsView: View {
       }
       Section {
         Text(
-          "Reports retain Core reads and operation outcomes in their original scope. Reading diagnostics does not change configuration."
+          "Reports retain reads and operation outcomes in their original scope. Reading diagnostics does not change configuration."
         )
         .font(.caption).foregroundStyle(.secondary)
       }

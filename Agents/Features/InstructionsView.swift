@@ -107,7 +107,7 @@ struct InstructionsView: View {
         }
       }
       ToolbarItem {
-        Button("Draft Instructions…") {
+        Button("Add Instructions…") {
           model.beginDraft(.component)
           model.manifestDraft?.component.kind = .instructions
         }
