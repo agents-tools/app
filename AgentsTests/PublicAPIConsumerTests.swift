@@ -64,9 +64,9 @@ struct PublicAPIConsumerTests {
         continue
       }
       #expect(description.snapshotID == captured.id)
-      #expect(result.readLocations == captured.readLocations)
-      #expect(!result.readLocations.isEmpty)
-      #expect(description.readLocations == captured.readLocations)
+      #expect(result.readDependencies == captured.readDependencies)
+      #expect(!result.readDependencies.isEmpty)
+      #expect(description.readDependencies == captured.readDependencies)
       let presentation = ConnectionDescriptionView(description: description)
       #expect(presentation.description == description)
       if component.name == "stdio" {
@@ -103,7 +103,9 @@ struct PublicAPIConsumerTests {
     #expect(values.isEmpty)
     let store = StateStore(scope: .project, environment: actions.environment(for: scope))
     #expect(
-      Set(result.readLocations) == Set([store.declarationURL, store.resolvedURL, store.watchURL]))
+      Set(result.readDependencies)
+        == Set(
+          [store.declarationURL, store.resolvedURL, store.watchURL].map(ReadDependency.subtree)))
     #expect(try f.entries() == before)
   }
 

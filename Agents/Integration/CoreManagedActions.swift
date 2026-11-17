@@ -28,7 +28,7 @@ extension CoreActions {
       }
       return .init(
         disposition: .completed, output: .creationDescription(request.id, description),
-        readLocations: description.readLocations)
+        readDependencies: description.readLocations.map(ReadDependency.subtree))
     } catch { return failure(error, scope: request.scope, title: "Review starter content") }
   }
 
@@ -57,7 +57,7 @@ extension CoreActions {
           source, scope: scope.installScope, environment: environment(for: scope))
       return .init(
         disposition: .completed, output: .watchPreview(id, preview),
-        readLocations: preview.readLocations)
+        readDependencies: preview.readLocations.map(ReadDependency.subtree))
     } catch { return failure(error, scope: scope, title: "Review subscription") }
   }
 
@@ -101,7 +101,7 @@ extension CoreActions {
         format: format, root: root, document: document)
       return .init(
         disposition: .completed, output: .sourceImport(id, value),
-        readLocations: value.readLocations)
+        readDependencies: value.readLocations.map(ReadDependency.subtree))
     } catch { return failure(error, scope: scope, title: "Inspect import") }
   }
 
@@ -123,7 +123,8 @@ extension CoreActions {
         locations = inspection.readLocations
       }
       return .init(
-        disposition: .completed, output: .watchStatus(id, values), readLocations: locations)
+        disposition: .completed, output: .watchStatus(id, values),
+        readDependencies: locations.map(ReadDependency.subtree))
     } catch { return failure(error, scope: scope, title: "Check subscriptions") }
   }
 
@@ -146,7 +147,7 @@ extension CoreActions {
       return .init(
         disposition: .completed,
         output: .connectionSnapshot(id, value, MCPConnectionOperations.describe(value)),
-        readLocations: value.readLocations)
+        readDependencies: value.readDependencies)
     } catch {
       // Preparation failures can include input paths; connection diagnostics expose only the typed boundary.
       return .init(

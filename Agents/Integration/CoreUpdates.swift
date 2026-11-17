@@ -11,7 +11,7 @@ extension CoreActions {
         environment: environment(for: scope))
       return CoreCompletion(
         disposition: .completed, output: .discovery(id, result),
-        readLocations: result.readLocations)
+        readDependencies: result.readLocations.map(ReadDependency.subtree))
     } catch {
       return CoreCompletion(
         disposition: .failed,
@@ -28,7 +28,7 @@ extension CoreActions {
         environment: environment(for: proposal.scope))
       return CoreCompletion(
         disposition: .completed, output: .updatePreview(proposal.id, report),
-        readLocations: report.readLocations)
+        readDependencies: report.readLocations.map(ReadDependency.subtree))
     } catch {
       return CoreCompletion(
         disposition: .failed,

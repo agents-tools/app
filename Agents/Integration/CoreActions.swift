@@ -24,7 +24,8 @@ struct CoreActions: Sendable {
         throw InstructionError.invalidUTF8
       }
       return CoreCompletion(
-        disposition: .completed, output: .prompt(request, text), readLocations: export.readLocations
+        disposition: .completed, output: .prompt(request, text),
+        readDependencies: export.readLocations.map(ReadDependency.subtree)
       )
     } catch {
       return CoreCompletion(
@@ -58,7 +59,8 @@ struct CoreActions: Sendable {
     }
     return CoreCompletion(
       disposition: .completed, diagnostics: diagnostics,
-      output: .mappings(request.id, mappings))
+      output: .mappings(request.id, mappings),
+      readDependencies: values.flatMap(\.readDependencies))
   }
 
   func environment(for scope: WorkspaceScope) -> RuntimeEnvironment {

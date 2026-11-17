@@ -1,3 +1,4 @@
+import AgentsCore
 import CoreServices
 import Foundation
 
@@ -7,7 +8,7 @@ final class ReadMonitor: @unchecked Sendable {
   private let queue = DispatchQueue(label: "tools.agents.app.read-events")
   private let queueKey = DispatchSpecificKey<UInt8>()
   private var stream: FSEventStreamRef?
-  private var paths: [String] = []
+  private var dependencies: [ReadDependency] = []
   private let changed: @Sendable () -> Void
 
   init(changed: @escaping @Sendable () -> Void) {
@@ -16,12 +17,20 @@ final class ReadMonitor: @unchecked Sendable {
   }
   deinit { stop() }
 
-  func replace(locations: [URL], since: FSEventStreamEventId) throws {
+  func replace(dependencies: [ReadDependency], since: FSEventStreamEventId) throws {
     try queue.sync {
       stopOnQueue()
-      paths = Array(Set(locations.map { $0.standardizedFileURL.path }))
+      self.dependencies = Array(
+        Set(
+          dependencies.map { dependency in
+            switch dependency {
+            case .entry(let url): ReadDependency.entry(url.standardizedFileURL)
+            case .subtree(let url): ReadDependency.subtree(url.standardizedFileURL)
+            }
+          }))
       var roots = Set<String>()
-      for path in paths {
+      for dependency in self.dependencies {
+        let path = dependency.url.path
         var directory = URL(fileURLWithPath: path).deletingLastPathComponent()
         var isDirectory: ObjCBool = false
         while !FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory)
@@ -53,7 +62,9 @@ final class ReadMonitor: @unchecked Sendable {
             flags[index]
             & FSEventStreamEventFlags(
               kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagRootChanged) != 0
-          if broad || owner.matches(String(cString: paths[index])) {
+          if broad
+            || ReadMonitor.matches(String(cString: paths[index]), dependencies: owner.dependencies)
+          {
             owner.changed()
             break
           }
@@ -90,10 +101,15 @@ final class ReadMonitor: @unchecked Sendable {
       FSEventStreamRelease(stream)
     }
     stream = nil
-    paths = []
+    dependencies = []
   }
-  private func matches(_ event: String) -> Bool {
-    paths.contains { Self.contains(event, in: $0) || Self.contains($0, in: event) }
+  static func matches(_ event: String, dependencies: [ReadDependency]) -> Bool {
+    dependencies.contains { dependency in
+      let path = dependency.url.standardizedFileURL.path
+      if contains(path, in: event) { return true }
+      if case .subtree = dependency { return contains(event, in: path) }
+      return false
+    }
   }
   private static func contains(_ child: String, in parent: String) -> Bool {
     child == parent || child.hasPrefix(parent == "/" ? "/" : parent + "/")

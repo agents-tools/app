@@ -60,12 +60,12 @@ struct CoreReader: Sendable {
           }
         }
       }
-      var readLocations = inspection.readLocations
+      var readDependencies = inspection.readLocations.map(ReadDependency.subtree)
       let ownInstructions: [OwnInstructionItem]? =
         scope.kind == .project
         ? optionalRead("Local instructions") {
           let own = try InstructionOperations.inspectOwnInstructions(environment: runtime)
-          readLocations += own.readLocations
+          readDependencies += own.readLocations.map(ReadDependency.subtree)
           return own.units.map { unit in
             OwnInstructionItem(
               id: .init(source: unit.record.source, name: unit.record.name, path: unit.record.path),
@@ -74,9 +74,11 @@ struct CoreReader: Sendable {
               authorFile: scope.root.appendingPathComponent(unit.record.path))
           }
         } : nil
-      let mappings = InstructionOperations.export(
+      let mappingValues = InstructionOperations.export(
         projectRoots: scope.kind == .project ? [scope.root] : [], environment: runtime
-      ).map { Self.mapping($0) }
+      )
+      readDependencies += mappingValues.flatMap(\.readDependencies)
+      let mappings = mappingValues.map { Self.mapping($0) }
       let defaults = inspection.declaration?.defaultAgents ?? Declaration().defaultAgents
       let snapshot = WorkspaceSnapshot(
         scope: scope, manifestURL: store.declarationURL, resolvedURL: store.resolvedURL,
@@ -86,7 +88,8 @@ struct CoreReader: Sendable {
         mappings: mappings, ownInstructions: ownInstructions, diagnostics: diagnostics,
         readAt: Date())
       return CoreCompletion(
-        disposition: .completed, snapshot: snapshot, diagnostics: [], readLocations: readLocations)
+        disposition: .completed, snapshot: snapshot, diagnostics: [],
+        readDependencies: readDependencies)
     } catch {
       return CoreCompletion(
         disposition: .failed, snapshot: nil,
@@ -123,12 +126,12 @@ struct CoreReader: Sendable {
     return [AppDiagnostic(scope: scope, operation: operation, message: message)]
   }
 
-  func stateLocations(scope: WorkspaceScope) -> [URL] {
+  func stateDependencies(scope: WorkspaceScope) -> [ReadDependency] {
     let store = StateStore(
       scope: scope.installScope,
       environment: .init(
         projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment))
-    return [store.declarationURL, store.resolvedURL, store.watchURL]
+    return [store.declarationURL, store.resolvedURL, store.watchURL].map(ReadDependency.subtree)
   }
 
   static func sectionItems(_ document: DeclarationDocument) -> [DeclarationItem] {

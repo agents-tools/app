@@ -1,3 +1,4 @@
+import AgentsCore
 import Foundation
 
 /// Cancellation of queued work never skips its terminal delivery. Running synchronous Core work
@@ -25,19 +26,19 @@ struct CoreCompletion: Sendable {
   let diagnostics: [AppDiagnostic]
   let output: ContentOutput?
   let updateTerminal: UpdateTerminal?
-  let readLocations: [URL]
+  let readDependencies: [ReadDependency]
 
   init(
     disposition: Disposition, snapshot: WorkspaceSnapshot? = nil,
     diagnostics: [AppDiagnostic] = [], output: ContentOutput? = nil,
-    updateTerminal: UpdateTerminal? = nil, readLocations: [URL] = []
+    updateTerminal: UpdateTerminal? = nil, readDependencies: [ReadDependency] = []
   ) {
     self.disposition = disposition
     self.snapshot = snapshot
     self.diagnostics = diagnostics
     self.output = output
     self.updateTerminal = updateTerminal
-    self.readLocations = readLocations
+    self.readDependencies = readDependencies
   }
 
   static var cancelled: Self { Self(disposition: .cancelled, snapshot: nil, diagnostics: []) }

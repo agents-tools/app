@@ -54,7 +54,7 @@ final class AppModel {
       MCPConnectionTestResult
   @ObservationIgnored private var asyncTasks: [UUID: Task<Void, Never>] = [:]
   @ObservationIgnored private var readMonitor: ReadMonitor?
-  private var supplementalReadLocations: Set<URL> = []
+  private var supplementalReadDependencies: Set<ReadDependency> = []
   private var monitoredScope: WorkspaceScope?
   private var readBoundary: FSEventStreamEventId = 0
   private(set) var readsStale = false
@@ -155,7 +155,7 @@ final class AppModel {
   func select(_ scope: WorkspaceScope) {
     guard self.scope != scope, !isTerminating, !isApplying else { return }
     stopMonitoring()
-    supplementalReadLocations = []
+    supplementalReadDependencies = []
     cancelAssistance()
     cancelConnection()
     self.scope = scope
@@ -190,7 +190,7 @@ final class AppModel {
     readsStale = true
     if snapshot?.scope != scope { loadState = .loading }
     readBoundary = FSEventsGetCurrentEventId()
-    monitor(reader.stateLocations(scope: scope), since: readBoundary)
+    monitor(reader.stateDependencies(scope: scope), since: readBoundary)
     let scope = scope
     let reader = reader
     startOperation(
@@ -630,7 +630,7 @@ final class AppModel {
     }
   }
 
-  private func monitor(_ locations: [URL], since: FSEventStreamEventId) {
+  private func monitor(_ dependencies: [ReadDependency], since: FSEventStreamEventId) {
     guard !isTerminating else { return }
     if readMonitor == nil || monitoredScope != scope {
       stopMonitoring()
@@ -642,7 +642,7 @@ final class AppModel {
     }
     do {
       try readMonitor?.replace(
-        locations: Array(Set(locations).union(supplementalReadLocations)), since: since)
+        dependencies: Array(Set(dependencies).union(supplementalReadDependencies)), since: since)
     } catch {
       diagnostics.append(
         .init(
@@ -735,10 +735,11 @@ final class AppModel {
     operations.removeValue(forKey: id)
     let currentSelection = operation.selectionScope == scope && operation.generation == generation
     finishContent(operation, result: result, currentSelection: currentSelection)
-    if currentSelection && !result.readLocations.isEmpty {
-      supplementalReadLocations.formUnion(result.readLocations)
+    if currentSelection && !result.readDependencies.isEmpty {
+      supplementalReadDependencies.formUnion(result.readDependencies)
       monitor(
-        snapshot?.inspection.readLocations ?? reader.stateLocations(scope: scope),
+        snapshot?.inspection.readLocations.map(ReadDependency.subtree)
+          ?? reader.stateDependencies(scope: scope),
         since: readBoundary)
     }
     if currentSelection {
@@ -748,7 +749,7 @@ final class AppModel {
         if let selectedItem, !snapshot.items.contains(where: { $0.id == selectedItem }) {
           self.selectedItem = nil
         }
-        monitor(snapshot.inspection.readLocations, since: readBoundary)
+        monitor(snapshot.inspection.readLocations.map(ReadDependency.subtree), since: readBoundary)
       } else if case .workspace = operation.purpose, case .failed = result.disposition {
         loadState = .failed(result.diagnostics)
       } else if case .workspace = operation.purpose, case .cancelled = result.disposition {
@@ -767,7 +768,8 @@ final class AppModel {
       if !mayQuit {
         isTerminating = false
         monitor(
-          snapshot?.inspection.readLocations ?? reader.stateLocations(scope: scope),
+          snapshot?.inspection.readLocations.map(ReadDependency.subtree)
+            ?? reader.stateDependencies(scope: scope),
           since: readBoundary)
       }
       terminationReply?(mayQuit)

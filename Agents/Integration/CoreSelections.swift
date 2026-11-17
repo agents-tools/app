@@ -30,7 +30,7 @@ extension CoreActions {
       return .init(
         disposition: .completed,
         output: .catalogRequest(session.id, discovery?.updateRequest()),
-        readLocations: discovery?.readLocations ?? [])
+        readDependencies: (discovery?.readLocations ?? []).map(ReadDependency.subtree))
     } catch { return failure(error, scope: session.scope, title: "Select source content") }
   }
 
@@ -43,7 +43,7 @@ extension CoreActions {
       let value = try inspection.resolving(choices: choices, inputs: session.inputResolutions)
       return .init(
         disposition: .completed, output: .sourceImport(session.id, value),
-        readLocations: value.readLocations)
+        readDependencies: value.readLocations.map(ReadDependency.subtree))
     } catch { return failure(error, scope: session.scope, title: "Resolve import inputs") }
   }
 }
