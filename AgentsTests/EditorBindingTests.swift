@@ -55,6 +55,51 @@ struct EditorBindingTests {
     #expect(executable.arguments == [expected[0], expected[2], ""])
   }
 
+  @Test func optionalNativeCoordinatesSurviveBindingsDraftLoadAndCorePreparation() throws {
+    let root = URL(fileURLWithPath: "/fixture")
+    var skill = SkillDeclaration(select: .all)
+    var run = ExecutableDeclaration(executable: "bin/server")
+    #expect(skill.path == nil && run.executableSource == nil)
+    var skillEditor = SkillDraftEditor(value: Binding(get: { skill }, set: { skill = $0 }))
+    var runEditor = ExecutableEditor(value: Binding(get: { run }, set: { run = $0 }))
+    skillEditor.value.path = "skills/helper"
+    runEditor.value.executableSource = "tools"
+    runEditor.value.workingDirectory = .init(path: "cwd", source: "workspace")
+    runEditor.arguments.wrappedValue = ["", "a\nb"]
+    let values: [ComponentDeclaration] = [
+      .skills(source: "tools", skill),
+      .mcpServer(name: "review", transport: .stdio(run)),
+      .hook(name: "before", event: .beforeTool, run: run),
+      .lspServer(name: "swift", run: run, languages: [".swift": "swift"]),
+    ]
+    let empty = try DeclarationDocument(
+      bytes: Array("version: 1\n".utf8), identity: .init("native-coordinates"))
+    let initial = try empty.preparing(
+      [
+        .upsertSource(.init(name: "tools", source: .init(kind: .local, location: "./tools"))),
+        .upsertSource(
+          .init(name: "workspace", source: .init(kind: .local, location: "./workspace"))),
+      ] + values.map { .insertComponent($0, into: .root, at: .last) })
+    let document = try DeclarationDocument(
+      bytes: initial.bytes, identity: .init("native-coordinates"))
+    let declaration = Declaration(components: values)
+    for (index, component) in values.enumerated() {
+      #expect(ComponentDraft(component).value == component)
+      let item = try #require(
+        CoreReader.items(document).first { $0.pointer == "/components/\(index)" })
+      var draft = ManifestDraft(scope: .init(kind: .project, root: root), document: document)
+      draft.load(item, from: declaration)
+      #expect(draft.component.value == component)
+      let prepared = try document.preparing(draft.edits(home: root))
+      #expect(prepared.expectedDeclaration == document.declaration)
+    }
+    skillEditor.value.path = nil
+    runEditor.value.executableSource = nil
+    #expect(skill.path == nil && run.executableSource == nil)
+    #expect(run.workingDirectory?.source == "workspace")
+    #expect(DeclarationLabels.field("executableSource") == "Executable Source Alias")
+  }
+
   @Test func nativeObjectControlAllowsVisibleEmptyKeysAndRefusesDuplicateOverwrite() throws {
     var value = NativeValue.object([:])
     let editor = NativeValueEditor(value: Binding(get: { value }, set: { value = $0 }))

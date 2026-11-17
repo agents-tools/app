@@ -75,6 +75,9 @@ struct ExecutableEditor: View {
   var arguments: Binding<[String]> { $value.arguments }
   var body: some View {
     TextField("Executable", text: $value.executable)
+    OptionalText(title: "executable source alias", value: $value.executableSource)
+    Text("Selects the executable’s source independently of the working directory.")
+      .font(.caption).foregroundStyle(.secondary)
     ArgumentsEditor(values: arguments)
     DisclosureGroup("Environment Bindings") { BindingDictionaryEditor(values: $value.environment) }
     Toggle(

@@ -59,6 +59,7 @@ enum DeclarationLabels {
     case "condition": "Conditions"
     case "native": "Client Options"
     case "workingDirectory": "Working Directory"
+    case "executableSource": "Executable Source Alias"
     case "chatGPT": "Named Prompts"
     case "source": "Source"
     case "select": "Selection"

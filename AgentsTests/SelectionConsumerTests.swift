@@ -11,10 +11,13 @@ struct SelectionConsumerTests {
   @Test func explicitSourceChoiceIsPureEmptyIsNoOpAndReviewedAdditionApplies() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
+    let boundary = try FixtureEventBoundary(root: f.root)
+    defer { boundary.stop() }
     let producer = f.root.appendingPathComponent("producer")
+    let input = producer.appendingPathComponent("instructions/style.md")
     try write(
-      "---\ndescription: Team style\n---\n# Team\nUse a consistent style.\n",
-      at: producer.appendingPathComponent("instructions/style.md"))
+      "---\ndescription: Team style\n---\n# Team\nUse a consistent style.\n", at: input)
+    try await boundary.settle(creation: input, root: f.root)
     let model = await loaded(f)
     defer { _ = model.requestTermination() }
     let before = try f.entries()

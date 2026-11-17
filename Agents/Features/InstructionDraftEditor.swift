@@ -38,6 +38,8 @@ struct InstructionDraftEditor: View {
 struct SkillDraftEditor: View {
   @Binding var value: SkillDeclaration
   var body: some View {
+    OptionalText(title: "skill search path", value: $value.path)
+    Text("Relative to the source’s discovery root.").font(.caption).foregroundStyle(.secondary)
     Toggle(
       "Select all skills",
       isOn: Binding(
