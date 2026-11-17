@@ -81,7 +81,14 @@ func chooseProject(for model: AppModel) {
   panel.canCreateDirectories = false
   panel.message =
     "Adds a directory to this app’s project list. Configuration files are not created or changed."
-  if panel.runModal() == .OK, let url = panel.url { model.addProject(url) }
+  let completion: (NSApplication.ModalResponse) -> Void = { [panel] response in
+    if response == .OK, let url = panel.url { model.addProject(url) }
+  }
+  if let window = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow {
+    panel.beginSheetModal(for: window, completionHandler: completion)
+  } else {
+    panel.begin(completionHandler: completion)
+  }
 }
 
 struct LaunchInput {
