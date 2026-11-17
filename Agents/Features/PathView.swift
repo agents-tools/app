@@ -7,6 +7,7 @@ struct PathView: View {
 
   var body: some View {
     Text(displayPath)
+      .textSelection(.disabled)
       .lineLimit(1)
       .truncationMode(.middle)
       .help(url.path)
