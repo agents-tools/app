@@ -9,7 +9,9 @@ extension CoreActions {
       let result = try UpdateOperations.discover(
         declaration, scope: scope.installScope,
         environment: environment(for: scope))
-      return CoreCompletion(disposition: .completed, output: .discovery(id, result))
+      return CoreCompletion(
+        disposition: .completed, output: .discovery(id, result),
+        readLocations: result.readLocations)
     } catch {
       return CoreCompletion(
         disposition: .failed,

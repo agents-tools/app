@@ -88,8 +88,38 @@ struct ImportView: View {
             }
           }
           if let file = session.file { PathView(url: file) }
+          Button("Choose Input Directory…") {
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = false
+            panel.message =
+              "Choose the authoring root containing the input file and its relative resources."
+            if panel.runModal() == .OK {
+              model.importSession?.inputRoot = panel.url
+              model.importSession?.inspection = nil
+            }
+          }
+          if let root = session.inputRoot {
+            LabeledContent("Input directory") { PathView(url: root) }
+            Button("Use Input File’s Directory") {
+              model.importSession?.inputRoot = nil
+              model.importSession?.inspection = nil
+            }
+          } else {
+            Text("Relative resources use the input file’s directory.").font(.caption)
+              .foregroundStyle(.secondary)
+          }
+          ImportResolutionEditor(
+            value: Binding(
+              get: { model.importSession?.resolution ?? .init() },
+              set: {
+                model.importSession?.resolution = $0
+                model.importSession?.inspection = nil
+              }))
           Button("Inspect Import") { model.inspectImport() }.disabled(
-            session.file == nil || session.format.isEmpty || session.busy || !model.canModify)
+            session.file == nil || session.format.isEmpty || session.resolution.hasDuplicateKeys
+              || session.busy || !model.canModify)
           if let value = session.inspection {
             LabeledContent("Format", value: value.format)
             Text(value.specificationStatus).foregroundStyle(.secondary)
@@ -128,6 +158,32 @@ struct ImportView: View {
             }
             ForEach(Array(value.diagnostics.enumerated()), id: \.offset) { _, issue in
               Text(issue.message)
+            }
+            ForEach(Array(value.selections.enumerated()), id: \.offset) { _, selection in
+              DetailsGroup("Producer selection · " + selection.kind) {
+                if let source = selection.sourceAlias { LabeledContent("Source", value: source) }
+                ForEach(Array(selection.values.enumerated()), id: \.offset) { _, name in
+                  CompactText(text: name)
+                }
+                Text(
+                  selection.automatic
+                    ? "Producer selects automatically." : "Producer selects explicitly.")
+                if selection.developmentOnly { Text("Development only") }
+              }
+            }
+            ForEach(Array(value.orderedSources.enumerated()), id: \.offset) { _, source in
+              DetailsGroup("Ordered source · " + source.alias) {
+                LabeledContent("Identity") { CompactText(text: source.identity) }
+                LabeledContent("Transport", value: source.transport)
+                LabeledContent("Skills path") { CompactText(text: source.skillsPath) }
+                LabeledContent("Rules path") { CompactText(text: source.rulesPath) }
+                if let names = source.skills {
+                  LabeledContent("Skills", value: names.joined(separator: ", "))
+                }
+                if let names = source.rules {
+                  LabeledContent("Rules", value: names.joined(separator: ", "))
+                }
+              }
             }
             ForEach(Array(value.bindings.enumerated()), id: \.offset) { _, binding in
               Text(binding.reason)

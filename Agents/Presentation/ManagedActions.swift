@@ -18,7 +18,9 @@ struct ImportSession: Identifiable {
   let id = UUID()
   let scope: WorkspaceScope
   var file: URL?
+  var inputRoot: URL?
   var format = ""
+  var resolution = ImportResolution()
   var inspection: SourceImportInspection?
   var busy = false
   var stale = false
@@ -41,4 +43,35 @@ struct ConnectionSession: Identifiable {
   var bindingsReady: Bool {
     description?.requiredBindings.allSatisfy { inputs[$0] != nil } == true
   }
+}
+
+struct ImportResolution: Equatable, Sendable {
+  var selection: [String]?
+  var sources: [ImportSourceInput] = []
+  var skills: [ImportSkillInput] = []
+  var hasDuplicateKeys: Bool {
+    Set(sources.map(\.key)).count != sources.count
+      || Set(skills.map(\.name)).count != skills.count
+  }
+}
+
+struct ImportSourceInput: Equatable, Sendable {
+  var key = ""
+  var declaration = SourceDeclaration(kind: .local, location: "")
+}
+
+struct ImportSkillInput: Equatable, Sendable {
+  var name = ""
+  var path = ""
+}
+
+struct WatchStatusSession: Identifiable {
+  let id = UUID()
+  let scope: WorkspaceScope
+  let source: String?
+  var busy = true
+  var stale = false
+  var hasResult = false
+  var statuses: [WatchStatus] = []
+  var messages: [AppDiagnostic] = []
 }

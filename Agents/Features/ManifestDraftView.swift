@@ -45,14 +45,20 @@ struct ManifestDraftView: View {
           case .defaults: AgentsEditor(value: binding(\.defaultAgents))
           case .source:
             TextField("Alias", text: binding(\.sourceAlias))
-            Picker("Source", selection: binding(\.sourceKind)) {
-              Text("Local Directory").tag(SourceKind.local)
-              Text("Git Repository").tag(SourceKind.git)
-              Text("Skill Index").tag(SourceKind.wellKnown)
-            }
-            TextField("Location", text: binding(\.sourceLocation))
-            OptionalText(title: "search path", value: binding(\.sourcePath))
-            RequirementEditor(value: binding(\.requirement))
+            SourceDeclarationEditor(
+              value: Binding(
+                get: {
+                  let current = model.manifestDraft ?? draft
+                  return .init(
+                    kind: current.sourceKind, location: current.sourceLocation,
+                    requirement: current.requirement, path: current.sourcePath)
+                },
+                set: {
+                  model.manifestDraft?.sourceKind = $0.kind
+                  model.manifestDraft?.sourceLocation = $0.location
+                  model.manifestDraft?.requirement = $0.requirement
+                  model.manifestDraft?.sourcePath = $0.path
+                }))
           case .component:
             ComponentDraftEditor(value: binding(\.component))
             if draft.replacingNode == nil, let document = draft.document {

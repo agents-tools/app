@@ -29,8 +29,10 @@ struct DiscoveryView: View {
             }
           }
           if discovery.components.isEmpty { Text("No components matched the current declaration.") }
+          if session.stale { Text("Source inputs changed. Discover again before reviewing.") }
+          Button("Discover Again") { model.discoverComponents() }.disabled(!model.canModify)
           Button("Review Discovered Update…") { model.previewDiscovery() }
-            .disabled(session.scope != model.scope || !model.canModify)
+            .disabled(session.stale || session.scope != model.scope || !model.canModify)
         }
         ForEach(session.messages) { Text($0.message) }
         Spacer()

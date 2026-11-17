@@ -67,14 +67,50 @@ extension CoreActions {
     }
   }
 
-  func inspectImport(id: UUID, scope: WorkspaceScope, file: URL, format: String) -> CoreCompletion {
+  func inspectImport(
+    id: UUID, scope: WorkspaceScope, file: URL, format: String, inputRoot: URL? = nil,
+    resolution: ImportResolution = .init()
+  ) -> CoreCompletion {
     do {
+      guard !resolution.hasDuplicateKeys else {
+        throw CoreError.invalidState("Each source key and installed skill name must be unique.")
+      }
+      let root = inputRoot ?? file.deletingLastPathComponent()
+      let rootParts = root.standardizedFileURL.pathComponents
+      let fileParts = file.standardizedFileURL.pathComponents
+      guard fileParts.count > rootParts.count, fileParts.starts(with: rootParts) else {
+        throw CoreError.invalidSource("Choose an input file inside the selected input directory.")
+      }
+      let document = fileParts.dropFirst(rootParts.count).joined(separator: "/")
       let value = try SourceImportOperations.inspect(
-        format: format, root: file.deletingLastPathComponent(), document: file.lastPathComponent)
+        format: format, root: root, document: document,
+        selection: resolution.selection.map(Set.init),
+        sourceDeclarations: Dictionary(
+          uniqueKeysWithValues: resolution.sources.map { ($0.key, $0.declaration) }),
+        installedSkills: Dictionary(
+          uniqueKeysWithValues: resolution.skills.map { ($0.name, $0.path) }))
       return .init(
         disposition: .completed, output: .sourceImport(id, value),
         readLocations: value.readLocations)
     } catch { return failure(error, scope: scope, title: "Inspect import") }
+  }
+
+  func watchStatus(id: UUID, scope: WorkspaceScope, source: String?) -> CoreCompletion {
+    do {
+      try ProjectRootAccess.requireAvailable(scope)
+      let operations = SkillOperations.watchOperations()
+      let values: [WatchStatus]
+      if let source {
+        values = [
+          try operations.diff(
+            source, scope: scope.installScope, environment: environment(for: scope))
+        ]
+      } else {
+        values = try operations.status(
+          scope: scope.installScope, environment: environment(for: scope))
+      }
+      return .init(disposition: .completed, output: .watchStatus(id, values))
+    } catch { return failure(error, scope: scope, title: "Check subscriptions") }
   }
 
   func importRequest(

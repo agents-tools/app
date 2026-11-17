@@ -71,6 +71,7 @@ struct DiscoverySession: Identifiable {
   let id: UUID
   let scope: WorkspaceScope
   var isLoading = true
+  var stale = false
   var discovery: ComponentDiscovery?
   var messages: [AppDiagnostic] = []
 }

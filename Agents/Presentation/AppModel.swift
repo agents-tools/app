@@ -13,6 +13,7 @@ final class AppModel {
     case workspace
     case creation(UUID)
     case creationPreview(UUID)
+    case watchStatus(UUID)
     case watchPreview(UUID)
     case watchApply(UUID)
     case sourceImport(UUID)
@@ -76,6 +77,7 @@ final class AppModel {
   var updateSession: UpdateSession?
   var discoverySession: DiscoverySession?
   var watchSession: WatchSession?
+  var watchStatusSession: WatchStatusSession?
   var importSession: ImportSession?
   var connectionSession: ConnectionSession?
   private(set) var updateRecords: [UpdateRecord] = []
@@ -289,7 +291,7 @@ final class AppModel {
 
   func previewDiscovery() {
     guard let session = discoverySession, session.scope == scope,
-      let discovery = session.discovery, canModify
+      let discovery = session.discovery, !session.stale, canModify
     else { return }
     discoverySession = nil
     previewUpdate(title: "Apply Discovered Components", request: discovery.updateRequest())
@@ -393,6 +395,21 @@ final class AppModel {
         creationSession?.stage = .confirmation
       } else {
         creationSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
+      }
+    case .watchStatus(let id) where watchStatusSession?.id == id:
+      watchStatusSession?.busy = false
+      watchStatusSession?.messages = result.diagnostics
+      if currentSelection, case .watchStatus(_, let values) = result.output {
+        watchStatusSession?.statuses = values
+        watchStatusSession?.hasResult = true
+        watchStatusSession?.stale = false
+      } else if result.disposition == .cancelled {
+        watchStatusSession?.messages.append(
+          .init(
+            scope: operation.scope, operation: "Check subscriptions",
+            severity: .information, message: "Check was cancelled before results were available."))
+      } else if !currentSelection {
+        watchStatusSession?.stale = true
       }
     case .watchPreview(let id) where watchSession?.id == id:
       watchSession?.busy = false
@@ -588,6 +605,8 @@ final class AppModel {
     readsStale = true
     manifestDraft?.isStale = true
     creationSession?.stale = true
+    watchStatusSession?.stale = true
+    discoverySession?.stale = true
     watchSession?.stale = true
     importSession?.stale = true
     connectionSession?.stale = true
@@ -716,6 +735,16 @@ extension AppModel {
     }
   }
 
+  func checkSubscriptions(source: String? = nil) {
+    guard canModify else { return }
+    let session = WatchStatusSession(scope: scope, source: source)
+    watchStatusSession = session
+    let actions = actions
+    startOperation(title: "Check subscriptions", scope: scope, purpose: .watchStatus(session.id)) {
+      actions.watchStatus(id: session.id, scope: session.scope, source: source)
+    }
+  }
+
   func beginWatch(source: String = "", removing: Bool = false) {
     guard canModify else { return }
     watchSession = .init(scope: scope, source: source, removing: removing)
@@ -753,14 +782,16 @@ extension AppModel {
 
   func inspectImport() {
     guard canModify, let session = importSession, session.scope == scope, let file = session.file,
-      !session.busy
+      !session.busy, !session.resolution.hasDuplicateKeys
     else { return }
     importSession?.busy = true
     importSession?.inspection = nil
     let actions = actions
     startOperation(title: "Inspect import", scope: scope, purpose: .sourceImport(session.id)) {
       actions.inspectImport(
-        id: session.id, scope: session.scope, file: file, format: session.format)
+        id: session.id, scope: session.scope, file: file, format: session.format,
+        inputRoot: session.inputRoot,
+        resolution: session.resolution)
     }
   }
 

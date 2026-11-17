@@ -25,6 +25,8 @@ struct SourceStateView: View {
         }
       }
       Section("Subscription Baselines") {
+        Button("Check Updates…") { model.checkSubscriptions() }
+          .disabled(!model.canModify)
         if let watch = snapshot.watch {
           ForEach(watch.sources.keys.sorted(), id: \.self) { id in
             if let state = watch.sources[id] {
@@ -40,6 +42,8 @@ struct SourceStateView: View {
             }
           }
           ForEach(snapshot.inspection.declaration?.watch ?? [], id: \.self) { alias in
+            Button("View Changes for “" + alias + "”…") { model.checkSubscriptions(source: alias) }
+              .disabled(!model.canModify)
             Button("Unsubscribe “" + alias + "”…") {
               model.beginWatch(source: alias, removing: true)
             }

@@ -82,6 +82,7 @@ struct WorkspaceView: View {
         set: { model.updateSession = $0 })
     ) { _ in UpdateReviewView(model: model) }
     .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
+    .sheet(item: $model.watchStatusSession) { _ in WatchStatusView(model: model) }
     .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
     .sheet(item: $model.importSession) { _ in ImportView(model: model) }
     .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
