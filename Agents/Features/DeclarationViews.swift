@@ -23,7 +23,7 @@ struct DeclarationListView: View {
         .accessibilityIdentifier("declaration.table")
       }
       if model.page == .sources, let snapshot = model.snapshot {
-        SourceStateView(snapshot: snapshot).frame(maxHeight: 260)
+        SourceStateView(snapshot: snapshot, model: model).frame(maxHeight: 260)
       }
       if model.page == .components, let inventory = model.snapshot?.inventory, !inventory.isEmpty {
         Divider()
@@ -87,7 +87,11 @@ struct InspectorView: View {
           Section("Connection") {
             Text("Viewing this declaration does not start a process or connect to a server.")
               .foregroundStyle(.secondary)
-            Button("Test Connection…") { model.presentedIntent = .testConnection }
+            ForEach(
+              model.availableComponentSelection.filter { $0.kind == .mcpServer }, id: \.record
+            ) { component in
+              Button("Test Managed “" + component.name + "”…") { model.beginConnection(component) }
+            }
           }
         }
         Section {

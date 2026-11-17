@@ -24,7 +24,9 @@ extension CoreActions {
       let report = try UpdateOperations.preview(
         proposal.request, scope: proposal.scope.installScope,
         environment: environment(for: proposal.scope))
-      return CoreCompletion(disposition: .completed, output: .updatePreview(proposal.id, report))
+      return CoreCompletion(
+        disposition: .completed, output: .updatePreview(proposal.id, report),
+        readLocations: report.readLocations)
     } catch {
       return CoreCompletion(
         disposition: .failed,
@@ -92,7 +94,7 @@ extension CoreActions {
   }
 }
 
-private struct EphemeralBindings: RuntimeBindingProvider, CustomStringConvertible,
+struct EphemeralBindings: RuntimeBindingProvider, CustomStringConvertible,
   CustomDebugStringConvertible, CustomReflectable
 {
   let values: [String: Data]

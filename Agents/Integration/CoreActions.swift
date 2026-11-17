@@ -10,52 +10,22 @@ struct CoreActions: Sendable {
   let processEnvironment: [String: String]
 
   func create(_ request: CreationRequest) -> CoreCompletion {
-    do {
-      try ProjectRootAccess.requireAvailable(request.scope)
-      if request.kind == .instructions, request.scope.kind != .project {
-        throw CoreError.unsupported("Local instructions can only be created in a project.")
-      }
-    } catch {
-      return CoreCompletion(
-        disposition: .failed,
-        diagnostics: CoreReader.diagnostics(
-          error, scope: request.scope, operation: "Create " + request.kind.title))
-    }
-    do {
-      let url: URL
-      switch request.kind {
-      case .skill:
-        url = try SkillOperations.initializeSkill(
-          named: request.name.isEmpty ? nil : request.name, directory: request.directory)
-      case .instructions:
-        url = try InstructionOperations.initializeInstructions(
-          named: request.name, environment: environment(for: request.scope))
-      }
-      return CoreCompletion(
-        disposition: .completed,
-        diagnostics: [
-          AppDiagnostic(
-            scope: request.scope, operation: "Create " + request.kind.title,
-            severity: .information, message: "Created starter content.", path: url.path)
-        ], output: .created(request, url))
-    } catch {
-      return CoreCompletion(
-        disposition: .failed,
-        diagnostics: CoreReader.diagnostics(
-          error, scope: request.scope,
-          operation: "Create " + request.kind.title), output: .creationUnconfirmed(request))
-    }
+    let described = describeCreation(request)
+    guard case .creationDescription(_, let description) = described.output else { return described }
+    return initialize(description, request: request)
   }
 
   func render(_ request: PromptRequest) -> CoreCompletion {
     do {
-      let bytes = try InstructionOperations.renderChatGPT(
+      let export = try InstructionOperations.inspectChatGPTExport(
         prompt: request.name, scope: request.scope.installScope,
         environment: environment(for: request.scope))
-      guard let text = String(data: bytes, encoding: .utf8) else {
+      guard let text = String(data: export.bytes, encoding: .utf8) else {
         throw InstructionError.invalidUTF8
       }
-      return CoreCompletion(disposition: .completed, output: .prompt(request, text))
+      return CoreCompletion(
+        disposition: .completed, output: .prompt(request, text), readLocations: export.readLocations
+      )
     } catch {
       return CoreCompletion(
         disposition: .failed,

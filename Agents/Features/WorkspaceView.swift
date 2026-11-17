@@ -82,23 +82,15 @@ struct WorkspaceView: View {
         set: { model.updateSession = $0 })
     ) { _ in UpdateReviewView(model: model) }
     .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
+    .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
+    .sheet(item: $model.importSession) { _ in ImportView(model: model) }
+    .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
     .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
     .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
     .sheet(item: $model.creationSession) { _ in CreationView(model: model) }
     .sheet(item: $model.promptSession) { _ in PromptPreviewView(model: model) }
-    .sheet(item: $model.presentedIntent) { intent in
-      VStack(alignment: .leading, spacing: 16) {
-        Text(intent.title).font(.headline)
-        Text(intent.unavailableReason).foregroundStyle(.secondary)
-        HStack {
-          Spacer()
-          Button("Done") { model.presentedIntent = nil }.keyboardShortcut(.defaultAction)
-        }
-      }
-      .padding(24)
-      .frame(width: 420)
-    }
+
   }
 
   @ViewBuilder private var workspace: some View {
@@ -190,7 +182,7 @@ struct OverviewView: View {
         if model.scope.kind == .project {
           Button("New Local Instructions…") { model.beginCreation(.instructions) }
         }
-        Button("Import…") { model.presentedIntent = .importConfiguration }
+        Button("Import…") { model.beginImport() }
       }
     } else {
       Form {

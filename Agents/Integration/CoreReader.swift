@@ -60,10 +60,13 @@ struct CoreReader: Sendable {
           }
         }
       }
+      var readLocations = inspection.readLocations
       let ownInstructions: [OwnInstructionItem]? =
         scope.kind == .project
         ? optionalRead("Local instructions") {
-          try InstructionOperations.listOwn(environment: runtime).map { unit in
+          let own = try InstructionOperations.inspectOwnInstructions(environment: runtime)
+          readLocations += own.readLocations
+          return own.units.map { unit in
             OwnInstructionItem(
               id: .init(source: unit.record.source, name: unit.record.name, path: unit.record.path),
               heading: unit.section.heading, description: unit.section.description,
@@ -82,7 +85,8 @@ struct CoreReader: Sendable {
         watch: inspection.watch,
         mappings: mappings, ownInstructions: ownInstructions, diagnostics: diagnostics,
         readAt: Date())
-      return CoreCompletion(disposition: .completed, snapshot: snapshot, diagnostics: [])
+      return CoreCompletion(
+        disposition: .completed, snapshot: snapshot, diagnostics: [], readLocations: readLocations)
     } catch {
       return CoreCompletion(
         disposition: .failed, snapshot: nil,

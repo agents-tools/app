@@ -3,10 +3,13 @@ import SwiftUI
 
 struct SourceStateView: View {
   let snapshot: WorkspaceSnapshot
+  let model: AppModel
 
   var body: some View {
     Form {
       Section("Recorded Source State") {
+        Button("Import Configuration…") { model.beginImport() }
+        Button("Subscribe to Source…") { model.beginWatch() }
         ForEach(snapshot.inspection.sources, id: \.record) { source in
           DetailsGroup(source.identity) {
             LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
@@ -34,6 +37,11 @@ struct SourceStateView: View {
                   }
                 }
               }
+            }
+          }
+          ForEach(snapshot.inspection.declaration?.watch ?? [], id: \.self) { alias in
+            Button("Unsubscribe “" + alias + "”…") {
+              model.beginWatch(source: alias, removing: true)
             }
           }
           if watch.sources.isEmpty {

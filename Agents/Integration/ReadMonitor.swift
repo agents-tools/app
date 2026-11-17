@@ -2,7 +2,7 @@ import CoreServices
 import Foundation
 
 /// One scope's immutable read footprint. Ancestors admit creation and atomic replacement of
-/// absent inputs; only matching paths invalidate reads. Stream shutdown drains its callback queue.
+/// absent inputs; only matching external paths invalidate reads. Owned writes explicitly refresh. Stream shutdown drains its callback queue.
 final class ReadMonitor: @unchecked Sendable {
   private let queue = DispatchQueue(label: "tools.agents.app.read-events")
   private let queueKey = DispatchSpecificKey<UInt8>()
@@ -63,7 +63,8 @@ final class ReadMonitor: @unchecked Sendable {
         let created = FSEventStreamCreate(
           nil, callback, &context, Array(minimal).sorted() as CFArray, since, 0.2,
           FSEventStreamCreateFlags(
-            kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot))
+            kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagWatchRoot
+              | kFSEventStreamCreateFlagIgnoreSelf))
       else { throw MonitorFailure() }
       stream = created
       FSEventStreamSetDispatchQueue(created, queue)

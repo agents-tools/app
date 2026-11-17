@@ -27,6 +27,36 @@ struct TestFixture: Sendable {
     try Data(text.utf8).write(to: directory.appendingPathComponent("agents.yaml"))
   }
 
+  func externalWrite(_ text: String, to url: URL, atomic: Bool = false) throws {
+    precondition(url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/"))
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    process.arguments = [
+      "-c",
+      """
+      import base64, os, pathlib, sys, uuid
+      path = pathlib.Path(sys.argv[1])
+      path.parent.mkdir(parents=True, exist_ok=True)
+      target = path.with_name(path.name + '.' + str(uuid.uuid4())) if sys.argv[3] == '1' else path
+      target.write_bytes(base64.b64decode(sys.argv[2]))
+      if target != path: os.replace(target, path)
+      """, url.path, Data(text.utf8).base64EncodedString(), atomic ? "1" : "0",
+    ]
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
+  }
+
+  func externalRemove(_ url: URL) throws {
+    precondition(url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/"))
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    process.arguments = ["-c", "import shutil,sys; shutil.rmtree(sys.argv[1])", url.path]
+    try process.run()
+    process.waitUntilExit()
+    guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
+  }
+
   func remove() throws { try FileManager.default.removeItem(at: root) }
 
   func entries() throws -> [String: Data] {

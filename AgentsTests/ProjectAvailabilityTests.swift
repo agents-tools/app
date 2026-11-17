@@ -47,18 +47,32 @@ struct ProjectAvailabilityTests {
       model.beginCreation(kind)
       model.creationSession?.name = "rules"
       let skillDestination = fixture.project.appendingPathComponent("skill")
-      if kind == .skill { model.selectCreationDirectory(skillDestination) }
-      model.creationSession?.stage = .confirmation
-      try FileManager.default.removeItem(at: fixture.project)
+      if kind == .skill {
+        try FileManager.default.createDirectory(
+          at: skillDestination, withIntermediateDirectories: false)
+        model.selectCreationDirectory(skillDestination)
+      }
+      model.reviewCreation()
+      try await idle(model)
+      try fixture.externalRemove(fixture.project)
       model.confirmCreation()
       try await idle(model)
       #expect(model.operations.isEmpty)
       #expect(!FileManager.default.fileExists(atPath: fixture.project.path))
       #expect(!FileManager.default.fileExists(atPath: skillDestination.path))
+      for _ in 0..<1600 {
+        if model.diagnostics.contains(where: { $0.scope == scope && $0.path == scope.root.path }) {
+          break
+        }
+        try await Task.sleep(for: .milliseconds(5))
+      }
       #expect(model.diagnostics.contains { $0.scope == scope && $0.path == scope.root.path })
-      guard case .failed = model.creationSession?.stage else {
-        Issue.record("Known-unavailable scope was not rejected before initialization")
-        return
+      switch model.creationSession?.stage {
+      case .failed: break
+      case .confirmation where model.creationSession?.stale == true: break
+      default:
+        Issue.record(
+          "Known-unavailable scope was not rejected or invalidated before initialization")
       }
     }
   }
@@ -72,6 +86,14 @@ struct ProjectAvailabilityTests {
     let scope = WorkspaceScope(kind: .project, root: fixture.project)
     model.select(scope)
     try await idle(model)
+    model.beginCreation(.instructions)
+    model.creationSession?.name = "rules"
+    for _ in 0..<4 {
+      model.reviewCreation()
+      try await idle(model)
+      if model.creationSession?.stale == false { break }
+    }
+    try #require(model.creationSession?.stale == false)
     let gate = DispatchSemaphore(value: 0)
     defer { gate.signal() }
     let (events, entered) = AsyncStream.makeStream(of: Void.self)
@@ -82,10 +104,8 @@ struct ProjectAvailabilityTests {
     }
     var event = events.makeAsyncIterator()
     _ = await event.next()
-    model.beginCreation(.instructions)
-    model.creationSession?.name = "rules"
-    model.creationSession?.stage = .confirmation
     model.confirmCreation()
+    try #require(model.isApplying)
     try FileManager.default.removeItem(at: fixture.project)
     gate.signal()
     try await idle(model)
@@ -136,7 +156,10 @@ struct ProjectAvailabilityTests {
 
   private func idle(_ model: AppModel) async throws {
     for _ in 0..<2000 {
-      if model.operations.isEmpty { return }
+      if model.operations.isEmpty {
+        try await Task.sleep(for: .milliseconds(300))
+        if model.operations.isEmpty { return }
+      }
       try await Task.sleep(for: .milliseconds(5))
     }
     Issue.record("Application did not process all operation terminals")

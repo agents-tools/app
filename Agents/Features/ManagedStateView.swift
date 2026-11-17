@@ -9,6 +9,9 @@ struct ManagedStateView: View {
     Section("Managed State") {
       ForEach(snapshot.inspection.components, id: \.record) { component in
         DetailsGroup(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name) {
+          if component.kind == .mcpServer {
+            Button("Test Connection…") { model.beginConnection(component) }
+          }
           if model.assistanceAvailable {
             if let input = AssistanceInput.skill(component, action: .explainSkill) {
               Button("Explain This Skill…") { model.reviewAssistance(input) }

@@ -33,16 +33,26 @@ struct CreationView: View {
           HStack {
             Button("Cancel") { model.creationSession = nil }.keyboardShortcut(.cancelAction)
             Spacer()
-            Button("Continue") { model.creationSession?.stage = .confirmation }
+            Button("Review Creation…") { model.reviewCreation() }
               .keyboardShortcut(.defaultAction)
               .disabled(
                 session.kind == .instructions ? session.name.isEmpty : !session.directorySelected)
           }
+        case .describing:
+          ProgressView("Preparing starter content preview…")
         case .confirmation:
           Form {
             LabeledContent("Scope", value: session.scope.title)
             LabeledContent("Directory") { PathView(url: session.directory, scope: session.scope) }
             if !session.name.isEmpty { LabeledContent("Requested name", value: session.name) }
+            if let description = session.description {
+              LabeledContent("File") { PathView(url: description.file, scope: session.scope) }
+              DetailsGroup("Starter Content") {
+                Text(verbatim: description.template).font(.system(.body, design: .monospaced))
+                  .textSelection(.enabled)
+              }
+            }
+            if session.stale { Text("Inputs changed. Go back and review creation again.") }
             Text(
               "Creates a starter document. Existing content will not be replaced. Adding it to configuration is a separate action."
             )
@@ -52,7 +62,7 @@ struct CreationView: View {
             Button("Back") { model.creationSession?.stage = .input }
             Spacer()
             Button("Create") { model.confirmCreation() }.keyboardShortcut(.defaultAction)
-              .disabled(model.isTerminating)
+              .disabled(model.isTerminating || session.stale || session.scope != model.scope)
           }
         case .running:
           HStack {
@@ -62,6 +72,10 @@ struct CreationView: View {
           Text("Waiting for the operation to finish.").foregroundStyle(.secondary)
         case .created(let url):
           Label("Starter content created", systemImage: "checkmark.circle")
+          if let terminal = session.terminal, terminal.recovery.pending {
+            Text(terminal.message)
+            ForEach(session.messages.filter { $0.message != terminal.message }) { Text($0.message) }
+          }
           PathView(url: url, scope: session.scope)
           Text("You can edit the document now. It has not been added to configuration.")
             .foregroundStyle(.secondary)
@@ -71,17 +85,16 @@ struct CreationView: View {
             Spacer()
             Button("Done") { closeAndRefresh(session) }.keyboardShortcut(.defaultAction)
           }
-        case .failed, .unconfirmed, .cancelled:
-          if case .unconfirmed = session.stage {
-            Text(
-              "Creation returned an error without a confirmed outcome. Content may already exist. Inspect the directory before retrying."
-            )
-            .foregroundStyle(.secondary)
-            Button("Show Directory in Finder") {
-              NSWorkspace.shared.activateFileViewerSelecting([session.directory])
+        case .failed, .cancelled:
+          if let terminal = session.terminal {
+            Text(terminal.message)
+            if let description = session.description {
+              PathView(url: description.file, scope: session.scope)
             }
           }
-          ForEach(session.messages) { Text($0.message).textSelection(.enabled) }
+          ForEach(session.messages.filter { $0.message != session.terminal?.message }) {
+            Text($0.message).textSelection(.enabled)
+          }
           if case .cancelled = session.stage { Text("Creation was cancelled before it started.") }
           HStack {
             Button("Edit Request") { model.creationSession?.stage = .input }
@@ -112,6 +125,7 @@ struct CreationView: View {
 
   private func isRunning(_ session: CreationSession) -> Bool {
     if case .running = session.stage { return true }
+    if case .describing = session.stage { return true }
     return false
   }
 

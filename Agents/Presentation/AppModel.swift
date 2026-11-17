@@ -12,6 +12,13 @@ final class AppModel {
     case assistance(UUID)
     case workspace
     case creation(UUID)
+    case creationPreview(UUID)
+    case watchPreview(UUID)
+    case watchApply(UUID)
+    case sourceImport(UUID)
+    case importRequest(UUID)
+    case connectionSnapshot(UUID)
+    case connectionTest(UUID)
     case prompt(UUID)
     case discovery(UUID)
     case preview(UUID)
@@ -36,8 +43,12 @@ final class AppModel {
   private let reader: CoreReader
   private let actions: CoreActions
   private let assistance: AssistanceService
-  @ObservationIgnored private var assistanceTasks: [UUID: Task<Void, Never>] = [:]
+  private let connectionTest:
+    @Sendable (MCPConnectionSnapshot, RuntimeEnvironment, [String: Data]) async ->
+      MCPConnectionTestResult
+  @ObservationIgnored private var asyncTasks: [UUID: Task<Void, Never>] = [:]
   @ObservationIgnored private var readMonitor: ReadMonitor?
+  private var supplementalReadLocations: Set<URL> = []
   private var monitoredScope: WorkspaceScope?
   private var readBoundary: FSEventStreamEventId = 0
   private(set) var readsStale = false
@@ -58,18 +69,22 @@ final class AppModel {
   var page: WorkspacePage = .overview
   var selectedItem: NodeID?
   var search = ""
-  var presentedIntent: WorkspaceIntent?
   var creationSession: CreationSession?
   var promptSession: PromptSession?
   var manifestDraft: ManifestDraft?
   var mappingSession: MappingSession?
   var updateSession: UpdateSession?
   var discoverySession: DiscoverySession?
+  var watchSession: WatchSession?
+  var importSession: ImportSession?
+  var connectionSession: ConnectionSession?
   private(set) var updateRecords: [UpdateRecord] = []
   var isApplying: Bool {
     operations.values.contains {
-      if case .apply = $0.purpose { return true }
-      return false
+      switch $0.purpose {
+      case .apply, .creation, .watchApply: return true
+      default: return false
+      }
     }
   }
   var canModify: Bool {
@@ -81,12 +96,19 @@ final class AppModel {
   init(
     home: URL, preferences: AppPreferences, executor: CoreExecutor = CoreExecutor(),
     processEnvironment: [String: String] = ProcessInfo.processInfo.environment,
-    assistance: AssistanceService = .onDevice
+    assistance: AssistanceService = .onDevice,
+    connectionTest:
+      @escaping @Sendable (MCPConnectionSnapshot, RuntimeEnvironment, [String: Data]) async ->
+      MCPConnectionTestResult = { snapshot, environment, values in
+        await MCPConnectionOperations.test(
+          snapshot, environment: environment, bindings: EphemeralBindings(values: values))
+      }
   ) {
     self.home = home
     self.preferences = preferences
     self.executor = executor
     self.assistance = assistance
+    self.connectionTest = connectionTest
     reader = CoreReader(home: home, processEnvironment: processEnvironment)
     actions = CoreActions(home: home, processEnvironment: processEnvironment)
     let user = WorkspaceScope(kind: .user, root: home)
@@ -125,7 +147,9 @@ final class AppModel {
   func select(_ scope: WorkspaceScope) {
     guard self.scope != scope, !isTerminating, !isApplying else { return }
     stopMonitoring()
+    supplementalReadLocations = []
     cancelAssistance()
+    cancelConnection()
     self.scope = scope
     preferences.selectedScopeID = scope.id
     selectedItem = nil
@@ -208,13 +232,16 @@ final class AppModel {
     else {
       return
     }
+    guard !session.stale, session.scope == scope, let description = session.description else {
+      return
+    }
     let request = session.request
     creationSession?.stage = .running
     let actions = actions
     startOperation(
       title: "Create " + request.kind.title, scope: request.scope, purpose: .creation(request.id)
     ) {
-      actions.create(request)
+      actions.initialize(description, request: request)
     }
   }
 
@@ -352,12 +379,59 @@ final class AppModel {
       }
     case .creation(let id) where creationSession?.id == id:
       creationSession?.messages = result.diagnostics
+      creationSession?.terminal = result.updateTerminal
       switch result.output {
       case .created(_, let url): creationSession?.stage = .created(url)
-      case .creationUnconfirmed: creationSession?.stage = .unconfirmed
       default:
         creationSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
       }
+    case .creationPreview(let id) where creationSession?.id == id:
+      creationSession?.messages = result.diagnostics
+      if currentSelection, case .creationDescription(_, let description) = result.output {
+        creationSession?.description = description
+        creationSession?.stale = false
+        creationSession?.stage = .confirmation
+      } else {
+        creationSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
+      }
+    case .watchPreview(let id) where watchSession?.id == id:
+      watchSession?.busy = false
+      watchSession?.messages = result.diagnostics
+      if currentSelection, case .watchPreview(_, let preview) = result.output {
+        watchSession?.preview = preview
+        watchSession?.stale = false
+      }
+    case .watchApply(let id) where watchSession?.id == id:
+      watchSession?.busy = false
+      watchSession?.terminal = result.updateTerminal
+      watchSession?.messages = result.diagnostics
+    case .sourceImport(let id) where importSession?.id == id:
+      importSession?.busy = false
+      importSession?.messages = result.diagnostics
+      if currentSelection, case .sourceImport(_, let value) = result.output {
+        importSession?.inspection = value
+        importSession?.stale = false
+      }
+    case .importRequest(let id) where importSession?.id == id:
+      importSession?.busy = false
+      importSession?.messages = result.diagnostics
+      if currentSelection, case .importRequest(_, let request) = result.output {
+        importSession = nil
+        previewUpdate(title: "Import Configuration", request: request)
+      }
+    case .connectionSnapshot(let id) where connectionSession?.id == id:
+      connectionSession?.busy = false
+      connectionSession?.messages = result.diagnostics
+      if currentSelection, case .connectionSnapshot(_, let value, let description) = result.output {
+        connectionSession?.snapshot = value
+        connectionSession?.description = description
+        connectionSession?.stale = false
+      }
+    case .connectionTest(let id) where connectionSession?.id == id:
+      connectionSession?.busy = false
+      connectionSession?.testing = false
+      connectionSession?.messages = result.diagnostics
+      if case .connectionResult(_, let value) = result.output { connectionSession?.result = value }
     case .prompt(let id) where promptSession?.id == id:
       promptSession?.messages = result.diagnostics
       if !currentSelection {
@@ -435,14 +509,14 @@ final class AppModel {
   }
 
   func reviewAssistance(_ input: AssistanceInput) {
-    guard assistanceAvailable, !isTerminating, assistanceTasks.isEmpty else { return }
+    guard assistanceAvailable, !isTerminating, asyncTasks.isEmpty else { return }
     assistanceSession = .init(scope: scope, input: input)
   }
 
   func generateAssistance() {
     guard assistanceAvailable, !isTerminating, let session = assistanceSession,
       session.scope == scope, case .review = session.stage, session.input.withinLimit,
-      assistanceTasks.isEmpty
+      asyncTasks.isEmpty
     else { return }
     let id = UUID()
     operationSequence += 1
@@ -453,7 +527,7 @@ final class AppModel {
     operations[id] = operation
     assistanceSession?.stage = .running
     let service = assistance
-    assistanceTasks[id] = Task { [self] in
+    asyncTasks[id] = Task { [self] in
       let result: CoreCompletion
       do {
         try Task.checkCancellation()
@@ -471,12 +545,16 @@ final class AppModel {
               message: "On-device assistance could not complete. No changes were applied.")
           ])
       }
-      assistanceTasks[id] = nil
+      asyncTasks[id] = nil
       finish(id, result: result)
     }
   }
 
-  func cancelAssistance() { for task in assistanceTasks.values { task.cancel() } }
+  func cancelAssistance() {
+    for (id, task) in asyncTasks {
+      if case .assistance = operations[id]?.purpose { task.cancel() }
+    }
+  }
 
   private func monitor(_ locations: [URL], since: FSEventStreamEventId) {
     guard !isTerminating else { return }
@@ -488,7 +566,10 @@ final class AppModel {
       }
       monitoredScope = scope
     }
-    do { try readMonitor?.replace(locations: locations, since: since) } catch {
+    do {
+      try readMonitor?.replace(
+        locations: Array(Set(locations).union(supplementalReadLocations)), since: since)
+    } catch {
       diagnostics.append(
         .init(
           scope: scope, operation: "Automatic refresh", severity: .warning,
@@ -506,6 +587,11 @@ final class AppModel {
     guard watchedScope == scope, !isTerminating else { return }
     readsStale = true
     manifestDraft?.isStale = true
+    creationSession?.stale = true
+    watchSession?.stale = true
+    importSession?.stale = true
+    connectionSession?.stale = true
+    connectionSession?.inputs = [:]
     if let session = updateSession, session.stage == .review || session.stage == .preparing {
       updateSession?.stage = .stale
       updateSession?.bindingInputs = [:]
@@ -523,7 +609,7 @@ final class AppModel {
 
   func cancelQueuedOperations() {
     for operation in operations.values { operation.admission.cancel() }
-    cancelAssistance()
+    for task in asyncTasks.values { task.cancel() }
   }
 
   func requestTermination() -> TerminationDecision {
@@ -572,6 +658,12 @@ final class AppModel {
     operations.removeValue(forKey: id)
     let currentSelection = operation.selectionScope == scope && operation.generation == generation
     finishContent(operation, result: result, currentSelection: currentSelection)
+    if currentSelection && !result.readLocations.isEmpty {
+      supplementalReadLocations.formUnion(result.readLocations)
+      monitor(
+        snapshot?.inspection.readLocations ?? reader.stateLocations(scope: scope),
+        since: readBoundary)
+    }
     if currentSelection {
       if let snapshot = result.snapshot {
         loadState = .loaded(snapshot)
@@ -586,8 +678,11 @@ final class AppModel {
         loadState = .idle
       }
     }
-    if case .apply = operation.purpose, !isTerminating, currentSelection {
-      refresh()
+    if !isTerminating && currentSelection {
+      switch operation.purpose {
+      case .apply, .creation, .watchApply: refresh()
+      default: break
+      }
     }
     if isTerminating, operations.isEmpty {
       let mayQuit = !hasBlockingCleanup
@@ -599,6 +694,152 @@ final class AppModel {
           since: readBoundary)
       }
       terminationReply?(mayQuit)
+    }
+  }
+}
+
+extension AppModel {
+  func reviewCreation() {
+    guard !isTerminating, !isApplying, let session = creationSession, session.scope == scope,
+      session.kind == .instructions || session.directorySelected
+    else {
+      return
+    }
+    creationSession?.stage = .describing
+    creationSession?.description = nil
+    let request = session.request
+    let actions = actions
+    startOperation(
+      title: "Review starter content", scope: scope, purpose: .creationPreview(session.id)
+    ) {
+      actions.describeCreation(request)
+    }
+  }
+
+  func beginWatch(source: String = "", removing: Bool = false) {
+    guard canModify else { return }
+    watchSession = .init(scope: scope, source: source, removing: removing)
+  }
+
+  func reviewWatch() {
+    guard canModify, let session = watchSession, session.scope == scope, !session.busy else {
+      return
+    }
+    watchSession?.busy = true
+    watchSession?.preview = nil
+    watchSession?.terminal = nil
+    let actions = actions
+    startOperation(title: "Review subscription", scope: scope, purpose: .watchPreview(session.id)) {
+      actions.watchPreview(
+        id: session.id, scope: session.scope, source: session.source, removing: session.removing)
+    }
+  }
+
+  func confirmWatch() {
+    guard canModify, let session = watchSession, !session.stale, !session.busy,
+      session.scope == scope, let preview = session.preview
+    else { return }
+    watchSession?.busy = true
+    let actions = actions
+    startOperation(title: "Change subscription", scope: scope, purpose: .watchApply(session.id)) {
+      actions.applyWatch(preview, scope: session.scope)
+    }
+  }
+
+  func beginImport() {
+    guard canModify else { return }
+    importSession = .init(scope: scope)
+  }
+
+  func inspectImport() {
+    guard canModify, let session = importSession, session.scope == scope, let file = session.file,
+      !session.busy
+    else { return }
+    importSession?.busy = true
+    importSession?.inspection = nil
+    let actions = actions
+    startOperation(title: "Inspect import", scope: scope, purpose: .sourceImport(session.id)) {
+      actions.inspectImport(
+        id: session.id, scope: session.scope, file: file, format: session.format)
+    }
+  }
+
+  func reviewImport() {
+    guard canModify, let session = importSession, session.scope == scope, !session.stale,
+      let imported = session.inspection, let inspection = snapshot?.inspection
+    else { return }
+    importSession?.busy = true
+    let actions = actions
+    startOperation(title: "Review import", scope: scope, purpose: .importRequest(session.id)) {
+      actions.importRequest(
+        id: session.id, scope: session.scope, imported: imported, inspection: inspection)
+    }
+  }
+
+  func beginConnection(_ component: ComponentInspection) {
+    guard !isTerminating, !isApplying, component.kind == .mcpServer else { return }
+    let session = ConnectionSession(
+      scope: scope, name: component.name, selection: component.selection)
+    connectionSession = session
+    let actions = actions
+    startOperation(
+      title: "Prepare connection test", scope: scope, purpose: .connectionSnapshot(session.id)
+    ) {
+      actions.connectionSnapshot(id: session.id, scope: session.scope, selection: session.selection)
+    }
+  }
+
+  func testConnection() {
+    guard !isTerminating, let session = connectionSession, session.scope == scope, !session.busy,
+      !session.stale, session.result == nil, session.bindingsReady, let snapshot = session.snapshot
+    else { return }
+    let id = UUID()
+    operationSequence += 1
+    let operation = ActiveOperation(
+      id: id, scope: scope, selectionScope: scope, purpose: .connectionTest(session.id),
+      generation: generation, sequence: operationSequence, title: "Test MCP connection",
+      admission: OperationAdmission())
+    operations[id] = operation
+    connectionSession?.busy = true
+    connectionSession?.testing = true
+    let bindings = session.inputs.mapValues { Data($0.utf8) }
+    connectionSession?.inputs = [:]
+    let runtime = actions.environment(for: session.scope)
+    let test = connectionTest
+    let sessionID = session.id
+    let operationScope = operation.scope
+    asyncTasks[id] = Task.detached { [self] in
+      let value = await test(snapshot, runtime, bindings)
+      var messages: [AppDiagnostic] = []
+      if let issue = value.issue, issue != .cancelled || !value.cleanupComplete {
+        messages.append(
+          .init(
+            scope: operationScope, operation: "Test MCP connection",
+            message: "Connection test: " + issue.rawValue, blocksTermination: !value.cleanupComplete
+          ))
+      } else if !value.cleanupComplete {
+        messages.append(
+          .init(
+            scope: operationScope, operation: "Test MCP connection",
+            message: "Connection resources require cleanup.", blocksTermination: true))
+      }
+      await completeConnection(
+        id,
+        result: .init(
+          disposition: value.issue == .cancelled
+            ? .cancelled : (value.issue == nil ? .completed : .failed), diagnostics: messages,
+          output: .connectionResult(sessionID, value)))
+    }
+  }
+
+  private func completeConnection(_ id: UUID, result: CoreCompletion) {
+    asyncTasks[id] = nil
+    finish(id, result: result)
+  }
+
+  func cancelConnection() {
+    for (id, task) in asyncTasks {
+      if case .connectionTest = operations[id]?.purpose { task.cancel() }
     }
   }
 }

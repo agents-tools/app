@@ -22,7 +22,8 @@ struct ContentActionTests {
     model.creationSession?.name = "project-style"
     model.confirmCreation()
     #expect(try fixture.entries() == before)
-    model.creationSession?.stage = .confirmation
+    model.reviewCreation()
+    try await idle(model)
     model.confirmCreation()
     try await idle(model)
     guard case .created(let file) = model.creationSession?.stage else {
@@ -39,22 +40,25 @@ struct ContentActionTests {
     let created = try fixture.entries()
     model.beginCreation(.instructions)
     model.creationSession?.name = "project-style"
-    model.creationSession?.stage = .confirmation
+    model.reviewCreation()
+    try await idle(model)
     model.confirmCreation()
     try await idle(model)
     #expect(try fixture.entries() == created)
     #expect(model.diagnostics.contains { $0.message.contains("already exists") })
-    guard case .unconfirmed = model.creationSession?.stage else {
-      Issue.record("A thrown initializer result was presented as confirmed not-created")
+    guard case .failed = model.creationSession?.stage else {
+      Issue.record("Existing content was not rejected by the typed creation path")
       return
     }
 
     model.beginCreation(.skill)
-    model.creationSession?.stage = .confirmation
+    model.reviewCreation()
+    try await idle(model)
     model.confirmCreation()
     #expect(try fixture.entries() == created)
     model.selectCreationDirectory(fixture.root.appendingPathComponent("selected-skill-directory"))
-    model.creationSession?.stage = .confirmation
+    model.reviewCreation()
+    try await idle(model)
     model.confirmCreation()
     try await idle(model)
     guard case .created(let directory) = model.creationSession?.stage else {
@@ -67,7 +71,8 @@ struct ContentActionTests {
     let skillCreated = try fixture.entries()
     model.beginCreation(.skill)
     model.selectCreationDirectory(directory)
-    model.creationSession?.stage = .confirmation
+    model.reviewCreation()
+    try await idle(model)
     model.confirmCreation()
     try await idle(model)
     #expect(try fixture.entries() == skillCreated)
@@ -128,8 +133,13 @@ struct ContentActionTests {
     #expect(try fixture.entries() == before)
     try Data("Current appendix".utf8).write(to: append)
     let changed = try fixture.entries()
-    model.previewPrompt(name: "daily", in: scope)
-    try await idle(model)
+    for _ in 0..<4 {
+      model.refresh()
+      try await idle(model)
+      model.previewPrompt(name: "daily", in: scope)
+      try await idle(model)
+      if case .ready = model.promptSession?.stage { break }
+    }
     guard case .ready(let current) = model.promptSession?.stage else {
       Issue.record("Expected the current consumer append")
       return
@@ -161,8 +171,7 @@ struct ContentActionTests {
     let destination = fixture.root.appendingPathComponent("never-created")
     model.beginCreation(.skill)
     model.selectCreationDirectory(destination)
-    model.creationSession?.stage = .confirmation
-    model.confirmCreation()
+    model.reviewCreation()
     let (replies, reply) = AsyncStream.makeStream(of: Bool.self)
     model.terminationReply = { reply.yield($0) }
     #expect(model.requestTermination() == .later)
@@ -237,7 +246,10 @@ struct ContentActionTests {
 
   private func idle(_ model: AppModel) async throws {
     for _ in 0..<2000 {
-      if model.operations.isEmpty { return }
+      if model.operations.isEmpty {
+        try await Task.sleep(for: .milliseconds(300))
+        if model.operations.isEmpty { return }
+      }
       try await Task.sleep(for: .milliseconds(5))
     }
     Issue.record("Application did not process all operation terminals")

@@ -146,22 +146,3 @@ enum WorkspaceLoadState {
   case loaded(WorkspaceSnapshot)
   case failed([AppDiagnostic])
 }
-
-enum WorkspaceIntent: String, Identifiable {
-  case importConfiguration, testConnection
-  var id: Self { self }
-  var title: String {
-    switch self {
-    case .importConfiguration: "Import Configuration"
-    case .testConnection: "Test Connection"
-    }
-  }
-  var unavailableReason: String {
-    switch self {
-    case .importConfiguration:
-      "Configuration import is not available in this build."
-    case .testConnection:
-      "Connection testing is not available in this build. Viewing this component does not start a server or connect to an endpoint."
-    }
-  }
-}

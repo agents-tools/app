@@ -62,7 +62,12 @@ struct UpdateReviewView: View {
             if let diagnostic = terminal.recovery.diagnostic { Text(diagnostic) }
           }
         }
-        ForEach(session.messages) { message in
+        ForEach(
+          session.messages.filter {
+            $0.message != session.terminal?.message
+              && $0.message != session.terminal?.recovery.diagnostic
+          }
+        ) { message in
           Text(message.message).foregroundStyle(message.severity == .error ? .red : .secondary)
         }
         HStack {
@@ -133,8 +138,6 @@ struct UpdateReportView: View {
             LabeledContent("Target") {
               PathView(url: URL(fileURLWithPath: change.path), scope: scope)
             }
-            LabeledContent("Format", value: change.format)
-            LabeledContent("Ownership", value: change.ownership)
             LabeledContent(
               "Readers", value: change.effectiveReaders.map(\.displayName).joined(separator: ", "))
             if change.privateMaterialization {
@@ -152,18 +155,6 @@ struct UpdateReportView: View {
               LabeledContent(
                 "Owner",
                 value: String(permission.beforeOwner) + " → " + String(permission.afterOwner))
-            }
-            if let before = change.symbolicBefore {
-              DetailsGroup("Before") {
-                Text(verbatim: before).font(.system(.body, design: .monospaced)).textSelection(
-                  .enabled)
-              }
-            }
-            if let after = change.symbolicAfter {
-              DetailsGroup("After") {
-                Text(verbatim: after).font(.system(.body, design: .monospaced)).textSelection(
-                  .enabled)
-              }
             }
             ForEach(Array(change.resources.enumerated()), id: \.offset) { _, resource in
               LabeledContent("Resource", value: resource.path)

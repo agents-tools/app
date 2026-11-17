@@ -30,8 +30,8 @@ import Testing
     }
     try #require(model.updateSession?.stage == .review)
     let url = fixture.project.appendingPathComponent(".agent/agents.yaml")
-    try Data("# External replacement\nversion: 1\ndefaultAgents: []\nexports: []\n".utf8).write(
-      to: url, options: .atomic)
+    try fixture.externalWrite(
+      "# External replacement\nversion: 1\ndefaultAgents: []\nexports: []\n", to: url, atomic: true)
     try await eventually { model.manifestDraft?.isStale == true && !model.readsStale }
     #expect(model.manifestDraft?.id == draftID)
     #expect(model.manifestDraft?.defaultAgents == [.codex])
@@ -50,12 +50,15 @@ import Testing
     let model = await loaded(fixture)
     defer { _ = model.requestTermination() }
     #expect(model.snapshot?.isEmpty == true)
-    try fixture.writeManifest("version: [broken\n")
+    try fixture.externalWrite(
+      "version: [broken\n", to: fixture.project.appendingPathComponent(".agent/agents.yaml"))
     try await eventually {
       if case .failed = model.loadState { return true }
       return false
     }
-    try fixture.writeManifest("version: 1\ndefaultAgents: []\n")
+    try fixture.externalWrite(
+      "version: 1\ndefaultAgents: []\n",
+      to: fixture.project.appendingPathComponent(".agent/agents.yaml"))
     try await eventually { model.snapshot?.document != nil && !model.readsStale }
     #expect(model.scope.root == fixture.project)
   }
@@ -75,7 +78,9 @@ import Testing
     model.select(.init(kind: .user, root: fixture.home))
     try await eventually { model.operations.isEmpty }
     let read = model.snapshot?.readAt
-    try fixture.writeManifest("version: 1\ndefaultAgents: []\n")
+    try fixture.externalWrite(
+      "version: 1\ndefaultAgents: []\n",
+      to: fixture.project.appendingPathComponent(".agent/agents.yaml"))
     try await Task.sleep(for: .milliseconds(700))
     #expect(model.scope.kind == .user)
     #expect(model.snapshot?.readAt == read)
@@ -244,8 +249,8 @@ import Testing
     model.selectedItem = node
     model.beginDraft(.source)
     let read = model.snapshot?.readAt
-    try Data("A new producer input".utf8).write(
-      to: directory.appendingPathComponent("input.md"), options: .atomic)
+    try fixture.externalWrite(
+      "A new producer input", to: directory.appendingPathComponent("input.md"), atomic: true)
     try await eventually { model.snapshot?.readAt != read && !model.readsStale }
     #expect(model.selectedItem == node)
     #expect(model.manifestDraft?.isStale == true)

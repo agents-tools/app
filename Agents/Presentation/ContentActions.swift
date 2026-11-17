@@ -1,3 +1,4 @@
+import AgentsCore
 import AgentsUpdates
 import Foundation
 
@@ -16,9 +17,9 @@ struct CreationRequest: Sendable {
 
 struct CreationSession: Identifiable {
   enum Stage {
-    case input, confirmation, running
+    case input, describing, confirmation, running
     case created(URL)
-    case failed, unconfirmed, cancelled
+    case failed, cancelled
   }
   let id = UUID()
   let scope: WorkspaceScope
@@ -27,6 +28,9 @@ struct CreationSession: Identifiable {
   var name = ""
   var directorySelected = false
   var stage: Stage = .input
+  var description: InitializationDescription?
+  var terminal: UpdateTerminal?
+  var stale = false
   var messages: [AppDiagnostic] = []
 
   var request: CreationRequest {
@@ -54,9 +58,14 @@ struct PromptSession: Identifiable {
 }
 
 enum ContentOutput: Sendable {
+  case creationDescription(UUID, InitializationDescription)
+  case watchPreview(UUID, WatchMutationPreview)
+  case sourceImport(UUID, SourceImportInspection)
+  case importRequest(UUID, UpdateRequest)
+  case connectionSnapshot(UUID, MCPConnectionSnapshot, MCPConnectionDescription)
+  case connectionResult(UUID, MCPConnectionTestResult)
   case assistance(UUID, String)
   case created(CreationRequest, URL)
-  case creationUnconfirmed(CreationRequest)
   case prompt(PromptRequest, String)
   case discovery(UUID, ComponentDiscovery)
   case updatePreview(UUID, CombinedUpdateReport)

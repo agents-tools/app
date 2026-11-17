@@ -25,17 +25,19 @@ struct CoreCompletion: Sendable {
   let diagnostics: [AppDiagnostic]
   let output: ContentOutput?
   let updateTerminal: UpdateTerminal?
+  let readLocations: [URL]
 
   init(
     disposition: Disposition, snapshot: WorkspaceSnapshot? = nil,
     diagnostics: [AppDiagnostic] = [], output: ContentOutput? = nil,
-    updateTerminal: UpdateTerminal? = nil
+    updateTerminal: UpdateTerminal? = nil, readLocations: [URL] = []
   ) {
     self.disposition = disposition
     self.snapshot = snapshot
     self.diagnostics = diagnostics
     self.output = output
     self.updateTerminal = updateTerminal
+    self.readLocations = readLocations
   }
 
   static var cancelled: Self { Self(disposition: .cancelled, snapshot: nil, diagnostics: []) }
