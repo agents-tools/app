@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CreationView: View {
   @Bindable var model: AppModel
+  @State private var pickerAnchor = NSView()
 
   var body: some View {
     if let session = model.creationSession {
@@ -103,6 +104,7 @@ struct CreationView: View {
           }
         }
       }
+      .background(OpenPanelAnchor(view: pickerAnchor))
       .padding(24)
       .frame(width: 520)
       .frame(minHeight: 220)
@@ -115,12 +117,17 @@ struct CreationView: View {
   }
 
   private func chooseDirectory() {
+    guard let session = model.creationSession, let window = pickerAnchor.window else { return }
     let panel = NSOpenPanel()
     panel.canChooseDirectories = true
     panel.canChooseFiles = false
     panel.canCreateDirectories = false
     panel.prompt = "Choose"
-    if panel.runModal() == .OK, let url = panel.url { model.selectCreationDirectory(url) }
+    panel.beginSheetModal(for: window) { [panel] response in
+      if response == .OK, let url = panel.url {
+        model.selectCreationDirectory(url, for: session)
+      }
+    }
   }
 
   private func isRunning(_ session: CreationSession) -> Bool {
@@ -133,4 +140,11 @@ struct CreationView: View {
     model.creationSession = nil
     if model.scope == session.scope { model.refresh() }
   }
+}
+
+struct OpenPanelAnchor: NSViewRepresentable {
+  let view: NSView
+
+  func makeNSView(context: Context) -> NSView { view }
+  func updateNSView(_ nsView: NSView, context: Context) {}
 }

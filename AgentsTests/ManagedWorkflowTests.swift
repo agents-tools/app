@@ -184,6 +184,70 @@ struct ManagedWorkflowTests {
     _ = model.requestTermination()
   }
 
+  @Test func pickerCompletionsOnlyUpdateTheirAdmittedSession() async throws {
+    let f = try TestFixture()
+    defer { try? f.remove() }
+    let model = await loaded(f)
+    let selected = f.root.appendingPathComponent("selected")
+    model.beginCreation(.skill)
+    let creation = try #require(model.creationSession)
+    model.selectCreationDirectory(selected, for: creation)
+    #expect(model.creationSession?.directory == selected)
+    #expect(model.creationSession?.directorySelected == true)
+    model.creationSession = nil
+    model.selectCreationDirectory(f.home, for: creation)
+    #expect(model.creationSession == nil)
+    model.beginCreation(.skill)
+    let replacement = try #require(model.creationSession)
+    model.selectCreationDirectory(selected, for: creation)
+    #expect(model.creationSession?.directorySelected == false)
+    model.creationSession?.stage = .describing
+    model.selectCreationDirectory(selected, for: replacement)
+    #expect(model.creationSession?.directorySelected == false)
+    model.creationSession?.stage = .input
+
+    model.beginImport()
+    let imported = try #require(model.importSession)
+    model.selectImportFile(selected, for: imported)
+    model.selectImportDirectory(f.root, for: imported)
+    #expect(model.importSession?.file == selected)
+    #expect(model.importSession?.inputRoot == f.root)
+    model.importSession?.busy = true
+    model.selectImportFile(f.home, for: imported)
+    model.selectImportDirectory(f.home, for: imported)
+    #expect(model.importSession?.file == selected)
+    #expect(model.importSession?.inputRoot == f.root)
+    model.importSession = nil
+    model.selectImportFile(f.home, for: imported)
+    model.selectImportDirectory(f.home, for: imported)
+    #expect(model.importSession == nil)
+    model.beginImport()
+    model.selectImportFile(selected, for: imported)
+    model.selectImportDirectory(f.root, for: imported)
+    #expect(model.importSession?.file == nil)
+    #expect(model.importSession?.inputRoot == nil)
+    let currentImport = try #require(model.importSession)
+
+    model.select(.init(kind: .user, root: f.home))
+    model.selectCreationDirectory(selected, for: replacement)
+    model.selectImportFile(selected, for: currentImport)
+    model.selectImportDirectory(f.root, for: currentImport)
+    #expect(model.creationSession?.directorySelected == false)
+    #expect(model.importSession?.file == nil)
+    #expect(model.importSession?.inputRoot == nil)
+    try await idle(model)
+    model.select(replacement.scope)
+    try await idle(model)
+    _ = model.requestTermination()
+    #expect(model.isTerminating)
+    model.selectCreationDirectory(selected, for: replacement)
+    model.selectImportFile(selected, for: currentImport)
+    model.selectImportDirectory(f.root, for: currentImport)
+    #expect(model.creationSession?.directorySelected == false)
+    #expect(model.importSession?.file == nil)
+    #expect(model.importSession?.inputRoot == nil)
+  }
+
   private func loaded(_ f: TestFixture) async -> AppModel {
     let model = AppModel(
       home: f.home, preferences: AppPreferences(defaults: nil), processEnvironment: f.environment)

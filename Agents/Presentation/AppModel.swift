@@ -221,6 +221,14 @@ final class AppModel {
     creationSession = CreationSession(scope: scope, kind: kind, directory: scope.root)
   }
 
+  func selectCreationDirectory(_ url: URL, for original: CreationSession) {
+    guard !isTerminating, !isApplying, snapshot?.inspection.recovery.pending != true,
+      let session = creationSession, session.id == original.id, session.scope == original.scope,
+      session.scope == scope, case .input = session.stage
+    else { return }
+    selectCreationDirectory(url)
+  }
+
   func selectCreationDirectory(_ url: URL) {
     guard creationSession?.kind == .skill else { return }
     creationSession?.directory = url
@@ -778,6 +786,24 @@ extension AppModel {
   func beginImport() {
     guard canModify else { return }
     importSession = .init(scope: scope)
+  }
+
+  func selectImportFile(_ url: URL, for original: ImportSession) {
+    guard canSelectImportInput(for: original) else { return }
+    importSession?.file = url
+    importSession?.inspection = nil
+  }
+
+  func selectImportDirectory(_ url: URL, for original: ImportSession) {
+    guard canSelectImportInput(for: original) else { return }
+    importSession?.inputRoot = url
+    importSession?.inspection = nil
+  }
+
+  private func canSelectImportInput(for original: ImportSession) -> Bool {
+    guard canModify, let session = importSession else { return false }
+    return session.id == original.id && session.scope == original.scope
+      && session.scope == scope && !session.busy
   }
 
   func inspectImport() {

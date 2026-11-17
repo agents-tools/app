@@ -60,6 +60,7 @@ struct WatchView: View {
 
 struct ImportView: View {
   @Bindable var model: AppModel
+  @State private var pickerAnchor = NSView()
   var body: some View {
     if let session = model.importSession {
       VStack(alignment: .leading, spacing: 16) {
@@ -79,25 +80,29 @@ struct ImportView: View {
             }
           }
           Button("Choose Input File…") {
+            guard let window = pickerAnchor.window else { return }
             let panel = NSOpenPanel()
             panel.canChooseDirectories = false
             panel.canChooseFiles = true
-            if panel.runModal() == .OK {
-              model.importSession?.file = panel.url
-              model.importSession?.inspection = nil
+            panel.beginSheetModal(for: window) { [panel] response in
+              if response == .OK, let url = panel.url {
+                model.selectImportFile(url, for: session)
+              }
             }
           }
           if let file = session.file { PathView(url: file) }
           Button("Choose Input Directory…") {
+            guard let window = pickerAnchor.window else { return }
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true
             panel.canChooseFiles = false
             panel.canCreateDirectories = false
             panel.message =
               "Choose the authoring root containing the input file and its relative resources."
-            if panel.runModal() == .OK {
-              model.importSession?.inputRoot = panel.url
-              model.importSession?.inspection = nil
+            panel.beginSheetModal(for: window) { [panel] response in
+              if response == .OK, let url = panel.url {
+                model.selectImportDirectory(url, for: session)
+              }
             }
           }
           if let root = session.inputRoot {
@@ -201,7 +206,8 @@ struct ImportView: View {
         Button("Cancel") {
           if session.busy { model.cancelQueuedOperations() } else { model.importSession = nil }
         }.keyboardShortcut(.cancelAction)
-      }.padding(24).frame(width: 640, height: 620).interactiveDismissDisabled(session.busy)
+      }.background(OpenPanelAnchor(view: pickerAnchor))
+        .padding(24).frame(width: 640, height: 620).interactiveDismissDisabled(session.busy)
     }
   }
 }
