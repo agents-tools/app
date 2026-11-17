@@ -86,6 +86,7 @@ struct WorkspaceView: View {
     .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
     .sheet(item: $model.importSession) { _ in ImportView(model: model) }
     .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
+    .sheet(item: $model.catalogSession) { _ in SourceCatalogView(model: model) }
     .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
     .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
@@ -183,6 +184,7 @@ struct OverviewView: View {
         if model.scope.kind == .project {
           Button("New Local Instructions…") { model.beginCreation(.instructions) }
         }
+        Button("Add from Source…") { model.beginCatalog() }
         Button("Import…") { model.beginImport() }
       }
     } else {

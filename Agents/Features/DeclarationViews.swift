@@ -57,8 +57,7 @@ struct DeclarationListView: View {
       }
       ToolbarItem {
         if model.page == .sources {
-          Button("Discover Declared Components…") { model.discoverComponents() }
-            .disabled(!model.canModify || model.snapshot?.inspection.declaration == nil)
+          Button("Add from Source…") { model.beginCatalog() }.disabled(!model.canModify)
         }
       }
       ToolbarItem {

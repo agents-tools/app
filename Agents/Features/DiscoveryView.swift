@@ -6,9 +6,9 @@ struct DiscoveryView: View {
   var body: some View {
     if let session = model.discoverySession {
       VStack(alignment: .leading, spacing: 16) {
-        Text("Discover Declared Components").font(.headline)
+        Text("Review Declared Sources").font(.headline)
         Text(
-          "Discover components from the declared sources without deploying them."
+          "Review the complete authored source selection without deploying it."
         )
         .foregroundStyle(.secondary)
         if session.isLoading { ProgressView("Resolving sources…") }
@@ -30,8 +30,8 @@ struct DiscoveryView: View {
           }
           if discovery.components.isEmpty { Text("No components matched the current declaration.") }
           if session.stale { Text("Source inputs changed. Discover again before reviewing.") }
-          Button("Discover Again") { model.discoverComponents() }.disabled(!model.canModify)
-          Button("Review Discovered Update…") { model.previewDiscovery() }
+          Button("Inspect Again") { model.discoverComponents() }.disabled(!model.canModify)
+          Button("Review Declared Update…") { model.previewDiscovery() }
             .disabled(session.stale || session.scope != model.scope || !model.canModify)
         }
         ForEach(session.messages) { Text($0.message) }

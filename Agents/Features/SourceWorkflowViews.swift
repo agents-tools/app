@@ -1,50 +1,6 @@
 import AgentsCore
 import SwiftUI
 
-struct ImportResolutionEditor: View {
-  @Binding var value: ImportResolution
-  var body: some View {
-    DetailsGroup("Resolve Import Inputs") {
-      Toggle(
-        "Specify producer selection keys",
-        isOn: Binding(get: { value.selection != nil }, set: { value.selection = $0 ? [] : nil }))
-      if value.selection != nil {
-        DraftRows(values: Binding(get: { value.selection ?? [] }, set: { value.selection = $0 })) {
-          row, actions in
-          TextField("Selection key", text: row)
-          DraftRowButtons(actions: actions)
-        }
-        Button("Add Selection Key") { value.selection?.append("") }
-        Text(
-          "Use exact keys from the producer document. An empty selection explicitly selects no entries."
-        )
-        .font(.caption).foregroundStyle(.secondary)
-      }
-      DetailsGroup("Source Coordinates") {
-        DraftRows(values: $value.sources) { row, actions in
-          TextField("Producer source key", text: row.key)
-          SourceDeclarationEditor(value: row.declaration)
-          DraftRowButtons(actions: actions)
-        }
-        Button("Add Source Coordinates") { value.sources.append(.init()) }
-      }
-      DetailsGroup("Captured Installed Skills") {
-        DraftRows(values: $value.skills) { row, actions in
-          TextField("Skill name", text: row.name)
-          TextField("Path relative to input directory", text: row.path)
-          DraftRowButtons(actions: actions)
-        }
-        Button("Add Installed Skill") { value.skills.append(.init()) }
-        Text("Select independent authoring content. Deployment claims do not grant ownership.")
-          .font(.caption).foregroundStyle(.secondary)
-      }
-      if value.hasDuplicateKeys { Text("Each source key and skill name must be unique.") }
-      Text("Inspect again after changing inputs. Conversion diagnostics remain authoritative.")
-        .font(.caption).foregroundStyle(.secondary)
-    }
-  }
-}
-
 struct SourceDeclarationEditor: View {
   @Binding var value: SourceDeclaration
   var body: some View {

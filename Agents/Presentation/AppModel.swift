@@ -18,6 +18,8 @@ final class AppModel {
     case watchStatus(UUID)
     case watchPreview(UUID)
     case watchApply(UUID)
+    case catalog(UUID)
+    case catalogSelection(UUID)
     case sourceImport(UUID)
     case importRequest(UUID)
     case connectionSnapshot(UUID)
@@ -45,7 +47,7 @@ final class AppModel {
   let home: URL
   private let executor: CoreExecutor
   private let reader: CoreReader
-  private let actions: CoreActions
+  let actions: CoreActions
   private let assistance: AssistanceService
   private let connectionTest:
     @Sendable (MCPConnectionSnapshot, RuntimeEnvironment, [String: Data]) async ->
@@ -78,6 +80,7 @@ final class AppModel {
   var manifestDraft: ManifestDraft?
   var mappingSession: MappingSession?
   var updateSession: UpdateSession?
+  var catalogSession: CatalogSession?
   var discoverySession: DiscoverySession?
   var watchSession: WatchSession?
   var watchStatusSession: WatchStatusSession?
@@ -446,12 +449,42 @@ final class AppModel {
       watchSession?.busy = false
       watchSession?.terminal = result.updateTerminal
       watchSession?.messages = result.diagnostics
+    case .catalog(let id) where catalogSession?.id == id:
+      catalogSession?.busy = false
+      catalogSession?.messages = result.diagnostics
+      if result.disposition == .cancelled {
+        catalogSession?.messages.append(
+          .init(
+            scope: operation.scope, operation: operation.title,
+            severity: .information, message: "Queued source operation was cancelled."))
+      }
+      if currentSelection, case .catalog(_, let value) = result.output {
+        catalogSession?.capture(value)
+      } else if !currentSelection {
+        catalogSession?.stale = true
+      }
+    case .catalogSelection(let id) where catalogSession?.id == id:
+      catalogSession?.busy = false
+      catalogSession?.messages = result.diagnostics
+      if result.disposition == .cancelled {
+        catalogSession?.messages.append(
+          .init(
+            scope: operation.scope, operation: operation.title,
+            severity: .information, message: "Queued source operation was cancelled."))
+      }
+      if currentSelection, case .catalogRequest(_, let request) = result.output, let request {
+        catalogSession = nil
+        previewUpdate(title: "Add Selected Source Content", request: request)
+      } else if !currentSelection {
+        catalogSession?.stale = true
+      }
     case .sourceImport(let id) where importSession?.id == id:
       importSession?.busy = false
       importSession?.messages = result.diagnostics
       if currentSelection, case .sourceImport(_, let value) = result.output {
-        importSession?.inspection = value
-        importSession?.stale = false
+        importSession?.capture(value)
+      } else if !currentSelection {
+        importSession?.stale = true
       }
     case .importRequest(let id) where importSession?.id == id:
       importSession?.busy = false
@@ -630,6 +663,7 @@ final class AppModel {
     manifestDraft?.isStale = true
     creationSession?.stale = true
     watchStatusSession?.stale = true
+    catalogSession?.stale = true
     discoverySession?.stale = true
     watchSession?.stale = true
     importSession?.stale = true
@@ -841,13 +875,13 @@ extension AppModel {
   func selectImportFile(_ url: URL, for original: ImportSession) {
     guard canSelectImportInput(for: original) else { return }
     importSession?.file = url
-    importSession?.inspection = nil
+    importSession?.clearInspection()
   }
 
   func selectImportDirectory(_ url: URL, for original: ImportSession) {
     guard canSelectImportInput(for: original) else { return }
     importSession?.inputRoot = url
-    importSession?.inspection = nil
+    importSession?.clearInspection()
   }
 
   private func canSelectImportInput(for original: ImportSession) -> Bool {
@@ -858,21 +892,21 @@ extension AppModel {
 
   func inspectImport() {
     guard canModify, let session = importSession, session.scope == scope, let file = session.file,
-      !session.busy, !session.resolution.hasDuplicateKeys
+      !session.busy
     else { return }
     importSession?.busy = true
-    importSession?.inspection = nil
+    importSession?.clearInspection()
     let actions = actions
     startOperation(title: "Inspect import", scope: scope, purpose: .sourceImport(session.id)) {
       actions.inspectImport(
         id: session.id, scope: session.scope, file: file, format: session.format,
-        inputRoot: session.inputRoot,
-        resolution: session.resolution)
+        inputRoot: session.inputRoot)
     }
   }
 
   func reviewImport() {
     guard canModify, let session = importSession, session.scope == scope, !session.stale,
+      !session.busy, !session.hasPendingResolution, !session.rawResourcesBlocked,
       let imported = session.inspection, let inspection = snapshot?.inspection
     else { return }
     importSession?.busy = true

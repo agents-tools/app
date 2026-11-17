@@ -8,6 +8,8 @@ struct SourceStateView: View {
   var body: some View {
     Form {
       Section("Recorded Source State") {
+        Button("Review Declared Sources…") { model.discoverComponents() }
+          .disabled(!model.canModify || snapshot.inspection.declaration == nil)
         Button("Import Configuration…") { model.beginImport() }
         Button("Subscribe to Source…") { model.beginWatch() }
         ForEach(snapshot.inspection.sources, id: \.record) { source in

@@ -87,13 +87,9 @@ extension CoreActions {
   }
 
   func inspectImport(
-    id: UUID, scope: WorkspaceScope, file: URL, format: String, inputRoot: URL? = nil,
-    resolution: ImportResolution = .init()
+    id: UUID, scope: WorkspaceScope, file: URL, format: String, inputRoot: URL? = nil
   ) -> CoreCompletion {
     do {
-      guard !resolution.hasDuplicateKeys else {
-        throw CoreError.invalidState("Each source key and installed skill name must be unique.")
-      }
       let root = inputRoot ?? file.deletingLastPathComponent()
       let rootParts = root.standardizedFileURL.pathComponents
       let fileParts = file.standardizedFileURL.pathComponents
@@ -102,12 +98,7 @@ extension CoreActions {
       }
       let document = fileParts.dropFirst(rootParts.count).joined(separator: "/")
       let value = try SourceImportOperations.inspect(
-        format: format, root: root, document: document,
-        selection: resolution.selection.map(Set.init),
-        sourceDeclarations: Dictionary(
-          uniqueKeysWithValues: resolution.sources.map { ($0.key, $0.declaration) }),
-        installedSkills: Dictionary(
-          uniqueKeysWithValues: resolution.skills.map { ($0.name, $0.path) }))
+        format: format, root: root, document: document)
       return .init(
         disposition: .completed, output: .sourceImport(id, value),
         readLocations: value.readLocations)

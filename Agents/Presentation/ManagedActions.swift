@@ -14,13 +14,14 @@ struct WatchSession: Identifiable {
   var messages: [AppDiagnostic] = []
 }
 
-struct ImportSession: Identifiable {
+struct ImportSession: Identifiable, Sendable {
   let id = UUID()
   let scope: WorkspaceScope
   var file: URL?
   var inputRoot: URL?
   var format = ""
-  var resolution = ImportResolution()
+  var selectedChoices: Set<ImportChoiceID>?
+  var inputs: [ImportInputID: ImportInputDraft] = [:]
   var inspection: SourceImportInspection?
   var busy = false
   var stale = false
@@ -43,26 +44,6 @@ struct ConnectionSession: Identifiable {
   var bindingsReady: Bool {
     description?.requiredBindings.allSatisfy { inputs[$0] != nil } == true
   }
-}
-
-struct ImportResolution: Equatable, Sendable {
-  var selection: [String]?
-  var sources: [ImportSourceInput] = []
-  var skills: [ImportSkillInput] = []
-  var hasDuplicateKeys: Bool {
-    Set(sources.map(\.key)).count != sources.count
-      || Set(skills.map(\.name)).count != skills.count
-  }
-}
-
-struct ImportSourceInput: Equatable, Sendable {
-  var key = ""
-  var declaration = SourceDeclaration(kind: .local, location: "")
-}
-
-struct ImportSkillInput: Equatable, Sendable {
-  var name = ""
-  var path = ""
 }
 
 struct WatchStatusSession: Identifiable {

@@ -72,7 +72,7 @@ struct ImportView: View {
               get: { model.importSession?.format ?? "" },
               set: {
                 model.importSession?.format = $0
-                model.importSession?.inspection = nil
+                model.importSession?.clearInspection()
               })
           ) {
             Text("Choose a format").tag("")
@@ -109,96 +109,17 @@ struct ImportView: View {
             LabeledContent("Input directory") { PathView(url: root) }
             Button("Use Input File’s Directory") {
               model.importSession?.inputRoot = nil
-              model.importSession?.inspection = nil
+              model.importSession?.clearInspection()
             }
           } else {
             Text("Relative resources use the input file’s directory.").font(.caption)
               .foregroundStyle(.secondary)
           }
-          ImportResolutionEditor(
-            value: Binding(
-              get: { model.importSession?.resolution ?? .init() },
-              set: {
-                model.importSession?.resolution = $0
-                model.importSession?.inspection = nil
-              }))
           Button("Inspect Import") { model.inspectImport() }.disabled(
-            session.file == nil || session.format.isEmpty || session.resolution.hasDuplicateKeys
+            session.file == nil || session.format.isEmpty
               || session.busy || !model.canModify)
           if let value = session.inspection {
-            LabeledContent("Format", value: value.format)
-            Text(value.specificationStatus).foregroundStyle(.secondary)
-            if let revision = value.producerRevision {
-              LabeledContent("Producer revision") { CompactText(text: revision) }
-            }
-            ForEach(Array(value.sources.enumerated()), id: \.offset) { _, source in
-              DetailsGroup(source.alias) {
-                if let version = source.version { LabeledContent("Version", value: version) }
-                if let commit = source.commit {
-                  LabeledContent("Commit") { CompactText(text: commit) }
-                }
-                if let integrity = source.integrity {
-                  LabeledContent("Claimed integrity") { CompactText(text: integrity) }
-                }
-                if let url = source.resolvedURL {
-                  LabeledContent("Resolved source") { CompactText(text: url) }
-                }
-              }
-            }
-            ForEach(Array(value.components.enumerated()), id: \.offset) { _, component in
-              Text(ComponentDraft(component.declaration).name)
-            }
-            ForEach(Array(value.resources.enumerated()), id: \.offset) { _, resource in
-              DetailsGroup(resource.producerName) {
-                if let hash = resource.hash {
-                  LabeledContent("Captured content") { CompactText(text: hash) }
-                }
-                if let integrity = resource.integrity {
-                  LabeledContent("Producer claim") { CompactText(text: integrity) }
-                }
-                Text(
-                  resource.requiresStandaloneSource
-                    ? "Requires a standalone source." : "Uses the captured source.")
-              }
-            }
-            ForEach(Array(value.diagnostics.enumerated()), id: \.offset) { _, issue in
-              Text(issue.message)
-            }
-            ForEach(Array(value.selections.enumerated()), id: \.offset) { _, selection in
-              DetailsGroup("Producer selection · " + selection.kind) {
-                if let source = selection.sourceAlias { LabeledContent("Source", value: source) }
-                ForEach(Array(selection.values.enumerated()), id: \.offset) { _, name in
-                  CompactText(text: name)
-                }
-                Text(
-                  selection.automatic
-                    ? "Producer selects automatically." : "Producer selects explicitly.")
-                if selection.developmentOnly { Text("Development only") }
-              }
-            }
-            ForEach(Array(value.orderedSources.enumerated()), id: \.offset) { _, source in
-              DetailsGroup("Ordered source · " + source.alias) {
-                LabeledContent("Identity") { CompactText(text: source.identity) }
-                LabeledContent("Transport", value: source.transport)
-                LabeledContent("Skills path") { CompactText(text: source.skillsPath) }
-                LabeledContent("Rules path") { CompactText(text: source.rulesPath) }
-                if let names = source.skills {
-                  LabeledContent("Skills", value: names.joined(separator: ", "))
-                }
-                if let names = source.rules {
-                  LabeledContent("Rules", value: names.joined(separator: ", "))
-                }
-              }
-            }
-            ForEach(Array(value.bindings.enumerated()), id: \.offset) { _, binding in
-              Text(binding.reason)
-            }
-            if !value.deployments.isEmpty {
-              Text("Existing deployment claims do not grant ownership of installed files.")
-            }
-            if session.stale { Text("Import inputs changed. Inspect again.") }
-            Button("Review Changes…") { model.reviewImport() }.disabled(
-              session.stale || session.busy || !model.canModify)
+            ImportInspectionView(model: model, inspection: value)
           }
         }.formStyle(.grouped).disabled(session.busy)
         if session.busy { ProgressView("Inspecting captured input…") }
@@ -288,7 +209,7 @@ struct ConnectionView: View {
   }
 }
 
-private enum ImportFormatChoice: String, CaseIterable, Identifiable {
+enum ImportFormatChoice: String, CaseIterable, Identifiable {
   case apmManifest, apmLock, rulesyncConfig, rulesyncSourcesV1, rulesyncNpmV1, rulesyncGitHubV1,
     rulesyncAPMV1
   case vercelProjectV2, vercelUserV3, claudeSettingsV1, codexConfigV1, cursorMCPV1,

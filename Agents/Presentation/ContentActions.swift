@@ -63,6 +63,8 @@ enum ContentOutput: Sendable {
   case creationDescription(UUID, InitializationDescription)
   case watchStatus(UUID, [WatchStatus])
   case watchPreview(UUID, WatchMutationPreview)
+  case catalog(UUID, SourceCatalogInspection)
+  case catalogRequest(UUID, UpdateRequest?)
   case sourceImport(UUID, SourceImportInspection)
   case importRequest(UUID, UpdateRequest)
   case connectionSnapshot(UUID, MCPConnectionSnapshot, MCPConnectionDescription)

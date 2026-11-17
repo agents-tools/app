@@ -22,8 +22,14 @@ struct SourceWorkflowTests {
     model.beginImport()
     model.importSession?.file = file
     model.importSession?.format = "cursorMCPV1"
-    model.importSession?.resolution.selection = ["first"]
     model.inspectImport()
+    try await idle(model)
+    let choice = try #require(
+      model.importSession?.inspection?.availableChoices.first {
+        $0.effects.components.contains { ComponentDraft($0.declaration).name == "first" }
+      })
+    model.importSession?.selectedChoices = [choice.id]
+    model.resolveImportSelection()
     try await idle(model)
     let imported = try #require(model.importSession?.inspection)
     #expect(imported.components.map { ComponentDraft($0.declaration).name } == ["first"])
@@ -33,11 +39,10 @@ struct SourceWorkflowTests {
       return
     }
     #expect(executable.arguments == ["", "a\nb"])
-    model.importSession?.resolution.selection = []
-    model.inspectImport()
+    model.importSession?.selectedChoices = []
+    model.resolveImportSelection()
     try await idle(model)
     #expect(model.importSession?.inspection?.components.isEmpty == true)
-    model.importSession?.resolution.selection = nil
     model.inspectImport()
     try await idle(model)
     #expect(model.importSession?.inspection?.components.count == 2)
@@ -45,7 +50,7 @@ struct SourceWorkflowTests {
     _ = model.requestTermination()
   }
 
-  @Test func sourceCoordinatesAndCapturedSkillPathsReachPublicImporter() async throws {
+  @Test func issuedSourceCoordinateHandleReachesPublicImporter() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
     try f.writeManifest("version: 1\ndefaultAgents: []\n")
@@ -61,12 +66,12 @@ struct SourceWorkflowTests {
     model.inspectImport()
     try await idle(model)
     #expect(model.importSession?.inspection?.sources.first?.declaration == nil)
-    model.importSession?.resolution.sources = [
-      .init(
-        key: "acme/repo",
-        declaration: .init(kind: .git, location: "https://example.invalid/acme/repo"))
-    ]
-    model.inspectImport()
+    let sourceInput = try #require(
+      model.importSession?.inspection?.requiredInputs.first { $0.kind == .sourceCoordinates })
+    model.importSession?.inputs[sourceInput.id]?.enabled = true
+    model.importSession?.inputs[sourceInput.id]?.source = .init(
+      kind: .git, location: "https://example.invalid/acme/repo")
+    model.resolveImportSelection()
     try await idle(model)
     #expect(
       model.importSession?.inspection?.sources.first?.declaration?.location
@@ -74,29 +79,6 @@ struct SourceWorkflowTests {
     #expect(
       model.importSession?.inspection?.sources.first?.declaration?.requirement
         == .revision(String(repeating: "a", count: 40)))
-    let directory = f.root.appendingPathComponent("metadata")
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
-    let manifest = directory.appendingPathComponent("apm.yml")
-    try Data("name: fixture\nversion: '1.0.0'\n".utf8).write(to: manifest)
-    let skill = f.root.appendingPathComponent("installed/review")
-    try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
-    try Data("---\nname: review\ndescription: Fixture content\n---\nReview this.\n".utf8).write(
-      to: skill.appendingPathComponent("SKILL.md"))
-    model.importSession?.file = manifest
-    model.importSession?.inputRoot = f.root
-    model.importSession?.format = "apmManifest"
-    model.importSession?.resolution = .init(skills: [
-      .init(name: "review", path: "installed/review")
-    ])
-    let before = try f.entries()
-    model.inspectImport()
-    try await idle(model)
-    let resource = try #require(model.importSession?.inspection?.resources.first)
-    #expect(resource.hash?.hasPrefix("sha256:") == true)
-    #expect(
-      model.importSession?.inspection?.readLocations.map { $0.standardizedFileURL.path }.contains(
-        skill.standardizedFileURL.path) == true)
-    #expect(try f.entries() == before)
     _ = model.requestTermination()
   }
 
