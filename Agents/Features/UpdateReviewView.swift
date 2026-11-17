@@ -147,6 +147,8 @@ struct UpdateReportView: View {
               LabeledContent(
                 "Required bindings", value: change.requiredBindings.joined(separator: ", "))
             }
+            SymbolicChangeView(title: "Before", text: change.symbolicBefore)
+            SymbolicChangeView(title: "After", text: change.symbolicAfter)
             if let permission = change.permissionChange {
               LabeledContent(
                 "File mode",
@@ -216,5 +218,22 @@ struct ChangesView: View {
       }
     }.formStyle(.grouped)
       .onChange(of: model.snapshot?.inspection.generation) { selection.removeAll() }
+  }
+}
+
+struct SymbolicChangeView: View {
+  let title: String
+  let text: String?
+  var body: some View {
+    DetailsGroup(title) {
+      if let text {
+        ScrollView {
+          Text(verbatim: text).font(.system(.body, design: .monospaced))
+            .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+        }.frame(maxHeight: 220)
+      } else {
+        Text("Not available").foregroundStyle(.secondary)
+      }
+    }
   }
 }

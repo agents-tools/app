@@ -67,6 +67,25 @@ extension CoreActions {
     }
   }
 
+  func acknowledgeWatch(_ status: WatchStatus, scope: WorkspaceScope) -> CoreCompletion {
+    completed(
+      UpdateOperations.performWatch(status), scope: scope, title: "Mark subscription as read"
+    ) {
+      _ in nil
+    }
+  }
+
+  func inspectClients(id: UUID) -> CoreCompletion {
+    do {
+      let scope = WorkspaceScope(kind: .user, root: home)
+      let report = try AgentClientOperations.inspect(environment: environment(for: scope))
+      return .init(disposition: .completed, output: .clientInspection(id, report))
+    } catch {
+      return .init(
+        disposition: .failed, output: .clientInspectionFailed(id, String(describing: error)))
+    }
+  }
+
   func inspectImport(
     id: UUID, scope: WorkspaceScope, file: URL, format: String, inputRoot: URL? = nil,
     resolution: ImportResolution = .init()
@@ -100,16 +119,20 @@ extension CoreActions {
       try ProjectRootAccess.requireAvailable(scope)
       let operations = SkillOperations.watchOperations()
       let values: [WatchStatus]
+      let locations: [URL]
       if let source {
-        values = [
-          try operations.diff(
-            source, scope: scope.installScope, environment: environment(for: scope))
-        ]
+        let status = try operations.diff(
+          source, scope: scope.installScope, environment: environment(for: scope))
+        values = [status]
+        locations = status.readLocations
       } else {
-        values = try operations.status(
+        let inspection = try operations.inspectStatus(
           scope: scope.installScope, environment: environment(for: scope))
+        values = inspection.statuses
+        locations = inspection.readLocations
       }
-      return .init(disposition: .completed, output: .watchStatus(id, values))
+      return .init(
+        disposition: .completed, output: .watchStatus(id, values), readLocations: locations)
     } catch { return failure(error, scope: scope, title: "Check subscriptions") }
   }
 
@@ -131,7 +154,8 @@ extension CoreActions {
         selection: selection, scope: scope.installScope, environment: environment(for: scope))
       return .init(
         disposition: .completed,
-        output: .connectionSnapshot(id, value, MCPConnectionOperations.describe(value)))
+        output: .connectionSnapshot(id, value, MCPConnectionOperations.describe(value)),
+        readLocations: value.readLocations)
     } catch {
       // Preparation failures can include input paths; connection diagnostics expose only the typed boundary.
       return .init(

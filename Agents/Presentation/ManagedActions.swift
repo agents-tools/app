@@ -73,5 +73,6 @@ struct WatchStatusSession: Identifiable {
   var stale = false
   var hasResult = false
   var statuses: [WatchStatus] = []
+  var terminal: UpdateTerminal?
   var messages: [AppDiagnostic] = []
 }

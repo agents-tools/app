@@ -66,7 +66,7 @@ struct WatchStatusView: View {
       VStack(alignment: .leading, spacing: 16) {
         Text("Subscription Changes").font(.headline)
         PathView(url: session.scope.root, scope: session.scope)
-        Text("Checks source content without installing it or marking it as read.")
+        Text("Review source changes, then explicitly mark the displayed content as read.")
           .foregroundStyle(.secondary)
         if session.busy { ProgressView("Checking source content…") }
         if session.stale { Text("Inputs changed. Check again for current results.") }
@@ -79,6 +79,10 @@ struct WatchStatusView: View {
                 LabeledContent("New commits", value: String(commits))
               }
               if status.changes.isEmpty { Text("No content changes found.") }
+              Button("Mark Displayed Content as Read") { model.markSubscriptionRead(status) }
+                .disabled(
+                  session.busy || session.stale || session.terminal != nil
+                    || session.scope != model.scope || !model.canModify)
               ForEach(Array(status.changes.enumerated()), id: \.offset) { _, change in
                 DetailsGroup(change.name + " · " + change.change.rawValue) {
                   LabeledContent("Kind", value: DeclarationLabels.kind(change.kind.rawValue))
@@ -95,7 +99,10 @@ struct WatchStatusView: View {
           if session.hasResult && session.statuses.isEmpty && session.messages.isEmpty {
             Text("No subscribed sources.")
           }
-          ForEach(session.messages) { Text($0.message) }
+          if let terminal = session.terminal { Text(terminal.message) }
+          ForEach(session.messages.filter { $0.message != session.terminal?.message }) {
+            Text($0.message)
+          }
         }.formStyle(.grouped)
         HStack {
           Button(session.busy ? "Cancel" : "Done") {

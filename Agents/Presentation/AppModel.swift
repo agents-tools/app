@@ -9,6 +9,8 @@ import Observation
 final class AppModel {
   enum TerminationDecision { case now, later, cancel }
   enum OperationPurpose {
+    case clients(UUID)
+    case watchSeen(UUID)
     case assistance(UUID)
     case workspace
     case creation(UUID)
@@ -39,6 +41,7 @@ final class AppModel {
   }
 
   let preferences: AppPreferences
+  let clientSettings = ClientSettingsModel()
   let home: URL
   private let executor: CoreExecutor
   private let reader: CoreReader
@@ -84,7 +87,7 @@ final class AppModel {
   var isApplying: Bool {
     operations.values.contains {
       switch $0.purpose {
-      case .apply, .creation, .watchApply: return true
+      case .apply, .creation, .watchApply, .watchSeen: return true
       default: return false
       }
     }
@@ -404,6 +407,19 @@ final class AppModel {
       } else {
         creationSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
       }
+    case .clients(let id):
+      clientSettings.finish(id: id, result: result)
+    case .watchSeen(let id) where watchStatusSession?.id == id:
+      watchStatusSession?.busy = false
+      watchStatusSession?.terminal = result.updateTerminal
+      watchStatusSession?.messages = result.diagnostics
+      if result.disposition == .cancelled {
+        watchStatusSession?.messages.append(
+          .init(
+            scope: operation.scope, operation: operation.title, severity: .information,
+            message: "Acknowledgment was cancelled before it started."))
+      }
+      watchStatusSession?.stale = true
     case .watchStatus(let id) where watchStatusSession?.id == id:
       watchStatusSession?.busy = false
       watchStatusSession?.messages = result.diagnostics
@@ -707,7 +723,7 @@ final class AppModel {
     }
     if !isTerminating && currentSelection {
       switch operation.purpose {
-      case .apply, .creation, .watchApply: refresh()
+      case .apply, .creation, .watchApply, .watchSeen: refresh()
       default: break
       }
     }
@@ -740,6 +756,40 @@ extension AppModel {
       title: "Review starter content", scope: scope, purpose: .creationPreview(session.id)
     ) {
       actions.describeCreation(request)
+    }
+  }
+
+  func redetectClients() {
+    guard !isTerminating else { return }
+    for operation in operations.values {
+      if case .clients = operation.purpose { operation.admission.cancel() }
+    }
+    let id = clientSettings.begin()
+    let actions = actions
+    startOperation(
+      title: "Detect agent clients", scope: .init(kind: .user, root: home), purpose: .clients(id)
+    ) {
+      actions.inspectClients(id: id)
+    }
+  }
+
+  func cancelClientDetection() {
+    for operation in operations.values {
+      if case .clients = operation.purpose { operation.admission.cancel() }
+    }
+  }
+
+  func markSubscriptionRead(_ status: WatchStatus) {
+    guard canModify, let session = watchStatusSession, session.scope == scope,
+      !session.stale, !session.busy, session.terminal == nil,
+      session.statuses.contains(status)
+    else { return }
+    watchStatusSession?.busy = true
+    let actions = actions
+    startOperation(
+      title: "Mark subscription as read", scope: session.scope, purpose: .watchSeen(session.id)
+    ) {
+      actions.acknowledgeWatch(status, scope: session.scope)
     }
   }
 

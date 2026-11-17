@@ -29,15 +29,8 @@ struct SettingsView: View {
       .formStyle(.grouped)
       .tabItem { Label("General", systemImage: "gearshape") }
 
-      Form {
-        Section("Agent Clients") {
-          Text("Client detection is unavailable in this build.")
-          Text("Browsing configuration does not start clients or test connections.")
-            .foregroundStyle(.secondary)
-        }
-      }
-      .formStyle(.grouped)
-      .tabItem { Label("Agent Clients", systemImage: "desktopcomputer") }
+      ClientSettingsView(model: model)
+        .tabItem { Label("Agent Clients", systemImage: "desktopcomputer") }
 
       Form {
         Section("On-device Assistance") {

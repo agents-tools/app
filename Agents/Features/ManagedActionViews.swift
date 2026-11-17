@@ -219,55 +219,59 @@ struct ConnectionView: View {
       VStack(alignment: .leading, spacing: 16) {
         Text("Test “" + session.name + "”").font(.headline)
         PathView(url: session.scope.root, scope: session.scope)
-        if let description = session.description {
-          LabeledContent("Transport", value: description.transport.rawValue)
-          Text(
-            description.startsOwnedProcess
-              ? "Test starts an owned process and waits for its cleanup."
-              : "Test connects to the configured server. It does not apply configuration.")
-          ForEach(description.environmentBindings, id: \.self) {
-            Text("Uses environment input “" + $0 + "”.")
-          }
-          ForEach(description.requiredBindings, id: \.self) { name in
-            Toggle(
-              "Supply “" + name + "”",
-              isOn: Binding(
-                get: { model.connectionSession?.inputs[name] != nil },
-                set: { model.connectionSession?.inputs[name] = $0 ? "" : nil }))
-            if session.inputs[name] != nil {
-              SecureField(
-                name,
-                text: Binding(
-                  get: { model.connectionSession?.inputs[name] ?? "" },
-                  set: { model.connectionSession?.inputs[name] = $0 }))
+        Form {
+          if let description = session.description {
+            ConnectionDescriptionView(description: description)
+            Text("This test uses the selected captured connection shown here.").font(.caption)
+            Text(
+              description.startsOwnedProcess
+                ? "Test starts an owned process and waits for its cleanup."
+                : "Test connects to the configured server. It does not apply configuration.")
+            ForEach(description.environmentBindings, id: \.self) {
+              Text("Uses environment input “" + $0 + "”.")
+            }
+            ForEach(description.requiredBindings, id: \.self) { name in
+              Toggle(
+                "Supply “" + name + "”",
+                isOn: Binding(
+                  get: { model.connectionSession?.inputs[name] != nil },
+                  set: { model.connectionSession?.inputs[name] = $0 ? "" : nil }))
+              if session.inputs[name] != nil {
+                SecureField(
+                  name,
+                  text: Binding(
+                    get: { model.connectionSession?.inputs[name] ?? "" },
+                    set: { model.connectionSession?.inputs[name] = $0 }))
+              }
+            }
+            if session.stale {
+              Text("Selection or inputs changed. Close and prepare this connection again.")
+            }
+            if session.result == nil && !session.busy {
+              Button("Test Connection") { model.testConnection() }.disabled(
+                !session.bindingsReady || session.stale || session.scope != model.scope)
             }
           }
-          if session.stale {
-            Text("Selection or inputs changed. Close and prepare this connection again.")
+          if session.busy {
+            ProgressView(
+              session.testing
+                ? "Testing and releasing owned resources…" : "Preparing exact managed selection…")
           }
-          if session.result == nil && !session.busy {
-            Button("Test Connection") { model.testConnection() }.disabled(
-              !session.bindingsReady || session.stale || session.scope != model.scope)
-          }
-        }
-        if session.busy {
-          ProgressView(
-            session.testing
-              ? "Testing and releasing owned resources…" : "Preparing exact managed selection…")
-        }
-        if let result = session.result {
-          LabeledContent(
-            "Result", value: result.issue == .cancelled ? "Cancelled" : result.outcome.rawValue)
-          LabeledContent("Cleanup", value: result.cleanupComplete ? "Complete" : "Needs attention")
-          if let version = result.negotiatedVersion { LabeledContent("Protocol", value: version) }
-          List(result.tools, id: \.name) { tool in
-            VStack(alignment: .leading) {
-              Text(tool.title ?? tool.name)
-              if let text = tool.description { Text(text).foregroundStyle(.secondary) }
+          if let result = session.result {
+            LabeledContent(
+              "Result", value: result.issue == .cancelled ? "Cancelled" : result.outcome.rawValue)
+            LabeledContent(
+              "Cleanup", value: result.cleanupComplete ? "Complete" : "Needs attention")
+            if let version = result.negotiatedVersion { LabeledContent("Protocol", value: version) }
+            ForEach(result.tools, id: \.name) { tool in
+              VStack(alignment: .leading) {
+                Text(tool.title ?? tool.name)
+                if let text = tool.description { Text(text).foregroundStyle(.secondary) }
+              }
             }
           }
-        }
-        ForEach(session.messages) { Text($0.message) }
+          ForEach(session.messages) { Text($0.message) }
+        }.formStyle(.grouped)
         Spacer()
         Button(session.busy ? "Cancel" : "Done") {
           if session.busy {

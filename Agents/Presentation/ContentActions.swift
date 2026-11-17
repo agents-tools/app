@@ -58,6 +58,8 @@ struct PromptSession: Identifiable {
 }
 
 enum ContentOutput: Sendable {
+  case clientInspection(UUID, AgentClientInspection)
+  case clientInspectionFailed(UUID, String)
   case creationDescription(UUID, InitializationDescription)
   case watchStatus(UUID, [WatchStatus])
   case watchPreview(UUID, WatchMutationPreview)
