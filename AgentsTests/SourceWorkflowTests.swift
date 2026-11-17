@@ -11,13 +11,17 @@ struct SourceWorkflowTests {
   @Test func explicitImportSelectionReinspectsWithoutPublishing() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
+    let boundary = try FixtureEventBoundary(root: f.root)
+    defer { boundary.stop() }
     try f.writeManifest("version: 1\ndefaultAgents: []\n")
     let file = f.root.appendingPathComponent("mcp.json")
     try Data(
       #"{"mcpServers":{"first":{"command":"one","args":["","a\nb"]},"second":{"command":"two"}}}"#
         .utf8
     ).write(to: file)
+    try await boundary.settle(creation: file, root: f.root)
     let model = await loaded(f)
+    defer { _ = model.requestTermination() }
     let before = try f.entries()
     model.beginImport()
     model.importSession?.file = file
@@ -47,7 +51,6 @@ struct SourceWorkflowTests {
     try await idle(model)
     #expect(model.importSession?.inspection?.components.count == 2)
     #expect(try f.entries() == before)
-    _ = model.requestTermination()
   }
 
   @Test func issuedSourceCoordinateHandleReachesPublicImporter() async throws {
