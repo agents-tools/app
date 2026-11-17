@@ -922,7 +922,8 @@ extension AppModel {
         messages.append(
           .init(
             scope: operationScope, operation: "Test MCP connection",
-            message: "Connection test: " + issue.rawValue, blocksTermination: !value.cleanupComplete
+            message: "Connection test: " + ConnectionLabels.issue(issue),
+            blocksTermination: !value.cleanupComplete
           ))
       } else if !value.cleanupComplete {
         messages.append(

@@ -259,7 +259,9 @@ struct ConnectionView: View {
           }
           if let result = session.result {
             LabeledContent(
-              "Result", value: result.issue == .cancelled ? "Cancelled" : result.outcome.rawValue)
+              "Result",
+              value: result.issue == .cancelled
+                ? "Cancelled" : ConnectionLabels.outcome(result.outcome))
             LabeledContent(
               "Cleanup", value: result.cleanupComplete ? "Complete" : "Needs attention")
             if let version = result.negotiatedVersion { LabeledContent("Protocol", value: version) }

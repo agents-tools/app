@@ -5,7 +5,7 @@ struct ConnectionDescriptionView: View {
   let description: MCPConnectionDescription
   var body: some View {
     Group {
-      LabeledContent("Transport", value: description.transport.rawValue)
+      LabeledContent("Transport", value: ConnectionLabels.transport(description.transport))
       if let executable = description.executable {
         LabeledContent("Executable") { CompactText(text: executable) }
         if description.executableIsCaptured {

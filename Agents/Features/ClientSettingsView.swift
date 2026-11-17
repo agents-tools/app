@@ -23,7 +23,7 @@ struct ClientSettingsView: View {
         if let report = model.clientSettings.inspection {
           LabeledContent("Observed from") { Text(report.startedAt, style: .time) }
           LabeledContent("Observed through") { Text(report.finishedAt, style: .time) }
-          LabeledContent("Configuration scope", value: report.scope.rawValue)
+          LabeledContent("Configuration scope", value: ClientLabels.scope(report.scope.rawValue))
           LabeledContent("Home") { PathView(url: report.homeDirectory) }
           DetailsGroup("PATH Coverage") {
             Text(
@@ -57,8 +57,8 @@ private struct ClientRecordView: View {
   var body: some View {
     DetailsGroup(client.agent.displayName) {
       ForEach(Array(client.commands.enumerated()), id: \.offset) { _, command in
-        DetailsGroup(command.name + " · " + command.role.rawValue) {
-          LabeledContent("Observation", value: command.status.rawValue)
+        DetailsGroup(command.name + " · " + ClientLabels.role(command.role)) {
+          LabeledContent("Observation", value: ClientLabels.observation(command.status))
           if let url = command.location {
             LabeledContent("Selected executable") { PathView(url: url) }
           }
@@ -67,7 +67,7 @@ private struct ClientRecordView: View {
           }
           ClientVersionView(version: command.version)
           ForEach(Array(command.lookupIssues.enumerated()), id: \.offset) { _, issue in
-            LabeledContent(issue.status.rawValue) {
+            LabeledContent(ClientLabels.observation(issue.status)) {
               CompactText(text: issue.path + " · " + issue.reason)
             }
           }
@@ -79,7 +79,7 @@ private struct ClientRecordView: View {
       }
       ForEach(Array(client.applications.enumerated()), id: \.offset) { _, application in
         DetailsGroup("Application") {
-          LabeledContent("Observation", value: application.status.rawValue)
+          LabeledContent("Observation", value: ClientLabels.observation(application.status))
           if let identifier = application.bundleIdentifier {
             LabeledContent("Bundle identifier", value: identifier)
           }
@@ -90,10 +90,10 @@ private struct ClientRecordView: View {
       DetailsGroup("Configuration Locations") {
         ForEach(Array(client.configurationLocations.enumerated()), id: \.offset) { _, location in
           DetailsGroup(location.identity) {
-            LabeledContent("Scope", value: location.scope)
-            LabeledContent("Purpose", value: location.purpose.rawValue)
-            LabeledContent("Object", value: location.objectRole.rawValue)
-            LabeledContent("Observation", value: location.status.rawValue)
+            LabeledContent("Scope", value: ClientLabels.scope(location.scope))
+            LabeledContent("Purpose", value: ClientLabels.purpose(location.purpose))
+            LabeledContent("Object", value: ClientLabels.objectRole(location.objectRole))
+            LabeledContent("Observation", value: ClientLabels.observation(location.status))
             if let url = location.location { PathView(url: url) }
             if let diagnostic = location.diagnostic { Text(diagnostic) }
           }
@@ -109,9 +109,9 @@ private struct ClientRecordView: View {
             evidence.surface.displayName + " · " + DeclarationLabels.kind(evidence.kind.rawValue)
           ) {
             LabeledContent("Surface", value: evidence.surface.identifier)
-            LabeledContent("Scope", value: evidence.scope)
-            LabeledContent("Placement", value: evidence.placement.rawValue)
-            LabeledContent("Evidence", value: evidence.status.rawValue)
+            LabeledContent("Scope", value: ClientLabels.scope(evidence.scope))
+            LabeledContent("Placement", value: ClientLabels.placement(evidence.placement))
+            LabeledContent("Evidence", value: ClientLabels.evidence(evidence.status))
             if let revision = evidence.revision {
               LabeledContent("Evidence revision") { CompactText(text: revision) }
             }
@@ -131,7 +131,7 @@ private struct ClientVersionView: View {
   var body: some View {
     LabeledContent("Version", value: version.rawVersion ?? "Unknown")
     if let reason = version.unknownReason {
-      LabeledContent("Unknown reason", value: reason.rawValue)
+      LabeledContent("Unknown reason", value: ClientLabels.versionReason(reason))
     }
     if let build = version.build { LabeledContent("Build", value: build) }
     if let url = version.metadataURL { LabeledContent("Metadata") { PathView(url: url) } }
