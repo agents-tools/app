@@ -274,10 +274,13 @@ struct SelectionConsumerTests {
   @Test func symbolicResolutionCannotClearRawResourceAdmission() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
+    let boundary = try FixtureEventBoundary(root: f.root)
+    defer { boundary.stop() }
     let file = f.root.appendingPathComponent("settings.json")
     try write(
       #"{"mcpServers":{"review":{"command":"never-run","env":{"TOKEN":"PRIVATE_LITERAL_CANARY"}}}}"#,
       at: file)
+    try await boundary.settle(creation: file, root: f.root)
     let model = await loaded(f)
     defer { _ = model.requestTermination() }
     let before = try f.entries()

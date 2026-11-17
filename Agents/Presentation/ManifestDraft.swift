@@ -48,17 +48,13 @@ struct ManifestDraft: Identifiable {
     switch kind {
     case .defaults: return [.setDefaultAgents(defaultAgents)]
     case .source:
-      let removal: [ManifestEdit] =
-        originalName.map { $0 != sourceAlias ? [.removeSource(alias: $0)] : [] } ?? []
-      return removal + [
-        .upsertSource(
-          .init(
-            name: sourceAlias,
-            source: .init(
-              kind: sourceKind, location: sourceLocation, requirement: requirement,
-              path: sourcePath,
-              environment: .init(projectDirectory: scope.root, homeDirectory: home))))
-      ]
+      let source = NamedSourceDeclaration(
+        name: sourceAlias,
+        source: .init(
+          kind: sourceKind, location: sourceLocation, requirement: requirement, path: sourcePath,
+          environment: .init(projectDirectory: scope.root, homeDirectory: home)))
+      if let replacingNode { return [.replaceSource(replacingNode, with: source)] }
+      return [.upsertSource(source)]
     case .component:
       if let replacingNode { return [.replaceComponent(replacingNode, with: component.value)] }
       return [

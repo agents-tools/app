@@ -53,13 +53,17 @@ struct SourceWorkflowTests {
   @Test func issuedSourceCoordinateHandleReachesPublicImporter() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
+    let boundary = try FixtureEventBoundary(root: f.root)
+    defer { boundary.stop() }
     try f.writeManifest("version: 1\ndefaultAgents: []\n")
     let lock = f.root.appendingPathComponent("source-lock.json")
     try Data(
       "{\"lockfileVersion\":1,\"sources\":{\"acme/repo\":{\"resolvedRef\":\"\(String(repeating: "a", count: 40))\"}}}"
         .utf8
     ).write(to: lock)
+    try await boundary.settle(creation: lock, root: f.root)
     let model = await loaded(f)
+    defer { _ = model.requestTermination() }
     model.beginImport()
     model.importSession?.file = lock
     model.importSession?.format = "rulesyncSourcesV1"

@@ -237,7 +237,7 @@ struct OverviewView: View {
           LabeledContent(
             "Diagnostics in this session", value: String(model.currentDiagnostics.count))
           Text(
-            "Declaration and managed state share one read generation. External changes refresh these reads automatically."
+            "Configuration and installed content refresh automatically when files change."
           )
           .foregroundStyle(.secondary)
           Button("Show Diagnostics") { model.page = .diagnostics }

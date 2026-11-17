@@ -82,6 +82,8 @@ struct ManagedWorkflowTests {
   @Test func independentImportPublishesCapturedArgumentsThroughReviewedCoreApply() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
+    let boundary = try FixtureEventBoundary(root: f.root)
+    defer { boundary.stop() }
     try f.writeManifest("version: 1\ndefaultAgents: [claude-code]\n")
     try FileManager.default.createDirectory(
       at: f.project.appendingPathComponent(".cursor"), withIntermediateDirectories: false)
@@ -91,7 +93,9 @@ struct ManagedWorkflowTests {
     let bytes = Data(
       #"{"mcpServers":{"documentation":{"command":"fixture-command","args":["","a\nb"]}}}"#.utf8)
     try bytes.write(to: file)
+    try await boundary.settle(creation: file, root: f.root)
     let model = await loaded(f)
+    defer { _ = model.requestTermination() }
     model.beginImport()
     model.importSession?.file = file
     model.importSession?.format = "cursorMCPV1"

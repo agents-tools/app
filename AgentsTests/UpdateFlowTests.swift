@@ -121,6 +121,8 @@ struct UpdateFlowTests {
   @Test func preciseSelectionRemovalUsesRealRecordedState() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     try fixture.writeManifest(
       """
       version: 1
@@ -133,7 +135,10 @@ struct UpdateFlowTests {
           name: second
           transport: {kind: stdio, executable: fixture-command}
       """)
+    try await boundary.settle(
+      creation: fixture.project.appendingPathComponent(".agent/agents.yaml"), root: fixture.root)
     let model = await loadedModel(fixture)
+    defer { _ = model.requestTermination() }
     model.previewUpdate(title: "Initial update")
     try await idle(model)
     model.confirmUpdate()
@@ -194,6 +199,8 @@ struct UpdateFlowTests {
   @Test func discoveryIsReadOnlyAndRejectsChangedSourceBeforePreview() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     let source = fixture.project.appendingPathComponent("content/skills/demo")
     try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
     let file = source.appendingPathComponent("SKILL.md")
@@ -206,7 +213,10 @@ struct UpdateFlowTests {
       sources: {local: {path: ./content}}
       components: [{kind: skills, source: local, select: all}]
       """)
+    try await boundary.settle(
+      creation: fixture.project.appendingPathComponent(".agent/agents.yaml"), root: fixture.root)
     let model = await loadedModel(fixture)
+    defer { _ = model.requestTermination() }
     let before = try fixture.entries()
     let declaration = try #require(model.snapshot?.inspection.declaration)
     do {

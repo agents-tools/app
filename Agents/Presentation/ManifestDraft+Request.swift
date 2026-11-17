@@ -63,7 +63,7 @@ extension ManifestDraft {
       guard let source = declaration.sourceDeclarations.first(where: { $0.name == item.title })
       else { return }
       kind = .source
-      originalName = source.name
+      replacingNode = item.id
       sourceAlias = source.name
       sourceKind = source.source.kind
       sourceLocation = source.source.location
