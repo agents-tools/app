@@ -16,8 +16,7 @@ struct SourceCatalogView: View {
                 ForEach(sources.keys.sorted(), id: \.self) { alias in
                   Button(alias) {
                     model.catalogSession?.alias = alias
-                    model.catalogSession?.source = sources[alias]!
-                    model.catalogSession?.clearInspection()
+                    model.catalogSession?.setSource(sources[alias]!)
                   }
                 }
               }
@@ -34,9 +33,7 @@ struct SourceCatalogView: View {
               value: Binding(
                 get: { session.source },
                 set: {
-                  model.catalogSession?.source = $0
-                  if $0.kind == .wellKnown { model.catalogSession?.importing = false }
-                  model.catalogSession?.clearInspection()
+                  model.catalogSession?.setSource($0)
                 }))
             if session.source.kind != .wellKnown {
               Toggle(

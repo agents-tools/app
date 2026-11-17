@@ -21,6 +21,21 @@ struct CatalogSession: Identifiable, Sendable {
   var stale = false
   var messages: [AppDiagnostic] = []
 
+  mutating func setSource(_ value: SourceDeclaration) {
+    source = value
+    if value.kind == .wellKnown {
+      if importing {
+        agents = nil
+        condition = nil
+        skillMode = nil
+      }
+      importing = false
+      format = ""
+      document = ""
+    }
+    clearInspection()
+  }
+
   mutating func clearInspection() {
     catalog = nil
     selected = []

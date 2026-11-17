@@ -8,6 +8,53 @@ import Testing
 @Suite("Captured source and import choices", .serialized, .timeLimit(.minutes(3)))
 @MainActor
 struct SelectionConsumerTests {
+  @Test(arguments: [false, true])
+  func declaredSkillIndexExitsImportModeAndDiscardsCapturedSelection(populated: Bool) throws {
+    let f = try TestFixture()
+    defer { try? f.remove() }
+    let producer = f.root.appendingPathComponent("producer")
+    try write(
+      "---\ndescription: Team style\n---\n# Team\nUse a consistent style.\n",
+      at: producer.appendingPathComponent("instructions/style.md"))
+    let source = SourceDeclaration(kind: .local, location: producer.path)
+    let actions = CoreActions(home: f.home, processEnvironment: f.environment)
+    var session = CatalogSession(scope: .init(kind: .project, root: f.project), alias: "team")
+    session.setSource(source)
+    guard case .catalog(_, let catalog) = actions.inspectCatalog(session).output else {
+      Issue.record("Expected a real local catalog")
+      return
+    }
+    session.capture(catalog)
+    session.selected = [try #require(catalog.availableChoices.first).id]
+    session.strategy = .components
+    session.importing = true
+    session.format = populated ? "openCodeConfigV2" : ""
+    session.document = populated ? "opencode.json" : ""
+    session.agents = [.codex]
+    session.skillMode = .copy
+    let id = session.id
+    let scope = session.scope
+    let index = SourceDeclaration(kind: .wellKnown, location: "https://example.invalid/skills")
+    session.alias = "declared-index"
+    session.setSource(index)
+    #expect(session.id == id && session.scope == scope)
+    #expect(session.alias == "declared-index" && session.source == index)
+    #expect(!session.importing && session.format.isEmpty && session.document.isEmpty)
+    #expect(session.catalog == nil && session.selected.isEmpty && session.inputs.isEmpty)
+    #expect(session.strategy == nil && session.agents == nil && session.skillMode == nil)
+    session.setSource(source)
+    guard case .catalog = actions.inspectCatalog(session).output else {
+      Issue.record("Source inspection must no longer route through the obsolete adapter document")
+      return
+    }
+    session.importing = true
+    session.format = "openCodeConfigV2"
+    session.document = "opencode.json"
+    session.setSource(source)
+    #expect(session.importing && session.format == "openCodeConfigV2")
+    #expect(session.document == "opencode.json")
+  }
+
   @Test func explicitSourceChoiceIsPureEmptyIsNoOpAndReviewedAdditionApplies() async throws {
     let f = try TestFixture()
     defer { try? f.remove() }
