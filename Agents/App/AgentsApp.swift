@@ -1,3 +1,4 @@
+import AgentsCore
 import AppKit
 import SwiftUI
 
@@ -7,6 +8,7 @@ struct AgentsApp: App {
   @State private var model: AppModel
 
   init() {
+    ProcessLimits.raiseOpenFileLimit()
     let input = LaunchInput.current
     let preferences = AppPreferences(
       defaults: input.isFixture ? nil : .standard,
