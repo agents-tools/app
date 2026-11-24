@@ -19,39 +19,41 @@ struct UpdateReviewView: View {
             .foregroundStyle(.secondary)
         case .review:
           if let report = session.report {
-            UpdateReportView(report: report, scope: session.proposal.scope)
-            if model.assistanceAvailable {
-              HStack {
-                Button("Summarize Update…") {
-                  model.reviewAssistance(.changes(report, action: .summarizeUpdate))
-                }
-                Button("Explain Configuration Changes…") {
-                  model.reviewAssistance(.changes(report, action: .explainConfiguration))
-                }
-              }
-            }
-            if !session.requiredBindings.isEmpty {
-              Text("Runtime inputs are used for this apply only.").font(.caption).foregroundStyle(
-                .secondary)
-              ForEach(session.requiredBindings, id: \.self) { name in
-                Toggle(
-                  "Supply “" + name + "”",
-                  isOn: Binding(
-                    get: { model.updateSession?.bindingInputs[name] != nil },
-                    set: { model.updateSession?.bindingInputs[name] = $0 ? "" : nil }))
-                if session.bindingInputs[name] != nil {
-                  SecureField(
-                    name,
-                    text: Binding(
-                      get: { model.updateSession?.bindingInputs[name] ?? "" },
-                      set: { model.updateSession?.bindingInputs[name] = $0 }))
+            Form {
+              UpdateReportSection(report: report, scope: session.proposal.scope)
+              if model.assistanceAvailable {
+                HStack {
+                  Button("Summarize Update…") {
+                    model.reviewAssistance(.changes(report, action: .summarizeUpdate))
+                  }
+                  Button("Explain Configuration Changes…") {
+                    model.reviewAssistance(.changes(report, action: .explainConfiguration))
+                  }
                 }
               }
-            }
-            Text(
-              "Changes to the inputs require another review before applying."
-            )
-            .font(.caption).foregroundStyle(.secondary)
+              if !session.requiredBindings.isEmpty {
+                Text("Runtime inputs are used for this apply only.").font(.caption).foregroundStyle(
+                  .secondary)
+                ForEach(session.requiredBindings, id: \.self) { name in
+                  Toggle(
+                    "Supply “" + name + "”",
+                    isOn: Binding(
+                      get: { model.updateSession?.bindingInputs[name] != nil },
+                      set: { model.updateSession?.bindingInputs[name] = $0 ? "" : nil }))
+                  if session.bindingInputs[name] != nil {
+                    SecureField(
+                      name,
+                      text: Binding(
+                        get: { model.updateSession?.bindingInputs[name] ?? "" },
+                        set: { model.updateSession?.bindingInputs[name] = $0 }))
+                  }
+                }
+              }
+              Text(
+                "Changes to the inputs require another review before applying."
+              )
+              .font(.caption).foregroundStyle(.secondary)
+            }.formStyle(.grouped)
           }
         case .stale: Text("Configuration or scope changed. Prepare a new preview before applying.")
         case .cancelled:
@@ -94,77 +96,75 @@ struct UpdateReviewView: View {
   }
 }
 
-struct UpdateReportView: View {
+private struct UpdateReportSection: View {
   let report: CombinedUpdateReport
   let scope: WorkspaceScope
   var body: some View {
-    Form {
-      Section("Proposed Changes") {
-        Text(report.hasChanges ? "Review the changes below." : "No changes are needed.")
-        ForEach(Array(report.skills.enumerated()), id: \.offset) { _, skill in
-          DetailsGroup("Skill · " + skill.skill) {
-            LabeledContent("Status", value: skill.changed ? "Changed" : "Unchanged")
-            LabeledContent("Source") { CompactText(text: skill.sourceIdentity) }
-            if let revision = skill.newRevision {
-              LabeledContent("Revision") { CompactText(text: revision) }
-            }
-            ForEach(Array(skill.membership.enumerated()), id: \.offset) { _, membership in
-              LabeledContent(membership.agent.displayName) {
-                PathView(url: URL(fileURLWithPath: membership.path), scope: scope)
-              }
-            }
-            ForEach(Array(skill.changes.enumerated()), id: \.offset) { _, file in
-              LabeledContent(
-                file.before == nil ? "Add" : (file.after == nil ? "Remove" : "Change"),
-                value: file.path)
+    Section("Proposed Changes") {
+      Text(report.hasChanges ? "Review the changes below." : "No changes are needed.")
+      ForEach(Array(report.skills.enumerated()), id: \.offset) { _, skill in
+        DetailsGroup("Skill · " + skill.skill) {
+          LabeledContent("Status", value: skill.changed ? "Changed" : "Unchanged")
+          LabeledContent("Source") { CompactText(text: skill.sourceIdentity) }
+          if let revision = skill.newRevision {
+            LabeledContent("Revision") { CompactText(text: revision) }
+          }
+          ForEach(Array(skill.membership.enumerated()), id: \.offset) { _, membership in
+            LabeledContent(membership.agent.displayName) {
+              PathView(url: URL(fileURLWithPath: membership.path), scope: scope)
             }
           }
-        }
-        ForEach(Array(report.instructions.targets.enumerated()), id: \.offset) { _, target in
-          DetailsGroup("Instructions · " + target.target) {
-            LabeledContent("Status", value: target.changed ? "Changed" : "Unchanged")
-            LabeledContent("Location") { PathView(url: target.url, scope: scope) }
+          ForEach(Array(skill.changes.enumerated()), id: \.offset) { _, file in
             LabeledContent(
-              "Agents", value: target.afterAgents.map(\.displayName).joined(separator: ", "))
-            if target.foreign {
-              Label("Existing unmanaged content", systemImage: "exclamationmark.triangle")
-            }
-          }
-        }
-        ForEach(report.instructions.changedPrompts, id: \.self) { Text("Named prompt · " + $0) }
-        ForEach(Array(report.components.enumerated()), id: \.offset) { _, change in
-          DetailsGroup(DeclarationLabels.kind(change.kind) + " · " + change.name) {
-            LabeledContent("Status", value: change.changed ? "Changed" : "Unchanged")
-            LabeledContent("Target") {
-              PathView(url: URL(fileURLWithPath: change.path), scope: scope)
-            }
-            LabeledContent(
-              "Readers", value: change.effectiveReaders.map(\.displayName).joined(separator: ", "))
-            if change.privateMaterialization {
-              Label("Private materialization", systemImage: "lock")
-            }
-            if !change.requiredBindings.isEmpty {
-              LabeledContent(
-                "Required bindings", value: change.requiredBindings.joined(separator: ", "))
-            }
-            SymbolicChangeView(title: "Before", text: change.symbolicBefore)
-            SymbolicChangeView(title: "After", text: change.symbolicAfter)
-            if let permission = change.permissionChange {
-              LabeledContent(
-                "File mode",
-                value: String(permission.beforeMode, radix: 8) + " → "
-                  + String(permission.afterMode, radix: 8))
-              LabeledContent(
-                "Owner",
-                value: String(permission.beforeOwner) + " → " + String(permission.afterOwner))
-            }
-            ForEach(Array(change.resources.enumerated()), id: \.offset) { _, resource in
-              LabeledContent("Resource", value: resource.path)
-            }
+              file.before == nil ? "Add" : (file.after == nil ? "Remove" : "Change"),
+              value: file.path)
           }
         }
       }
-    }.formStyle(.grouped)
+      ForEach(Array(report.instructions.targets.enumerated()), id: \.offset) { _, target in
+        DetailsGroup("Instructions · " + target.target) {
+          LabeledContent("Status", value: target.changed ? "Changed" : "Unchanged")
+          LabeledContent("Location") { PathView(url: target.url, scope: scope) }
+          LabeledContent(
+            "Agents", value: target.afterAgents.map(\.displayName).joined(separator: ", "))
+          if target.foreign {
+            Label("Existing unmanaged content", systemImage: "exclamationmark.triangle")
+          }
+        }
+      }
+      ForEach(report.instructions.changedPrompts, id: \.self) { Text("Named prompt · " + $0) }
+      ForEach(Array(report.components.enumerated()), id: \.offset) { _, change in
+        DetailsGroup(DeclarationLabels.kind(change.kind) + " · " + change.name) {
+          LabeledContent("Status", value: change.changed ? "Changed" : "Unchanged")
+          LabeledContent("Target") {
+            PathView(url: URL(fileURLWithPath: change.path), scope: scope)
+          }
+          LabeledContent(
+            "Readers", value: change.effectiveReaders.map(\.displayName).joined(separator: ", "))
+          if change.privateMaterialization {
+            Label("Private materialization", systemImage: "lock")
+          }
+          if !change.requiredBindings.isEmpty {
+            LabeledContent(
+              "Required bindings", value: change.requiredBindings.joined(separator: ", "))
+          }
+          SymbolicChangeView(title: "Before", text: change.symbolicBefore)
+          SymbolicChangeView(title: "After", text: change.symbolicAfter)
+          if let permission = change.permissionChange {
+            LabeledContent(
+              "File mode",
+              value: String(permission.beforeMode, radix: 8) + " → "
+                + String(permission.afterMode, radix: 8))
+            LabeledContent(
+              "Owner",
+              value: String(permission.beforeOwner) + " → " + String(permission.afterOwner))
+          }
+          ForEach(Array(change.resources.enumerated()), id: \.offset) { _, resource in
+            LabeledContent("Resource", value: resource.path)
+          }
+        }
+      }
+    }
   }
 }
 
