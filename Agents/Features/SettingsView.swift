@@ -29,6 +29,11 @@ struct SettingsView: View {
       .formStyle(.grouped)
       .tabItem { Label("General", systemImage: "gearshape") }
 
+      AcquisitionCacheSettingsView(environment: model.actions.environment(for: model.scope))
+        .id(model.scope.id)
+        .disabled(model.isApplying || model.isTerminating)
+        .tabItem { Label("Cache", systemImage: "internaldrive") }
+
       ClientSettingsView(model: model)
         .tabItem { Label("Agent Clients", systemImage: "desktopcomputer") }
 
