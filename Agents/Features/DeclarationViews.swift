@@ -4,6 +4,7 @@ import SwiftUI
 struct DeclarationListView: View {
   @Bindable var model: AppModel
   @State private var authoring = false
+  @State private var packagingProject = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -52,6 +53,12 @@ struct DeclarationListView: View {
         .id(snapshot.scope)
       }
     }
+    .sheet(isPresented: $packagingProject) {
+      if let snapshot = model.snapshot {
+        ProjectPackageSheet(snapshot: snapshot, environment: model.actions.environment(for: snapshot.scope))
+          .id(snapshot.scope)
+      }
+    }
     .searchable(text: $model.search, prompt: "Search \(model.page.title.lowercased())")
     .toolbar {
       ToolbarItem {
@@ -73,6 +80,9 @@ struct DeclarationListView: View {
         Menu("Packages", systemImage: "shippingbox") {
           Button("Manage Packages…") { model.packageScope = model.scope }
           if model.page == .components {
+            if model.scope.kind == .project {
+              Button("Package Project…") { packagingProject = true }
+            }
             Button("Create Bundle…") { authoring = true }
               .disabled(model.snapshot?.inspection.components.isEmpty != false)
           }

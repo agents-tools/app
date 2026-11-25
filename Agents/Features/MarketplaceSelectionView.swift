@@ -33,8 +33,9 @@ struct MarketplaceSelectionView: View {
             MarketplaceVersionRows(versions: node.versions)
             LabeledContent("Marketplace") {
               CompactText(
-                text: node.versions.node.catalog.origin.description
-                  + (node.versions.node.catalog.subpath.map { " / " + $0 } ?? ""))
+                text: node.catalog.hostedIndex?.absoluteString
+                  ?? (node.versions.node.catalog.origin.description
+                    + (node.versions.node.catalog.subpath.map { " / " + $0 } ?? "")))
             }
             if !node.dependencies.isEmpty {
               LabeledContent(

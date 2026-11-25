@@ -18,6 +18,10 @@ struct PackageInstallSheet: View {
   @State private var releases: [MarketplaceRelease] = []
   @State private var pins: [MarketplacePin] = []
   @State private var installedGraph: MarketplaceGraph?
+  @State private var hasDeclaredPackages = false
+  @State private var pendingDeployment: MarketplacePendingDeployment?
+  @State private var lockReview: MarketplaceLockPreview?
+  @State private var savingLock = false
   @State private var query = ""
   @State private var selected: MarketplaceCoordinate?
   @State private var verified: VerifiedMarketplacePackage?
@@ -30,6 +34,12 @@ struct PackageInstallSheet: View {
   @State private var gitRef = ""
   @State private var gitSubpath = ""
   @State private var editingGit = false
+  @State private var editingHosted = false
+  @State private var editingCredential = false
+  @State private var hostedTokens: [URL: String] = [:]
+  @State private var userHostedIndices: Set<URL> = []
+  @State private var downloadOrigins: [URL] = []
+  @State private var editingOrigins = false
   @State private var busy = false
   @State private var errorText: String?
 
@@ -45,9 +55,26 @@ struct PackageInstallSheet: View {
             }
           }
           if !registrations.isEmpty { Divider() }
+          if hasDeclaredPackages || installedGraph != nil || pendingDeployment != nil {
+            Button("Review Declared Package Lock…") {
+              runWithMarketAccess { access in
+                try MarketplaceOperations.previewLockOnly(.reconcile, scope: scope.installScope, environment: environment, hostedAccess: access)
+              } receive: { preview in
+                lockReview = preview
+                savingLock = true
+              }
+            }
+          }
           Button("Choose Directory…") { chooseDirectory() }
           Button("Browse Git Repository…") { editingGit = true }
+          Button("Add HTTPS Marketplace…") { editingHosted = true }
           if let origin {
+            if origin.hostedIndex != nil {
+              Button("Trusted Download Origins…") { editingOrigins = true }
+            }
+            if let index = origin.hostedIndex, userHostedIndices.contains(index) {
+              Button("Set Access Token…") { editingCredential = true }
+            }
             Button("Verify All Releases") {
               browse(origin, registered: selectedRegistration, verify: true)
             }
@@ -96,6 +123,26 @@ struct PackageInstallSheet: View {
           }
         }
         Button("Open Bundle…") { openBundle() }
+      }
+      if let pendingDeployment {
+        HStack {
+          Label("Package lock awaiting deployment", systemImage: "clock")
+          Spacer()
+          Button("Review Offline Deployment…") {
+            run {
+              try MarketplaceOperations.previewFrozenDeployment(scope: scope.installScope, environment: environment)
+            } receive: { preview in
+              if let conflict = preview.ownershipConflict {
+                errorText = conflict
+              } else {
+                review(UpdateProposal(
+                  id: UUID(), scope: scope, title: "Deploy Locked Packages",
+                  request: MarketplaceOperations.frozenDeploymentRequest()))
+              }
+            }
+          }
+        }
+        .help(pendingDeployment.digest)
       }
       if let origin {
         Text(origin.location).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
@@ -172,9 +219,17 @@ struct PackageInstallSheet: View {
         Spacer()
         if busy { ProgressView().controlSize(.small) }
         if let graphDraft {
+          Button("Save to Lock…") {
+            runWithMarketAccess { access in
+              try graphDraft.previewLock(scope: scope.installScope, environment: environment, hostedAccess: access)
+            } receive: { preview in
+              lockReview = preview
+              savingLock = true
+            }
+          }.disabled(!graphDraft.canReview(in: scope.installScope))
           Button(graphDraft.installed == nil ? "Review Installation…" : "Review Update…") {
             prepareGraph(graphDraft)
-          }.disabled(!graphDraft.canReview(in: scope.installScope))
+          }.disabled(pendingDeployment != nil || !graphDraft.canReview(in: scope.installScope))
         } else if let bundle {
           Button(updatingPin == nil ? "Review Installation…" : "Review Update…") { prepare() }
             .disabled(
@@ -194,12 +249,18 @@ struct PackageInstallSheet: View {
         let values = try await Task.detached {
           try (
             MarketplaceDirectory.list(scope: selectedScope, environment: runtime),
-            UpdateOperations.inspect(scope: selectedScope, environment: runtime)
+            UpdateOperations.inspect(scope: selectedScope, environment: runtime),
+            Set(MarketplaceDirectory.list(scope: .user, environment: runtime).compactMap {
+              $0.registration.origin.hostedIndex
+            })
           )
         }.value
         registrations = values.0
+        userHostedIndices = values.2
         pins = values.1.marketplacePackages
         installedGraph = values.1.marketplaceGraph
+        pendingDeployment = values.1.pendingMarketplaceDeployment
+        hasDeclaredPackages = values.1.declaration?.marketplaceRoots.isEmpty == false
       } catch {
         errorText = String(describing: error)
         return
@@ -216,6 +277,37 @@ struct PackageInstallSheet: View {
       Button("Save") { saveMarketplace() }.disabled(registrationName.isEmpty)
     } message: {
       Text("Save in " + scope.installScope.rawValue + " configuration.")
+    }
+    .sheet(isPresented: $savingLock, onDismiss: { lockReview = nil }) {
+      if let lockReview {
+        MarketplaceLockReview(preview: lockReview) { saved in
+          pendingDeployment = saved.pendingDeployment
+          savingLock = false
+          clearPackage()
+        }
+      }
+    }
+    .sheet(isPresented: $editingOrigins) {
+      HostedDownloadOriginsForm(origins: downloadOrigins) { origins in
+        downloadOrigins = origins
+        editingOrigins = false
+        if let origin { browse(origin, registered: selectedRegistration) }
+      }
+    }
+    .sheet(isPresented: $editingHosted) {
+      HostedMarketplaceForm(index: nil, allowsToken: scope.installScope == .user) { name, origin, token in
+        editingHosted = false
+        storeMarketplace(name: name, origin: origin, token: token, connect: true)
+      }
+    }
+    .sheet(isPresented: $editingCredential) {
+      if let origin, let index = origin.hostedIndex {
+        HostedMarketplaceForm(index: index, allowsToken: true) { _, _, token in
+          editingCredential = false
+          hostedTokens[index] = token
+          browse(origin, registered: selectedRegistration)
+        }
+      }
     }
     .sheet(isPresented: $editingGit) {
       VStack(alignment: .leading) {
@@ -274,9 +366,11 @@ struct PackageInstallSheet: View {
     origin = pin.dependency.catalog
     selectedRegistration = nil
     updatingPin = pin
-    run {
-      try MarketplaceOperations.availableUpdates(
-        for: pin, scope: scope.installScope, environment: environment)
+    runWithMarketAccess { access in
+      let registration = try MarketplaceRegistration(name: pin.dependency.name, origin: pin.dependency.catalog)
+      return try MarketplaceOperations.browse(
+        registration, scope: scope.installScope, environment: environment, hostedAccess: access
+      ).updates(for: pin)
     } receive: { updates in
       releases = updates
       selected = updates.first?.coordinate
@@ -285,7 +379,10 @@ struct PackageInstallSheet: View {
 
   private func saveMarketplace() {
     guard let origin else { return }
-    let name = registrationName
+    storeMarketplace(name: registrationName, origin: origin, token: nil, connect: false)
+  }
+
+  private func storeMarketplace(name: String, origin: MarketplaceOrigin, token: String?, connect: Bool) {
     run {
       let entry = try MarketplaceRegistration(name: name, origin: origin)
       try MarketplaceDirectory.register(entry, scope: scope.installScope, environment: environment)
@@ -294,6 +391,11 @@ struct PackageInstallSheet: View {
       registrations = entries
       selectedRegistration = entries.first { $0.registration.name == name }
       self.origin = selectedRegistration?.registration.origin
+      if scope.installScope == .user, let index = origin.hostedIndex {
+        userHostedIndices.insert(index)
+        if let token { hostedTokens[index] = token }
+      }
+      if connect { browse(origin, registered: selectedRegistration) }
     }
   }
 
@@ -304,6 +406,12 @@ struct PackageInstallSheet: View {
       return try MarketplaceDirectory.list(scope: scope.installScope, environment: environment)
     } receive: { entries in
       registrations = entries
+      if entry.scope == .user, let index = entry.registration.origin.hostedIndex,
+        !entries.contains(where: { $0.scope == .user && $0.registration.origin.hostedIndex == index })
+      {
+        userHostedIndices.remove(index)
+        hostedTokens[index] = nil
+      }
       selectedRegistration = nil
       origin = nil
       releases = []
@@ -321,16 +429,16 @@ struct PackageInstallSheet: View {
     clearPackage()
     releases = []
     origin = source
-    run {
+    runWithMarketAccess { access in
       let registration =
         try registered?.registration
         ?? MarketplaceRegistration(name: "team", origin: source)
       if verify {
         return try MarketplaceOperations.verifyCatalog(
-          registration, scope: scope.installScope, environment: environment)
+          registration, scope: scope.installScope, environment: environment, hostedAccess: access)
       }
       return try MarketplaceOperations.browse(
-        registration, scope: scope.installScope, environment: environment)
+        registration, scope: scope.installScope, environment: environment, hostedAccess: access)
     } receive: { catalog in
       releases = catalog.releases
       showingVerification = verify
@@ -360,7 +468,7 @@ struct PackageInstallSheet: View {
 
   private func inspect(_ release: MarketplaceRelease) {
     let selectedPin = updatingPin
-    run { () -> InspectedRelease in
+    runWithMarketAccess { access -> InspectedRelease in
       let inspection = try UpdateOperations.inspect(
         scope: scope.installScope, environment: environment)
       let roots =
@@ -378,7 +486,7 @@ struct PackageInstallSheet: View {
         return .graph(.init(release: release))
       }
       let package = try MarketplaceOperations.acquire(
-        release, scope: scope.installScope, environment: environment)
+        release, scope: scope.installScope, environment: environment, hostedAccess: access)
       let contents = try package.inspectBundle()
       if contents.package.dependencies != nil {
         return .graph(.init(release: release, legacy: legacy))
@@ -413,26 +521,31 @@ struct PackageInstallSheet: View {
       errorText = "That package alias is already installed. Choose another name."
       return
     }
-    run {
-      try MarketplaceOperations.resolve(
-        draft.request(), scope: scope.installScope, environment: environment)
+    let resolvingPending = pendingDeployment != nil
+    runWithMarketAccess { access in
+      let request = try draft.request()
+      if resolvingPending {
+        return try MarketplaceOperations.previewLockOnly(request, scope: scope.installScope, environment: environment, hostedAccess: access).resolution
+      }
+      return try MarketplaceOperations.resolve(
+        request, scope: scope.installScope, environment: environment, hostedAccess: access)
     } receive: { resolution in
       graphDraft?.capture(resolution)
     }
   }
 
   private func prepareGraph(_ draft: MarketplacePackageDraft) {
-    run {
-      try draft.preview(scope: scope.installScope, environment: environment)
+    runWithMarketAccess { access in
+      try draft.preview(scope: scope.installScope, environment: environment, hostedAccess: access)
     } receive: { preview in
       review(UpdateProposal(scope: scope, title: draft.title, marketplace: preview))
     }
   }
 
   private func reviewRemoval(_ name: String) {
-    run {
+    runWithMarketAccess { access in
       try MarketplaceOperations.previewResolution(
-        .remove(name), scope: scope.installScope, environment: environment)
+        .remove(name), scope: scope.installScope, environment: environment, hostedAccess: access)
     } receive: { preview in
       review(UpdateProposal(scope: scope, title: "Remove " + name, marketplace: preview))
     }
@@ -461,6 +574,16 @@ struct PackageInstallSheet: View {
         review(UpdateProposal(scope: scope, bundle: preview))
       }
     }
+  }
+
+  private func runWithMarketAccess<T: Sendable>(
+    _ work: @escaping @Sendable (HostedMarketplaceAccess) throws -> T, receive: @escaping (T) -> Void
+  ) {
+    let tokens = hostedTokens
+    let origins = downloadOrigins
+    run {
+      try work(HostedMarketplaceAccess(trustedDownloadOrigins: origins, credentialProvider: { tokens[$0] }))
+    } receive: { receive($0) }
   }
 
   private func run<T: Sendable>(

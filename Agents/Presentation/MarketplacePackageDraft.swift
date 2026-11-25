@@ -142,15 +142,37 @@ struct MarketplacePackageDraft: Sendable {
       && (pinOnly || (!selections.isEmpty && unavailableSelections(in: scope).isEmpty))
   }
 
-  func preview(scope: InstallScope, environment: RuntimeEnvironment) throws
+  func preview(scope: InstallScope, environment: RuntimeEnvironment, hostedAccess: HostedMarketplaceAccess? = nil) throws
     -> MarketplaceResolutionPreview
   {
-    guard let resolution, canReview(in: scope) else {
+    let candidate = try MarketplaceOperations.previewResolution(
+      reviewedRequest(in: scope), scope: scope, environment: environment, hostedAccess: hostedAccess)
+    try validate(candidate.resolution, graph: candidate.report.marketplaceGraphChange,
+                 changes: candidate.report.marketplaceChanges)
+    return candidate
+  }
+
+  func previewLock(scope: InstallScope, environment: RuntimeEnvironment, hostedAccess: HostedMarketplaceAccess? = nil) throws
+    -> MarketplaceLockPreview
+  {
+    let candidate = try MarketplaceOperations.previewLockOnly(
+      reviewedRequest(in: scope), scope: scope, environment: environment, hostedAccess: hostedAccess)
+    try validate(candidate.resolution, graph: candidate.report.marketplaceGraphChange,
+                 changes: candidate.report.marketplaceChanges)
+    return candidate
+  }
+
+  private func reviewedRequest(in scope: InstallScope) throws -> MarketplaceResolutionRequest {
+    guard canReview(in: scope) else {
       throw CoreError.invalidState("Resolve the package and review its client selections first.")
     }
-    let candidate = try MarketplaceOperations.previewResolution(
-      request(selections: pinOnly ? [] : selections), scope: scope, environment: environment)
-    let checked = candidate.resolution
+    return try request(selections: pinOnly ? [] : selections)
+  }
+
+  private func validate(
+    _ checked: MarketplaceResolution, graph: MarketplaceGraphUpdate?, changes: [MarketplacePackageUpdate]?
+  ) throws {
+    guard let resolution else { throw CoreError.invalidState("Resolve the package first.") }
     guard checked.nodes.map(\.versions) == resolution.nodes.map(\.versions),
       checked.nodes.map(\.dependencies) == resolution.nodes.map(\.dependencies),
       checked.nodes.map({ $0.availableMembers?.map(\.id) })
@@ -165,7 +187,7 @@ struct MarketplacePackageDraft: Sendable {
     switch installed {
     case .graph(let original):
       guard
-        candidate.report.marketplaceGraphChange.map({ change in
+        graph.map({ change in
           change.before?.roots.contains(where: { $0.intent == original }) == true
         }) ?? true
       else {
@@ -173,7 +195,7 @@ struct MarketplacePackageDraft: Sendable {
           "The installed package changed. Reopen it from Installed Packages.")
       }
     case .legacy(let original):
-      guard candidate.report.marketplaceChanges?.contains(where: { $0.before == original }) == true
+      guard changes?.contains(where: { $0.before == original }) == true
       else {
         throw CoreError.invalidState(
           "The installed package changed. Reopen it from Installed Packages.")
@@ -181,21 +203,21 @@ struct MarketplacePackageDraft: Sendable {
     case nil:
       // A new draft cannot replace a root that appeared under the same alias while it was open.
       guard
-        candidate.report.marketplaceGraphChange?.before?.roots.contains(where: {
+        graph?.before?.roots.contains(where: {
           $0.intent.name == name
         }) != true,
-        candidate.report.marketplaceChanges?.contains(where: { $0.before?.dependency.name == name })
+        changes?.contains(where: { $0.before?.dependency.name == name })
           != true
       else {
         throw CoreError.invalidState("That package alias is already installed.")
       }
     }
-    return candidate
   }
 
   private func matches(_ selection: MarketplaceMemberSelection, _ node: MarketplaceNodeID) -> Bool {
     guard selection.package == node.package else { return false }
     guard let catalog = selection.catalog else { return root?.node.catalog == node.catalog }
+    if let index = catalog.hostedIndex { return node.catalog.hostedIndex == index }
     return node.catalog.kind == .git && node.catalog.subpath == catalog.subpath
       && (try? SourceOrigin.git(catalog.location)) == node.catalog.origin
   }

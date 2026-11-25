@@ -552,7 +552,10 @@ struct UpdateFlowTests {
     draft.package = "shared-workflows"
     draft.requirement = .range(from: "1.2.3", to: "2.5.0")
     #expect(try draft.dependency().catalog == nil)
-    draft.usesGitCatalog = true
+    draft.source = .hosted
+    draft.indexURL = "https://team.example.invalid/main/marketplace.json"
+    #expect(try draft.dependency().catalog?.hostedIndex?.absoluteString == draft.indexURL)
+    draft.source = .git
     draft.gitURL = "https://example.invalid/team/catalog.git"
     draft.gitRef = "stable"
     draft.gitSubpath = "packages"
@@ -660,8 +663,23 @@ struct UpdateFlowTests {
     for member in members {
       try sharedDraft.setTargets([.codex], for: member.marketplaceKey, in: shared)
     }
-    try apply(
-      sharedDraft.preview(scope: .project, environment: environment), title: sharedDraft.title)
+    let lock = try sharedDraft.previewLock(scope: .project, environment: environment)
+    _ = try MarketplaceOperations.writeLockOnly(lock)
+    let instructionFile = consumer.project.appendingPathComponent("AGENTS.md")
+    #expect(!FileManager.default.fileExists(atPath: instructionFile.path))
+    let pending = try UpdateOperations.inspect(environment: environment).pendingMarketplaceDeployment
+    #expect(pending?.digest == lock.report.pendingDeployment.digest)
+    let deployment = UpdateProposal(id: UUID(), scope: scope, title: "Deploy Locked Packages",
+                                    request: MarketplaceOperations.frozenDeploymentRequest())
+    let prepared = actions.preview(deployment)
+    guard case .updatePreview(_, let report) = prepared.output else {
+      throw CoreError.invalidState(prepared.diagnostics.map(\.message).joined(separator: "\n"))
+    }
+    let deployed = actions.apply(deployment, fingerprint: report.displayedFingerprint,
+                                 admission: OperationAdmission())
+    #expect(deployed.updateTerminal?.disposition == .committed)
+    #expect(FileManager.default.fileExists(atPath: instructionFile.path))
+    #expect(try UpdateOperations.inspect(environment: environment).pendingMarketplaceDeployment == nil)
 
     var starterDraft = MarketplacePackageDraft(release: starter)
     try resolve(&starterDraft)

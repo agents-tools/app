@@ -62,12 +62,6 @@ struct BundleAuthoringSheet: View {
             }
           }
           Button("Add Dependency", systemImage: "plus") { dependencies.append(.init()) }
-          if !dependencies.isEmpty {
-            Text(
-              "Dependencies use the publishing marketplace unless a Git marketplace is specified."
-            )
-            .font(.caption).foregroundStyle(.secondary)
-          }
         }
       }.formStyle(.grouped)
       if let failure { Text(failure).foregroundStyle(.red).textSelection(.enabled) }
@@ -153,8 +147,14 @@ private struct BundleDependencyRow: View {
     ) {
       TextField("Package name", text: $dependency.package)
       PackageRequirementEditor(requirement: $dependency.requirement)
-      Toggle("Use another Git marketplace", isOn: $dependency.usesGitCatalog)
-      if dependency.usesGitCatalog {
+      Picker("Marketplace", selection: $dependency.source) {
+        Text("Publishing Marketplace").tag(BundleDependencyDraft.CatalogSource.publishing)
+        Text("Git Repository").tag(BundleDependencyDraft.CatalogSource.git)
+        Text("HTTPS Index").tag(BundleDependencyDraft.CatalogSource.hosted)
+      }
+      if dependency.source == .hosted {
+        TextField("Index URL", text: $dependency.indexURL)
+      } else if dependency.source == .git {
         TextField("Repository URL", text: $dependency.gitURL)
         TextField("Branch, tag or commit", text: $dependency.gitRef, prompt: Text("Default branch"))
         TextField(

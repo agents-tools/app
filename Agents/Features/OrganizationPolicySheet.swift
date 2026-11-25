@@ -66,6 +66,13 @@ struct OrganizationPolicySheet: View {
               let violation = audit.sourceViolations[index]
               Text(violation.origin.description + " · " + violation.reason.rawValue)
             }
+            if audit.pendingMarketplaceDeployment {
+              Text("A package lock is awaiting deployment.")
+              ForEach(Array((audit.pendingMarketplacePolicy?.findings ?? []).enumerated()), id: \.offset) { _, finding in
+                LabeledContent(finding.rule, value: finding.outcome.rawValue.capitalized)
+                Text(finding.identity + " · " + finding.message)
+              }
+            }
             if let issue = audit.closureIssue { Text(issue) }
           }
         } else if let failure {

@@ -44,6 +44,11 @@ struct CoreReader: Sendable {
             message: inspection.recovery.diagnostic ?? "Recovery is pending.",
             blocksTermination: inspection.recovery.requiresOwner, coreRecovery: true))
       }
+      if inspection.pendingMarketplaceDeployment != nil {
+        diagnostics.append(
+          AppDiagnostic(scope: scope, operation: "Package lock", severity: .warning,
+                        message: "Open Manage Packages to review the pending deployment."))
+      }
       if let issue = inspection.marketplaceIssue {
         diagnostics.append(
           AppDiagnostic(

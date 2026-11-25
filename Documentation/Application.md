@@ -79,9 +79,17 @@ Normal quit and last-window closure go through an AppKit termination delegate. Q
 
 Choose a scope in the sidebar. In Components, open **Browse MCP Registry** to search the public registry or enter a private registry URL. Select a server, choose its connection, supply any input mappings, and review the installation for the selected clients. Private registry tokens are held in the open sheet.
 
-In **Packages → Create Bundle**, select installed instructions, skills and MCP servers, enter a package name and version, then export the file or publish it to a team directory. Skills include their directory contents. Add package dependencies with an exact version, a compatible major or minor version, or a range with an exclusive upper bound. Each dependency uses the publishing marketplace by default and can specify a remote Git marketplace.
+In **Packages → Create Bundle**, select installed instructions, skills and MCP servers, enter a package name and version, then export the file or publish it to a team directory. Skills include their directory contents. Add package dependencies with an exact version, a compatible major or minor version, or a range with an exclusive upper bound. Each dependency uses the publishing marketplace by default and can select a Git repository or an HTTPS index for packages from another marketplace.
+
+In a project, **Packages → Package Project** lets you choose local instructions, complete skill directories, MCP servers and locked components before installation. Review the included paths, integrity findings and digest before exporting or publishing. When the project contains an author specification, **Review Project Specification** uses its selections. The format picker also supports exporting a native plugin directory.
+
+Choose **Save to Lock** after assigning package members to clients to review the versions and recipients for deferred deployment. **Save Lock** records them in this scope. Open **Manage Packages → Review Offline Deployment** to review and apply the native file changes from that lock.
 
 Open **Packages → Manage Packages** to browse a saved marketplace, choose a directory, browse a Git repository or open a local bundle. A bundle with package dependencies must be published to a marketplace for installation. Select a marketplace release and choose **Inspect Package**. Adjust its version requirement if needed, resolve the graph and choose clients for components of the package and its reachable dependencies. Each root has its own client selections. **Resolve and Lock Only** keeps the draft selections available when switched off and prepares a root with no client assignments.
+
+After reviewing a project package, choose **Publish → Stage for HTTPS Hosting** and select a directory to generate or extend its static index. Host that directory at the team’s HTTPS endpoint.
+
+To connect a static team catalog, open **Packages → Marketplace → Add HTTPS Marketplace** and enter its name and index URL. Choose the user scope to register a private catalog and enter its access token. Projects can open this registration from the Marketplace menu. **Set Access Token** reconnects a registered index with a token for the open Packages sheet. If an archive uses a CDN, enter its HTTPS origin under **Trusted Download Origins**.
 
 **Save Marketplace As** records the name in Core’s marketplace directory for the selected scope. Projects can browse user registrations and override them with a project registration of the same name.
 
