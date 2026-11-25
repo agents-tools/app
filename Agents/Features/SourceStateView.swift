@@ -1,15 +1,28 @@
 import AgentsCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SourceStateView: View {
   let snapshot: WorkspaceSnapshot
   let model: AppModel
+  @State private var inventory: InventoryFile?
+  @State private var exportingInventory = false
+  @State private var exportError: String?
 
   var body: some View {
     Form {
       Section("Recorded Source State") {
         Button("Review Declared Sources…") { model.discoverComponents() }
           .disabled(!model.canModify || snapshot.inspection.declaration == nil)
+        Button("Export Component Inventory…") {
+          do {
+            inventory = try InventoryFile(data: snapshot.inspection.cycloneDXInventory())
+            exportingInventory = true
+          } catch {
+            exportError = error.localizedDescription
+          }
+        }
+        .disabled(snapshot.inspection.recovery.pending)
         Button("Import Configuration…") { model.beginImport() }
         Button("Subscribe to Source…") { model.beginWatch() }
         ForEach(snapshot.inspection.sources, id: \.record) { source in
@@ -62,5 +75,37 @@ struct SourceStateView: View {
       }
     }
     .formStyle(.grouped)
+    .fileExporter(
+      isPresented: $exportingInventory, document: inventory, contentType: .json,
+      defaultFilename: "inventory.cdx.json"
+    ) { result in
+      if case .failure(let error) = result { exportError = error.localizedDescription }
+    }
+    .alert(
+      "Couldn’t Export Inventory",
+      isPresented: Binding(get: { exportError != nil }, set: { if !$0 { exportError = nil } })
+    ) {
+      Button("OK") { exportError = nil }
+    } message: {
+      Text(exportError ?? "")
+    }
+  }
+}
+
+private struct InventoryFile: FileDocument {
+  static let readableContentTypes: [UTType] = [.json]
+  let data: Data
+
+  init(data: Data) { self.data = data }
+
+  init(configuration: ReadConfiguration) throws {
+    guard let contents = configuration.file.regularFileContents else {
+      throw CocoaError(.fileReadCorruptFile)
+    }
+    data = contents
+  }
+
+  func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+    FileWrapper(regularFileWithContents: data)
   }
 }
