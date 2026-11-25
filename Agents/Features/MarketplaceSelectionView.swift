@@ -121,12 +121,13 @@ struct PackageClientPicker: View {
   let component: BundleComponent
   let scope: InstallScope
   @Binding var targets: Set<AgentID>
+  @State private var isExpanded = false
 
   private var clients: [AgentID] { component.supportedTargets(in: scope) }
   private var selectedClients: [AgentID] { clients.filter(targets.contains) }
 
   var body: some View {
-    DisclosureGroup {
+    DisclosureGroup(isExpanded: $isExpanded) {
       ForEach(clients, id: \.self) { client in
         Toggle(
           client.displayName,
@@ -155,6 +156,8 @@ struct PackageClientPicker: View {
         )
         .foregroundStyle(.secondary)
       }
+      .contentShape(Rectangle())
+      .onTapGesture { isExpanded.toggle() }
     }
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Clients for " + component.name)
