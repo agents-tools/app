@@ -42,7 +42,7 @@ struct ManifestDraftView: View {
             Text("Move or Remove Declaration").tag(ManifestDraft.Kind.structure)
           }
           switch draft.kind {
-          case .defaults: AgentsEditor(value: binding(\.defaultAgents))
+          case .defaults: AgentsEditor(value: binding(\.defaultAgents), allowsAntigravity: true)
           case .source:
             TextField("Alias", text: binding(\.sourceAlias))
             SourceDeclarationEditor(
@@ -71,7 +71,7 @@ struct ManifestDraftView: View {
             }
           case .group:
             TextField("Name", text: binding(\.groupName))
-            ConditionEditor(value: binding(\.groupCondition))
+            ConditionEditor(value: binding(\.groupCondition), allowsAntigravity: true)
             DisclosureGroup("Components") {
               DraftRows(values: binding(\.groupComponents)) { row, actions in
                 ComponentDraftEditor(
@@ -92,7 +92,7 @@ struct ManifestDraftView: View {
           case .reference:
             TextField("Group", text: binding(\.referenceName))
             OptionalText(title: "source", value: binding(\.referenceSource))
-            ConditionEditor(value: binding(\.referenceCondition))
+            ConditionEditor(value: binding(\.referenceCondition), allowsAntigravity: true)
             if let document = draft.document {
               Picker("Container", selection: binding(\.destinationGroup)) {
                 Text("Scope").tag(nil as NodeID?)
@@ -185,7 +185,7 @@ struct GroupUsesEditor: View {
       DraftRows(values: $values) { row, actions in
         TextField("Group", text: row.name)
         OptionalText(title: "source", value: row.source)
-        ConditionEditor(value: row.condition)
+        ConditionEditor(value: row.condition, allowsAntigravity: true)
         DraftRowButtons(actions: actions)
       }
       Button("Add Reference") { values.append(.init(name: "")) }

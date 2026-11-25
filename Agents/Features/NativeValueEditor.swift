@@ -129,6 +129,7 @@ struct NativeDictionaryEditor: View {
 
 struct NativeConfigurationEditor: View {
   @Binding var values: NativeConfiguration
+  let allowsAntigravity: Bool
   @State private var client = AgentID.codex
   var body: some View {
     ForEach(values.keys.sorted(), id: \.self) { key in
@@ -139,11 +140,11 @@ struct NativeConfigurationEditor: View {
       }
     }
     Picker("Client", selection: $client) {
-      ForEach(AgentsEditor.choices(allowsAntigravity: false), id: \.self) {
+      ForEach(AgentsEditor.choices(allowsAntigravity: allowsAntigravity), id: \.self) {
         Text($0.displayName).tag($0)
       }
     }
     Button("Add Client Options") { values[client.rawValue] = [:] }.disabled(
-      values[client.rawValue] != nil)
+      values[client.rawValue] != nil || (client == .antigravity && !allowsAntigravity))
   }
 }

@@ -5,7 +5,7 @@ struct ComponentDraftEditor: View {
   @Binding var value: ComponentDraft
   let scope: InstallScope
 
-  private var allowsAntigravity: Bool { scope == .user && value.kind == .instructions }
+  private var allowsAntigravity: Bool { value.kind.supportsAntigravity(in: scope) }
 
   var body: some View {
     Picker("Component", selection: Binding(get: { value.kind }, set: selectKind)) {
@@ -19,11 +19,8 @@ struct ComponentDraftEditor: View {
       TextField("Source alias", text: $value.source)
       SkillDraftEditor(value: $value.skills)
     case .instructions:
-      if allowsAntigravity {
-        Section("Installation Targets") {
-          AgentsEditor(
-            value: $value.agents, title: "Specify targets", allowsAntigravity: true)
-        }
+      Section("Installation Targets") {
+        AgentsEditor(value: $value.agents, title: "Specify targets", allowsAntigravity: allowsAntigravity)
       }
       InstructionDraftEditor(
         value: $value.instructions, allowsAntigravity: allowsAntigravity)
@@ -96,16 +93,22 @@ struct ComponentDraftEditor: View {
       }
       ComponentReferencesEditor(values: $value.pluginExclusions)
     }
-    DisclosureGroup(allowsAntigravity ? "Installation Conditions" : "Agents and Conditions") {
-      if !allowsAntigravity { AgentsEditor(value: $value.agents) }
+    DisclosureGroup(value.kind == .instructions ? "Installation Conditions" : "Agents and Conditions") {
+      if value.kind != .instructions {
+        AgentsEditor(value: $value.agents, allowsAntigravity: allowsAntigravity)
+      }
       ConditionEditor(value: $value.condition, allowsAntigravity: allowsAntigravity)
     }
-    DisclosureGroup("Client Options") { NativeConfigurationEditor(values: $value.native) }
+    DisclosureGroup("Client Options") {
+      NativeConfigurationEditor(
+        values: $value.native,
+        allowsAntigravity: allowsAntigravity && (value.kind == .mcpServer || value.kind == .hook))
+    }
   }
 
   private func selectKind(_ kind: DeclaredComponentKind) {
     value.kind = kind
-    if kind != .instructions {
+    if !kind.supportsAntigravity(in: scope) {
       value.agents?.removeAll { $0 == .antigravity }
       value.condition?.agents?.removeAll { $0 == .antigravity }
     }

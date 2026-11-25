@@ -8,8 +8,10 @@ import Testing
 @Suite("Captured source and import choices", .serialized, .timeLimit(.minutes(3)))
 @MainActor
 struct SelectionConsumerTests {
-  @Test(arguments: [false, true])
-  func userInstructionCatalogSelectionPreviewsAntigravityRules(expandsReference: Bool) throws {
+  @Test(arguments: [WorkspaceScope.Kind.user, .project], [false, true])
+  func instructionCatalogSelectionPreviewsAntigravityRules(
+    kind: WorkspaceScope.Kind, expandsReference: Bool
+  ) throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
     let producer = fixture.root.appendingPathComponent("producer")
@@ -21,7 +23,7 @@ struct SelectionConsumerTests {
     if expandsReference {
       try write(ruleText, at: producer.appendingPathComponent("support/details.txt"))
     }
-    let scope = WorkspaceScope(kind: .user, root: fixture.home)
+    let scope = WorkspaceScope(kind: kind, root: kind == .user ? fixture.home : fixture.project)
     let actions = CoreActions(home: fixture.home, processEnvironment: fixture.environment)
     var session = CatalogSession(scope: scope, alias: "team")
     session.setSource(.init(kind: .local, location: producer.path))
@@ -49,6 +51,7 @@ struct SelectionConsumerTests {
       return
     }
     let rule = try #require(report.instructions.targets.first { $0.afterAgents == [.antigravity] })
+    #expect(rule.target.contains(kind == .project ? ".agents/rules/" : ".gemini/config/rules/"))
     #expect(String(decoding: try #require(rule.after), as: UTF8.self).contains(ruleText))
   }
 

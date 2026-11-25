@@ -52,7 +52,7 @@ struct InstructionsView: View {
           }
         }
       }
-      let rules = snapshot.inspection.deployments.filter { $0.recipients == [.antigravity] }
+      let rules = snapshot.inspection.deployments.filter { $0.format == "agents/antigravity-rule@1" }
       if !rules.isEmpty {
         Section("Installed Antigravity Rules") {
           ForEach(rules, id: \.identity) { rule in

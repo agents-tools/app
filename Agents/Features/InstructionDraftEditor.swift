@@ -74,7 +74,7 @@ struct SkillDraftEditor: View {
       DraftRows(values: $value.overrideDeclarations) { row, actions in
         DisclosureGroup(row.wrappedValue.name.isEmpty ? "New Override" : row.wrappedValue.name) {
           TextField("Skill name", text: row.name)
-          AgentsEditor(value: row.override.agents)
+          AgentsEditor(value: row.override.agents, allowsAntigravity: AgentID.antigravity.supportsSkills)
           ModeEditor(value: row.override.mode)
           DraftRowButtons(actions: actions)
         }

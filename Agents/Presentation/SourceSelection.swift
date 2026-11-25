@@ -2,6 +2,15 @@ import AgentsCore
 import AgentsUpdates
 import Foundation
 
+extension DeclaredComponentKind {
+  private static let antigravityFormats = AgentClientOperations.schemaEvidence(for: .antigravity)
+    .filter { $0.placement == .standalone && $0.status == .recorded }
+
+  func supportsAntigravity(in scope: InstallScope) -> Bool {
+    Self.antigravityFormats.contains { $0.kind == self && $0.scope == scope.rawValue }
+  }
+}
+
 struct CatalogSession: Identifiable, Sendable {
   let id = UUID()
   let scope: WorkspaceScope
@@ -45,10 +54,20 @@ struct CatalogSession: Identifiable, Sendable {
   }
 
   var allowsAntigravity: Bool {
-    guard scope.kind == .user, !importing, !selected.isEmpty, let catalog else { return false }
-    return catalog.availableChoices.filter { selected.contains($0.id) }.allSatisfy {
-      if case .instruction = $0.unit { return true }
-      return false
+    guard !importing, !selected.isEmpty, let catalog else { return false }
+    let choices = catalog.availableChoices.filter { selected.contains($0.id) }
+    return choices.count == selected.count && choices.allSatisfy { choice in
+      switch choice.unit {
+      case .instruction:
+        return DeclaredComponentKind.instructions.supportsAntigravity(in: scope.installScope)
+      case .skill:
+        return DeclaredComponentKind.skills.supportsAntigravity(in: scope.installScope)
+      case .group, .componentsPlugin, .pluginMember:
+        return !choice.effects.isEmpty && choice.effects.allSatisfy {
+          $0.kind.supportsAntigravity(in: scope.installScope)
+        }
+      case .importer, .nativePlugin: return false
+      }
     }
   }
 
