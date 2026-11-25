@@ -18,7 +18,7 @@ struct MarketplaceSelectionView: View {
       }
       if draft.currentResolution {
         Section("Installation") {
-          Toggle("Resolve and Lock Only", isOn: $draft.pinOnly)
+          Toggle("Track Releases Without Installing Components", isOn: $draft.pinOnly)
           if draft.pinOnly {
             Text(
               draft.installed != nil && !draft.selections.isEmpty
@@ -126,32 +126,37 @@ struct PackageClientPicker: View {
   private var selectedClients: [AgentID] { clients.filter(targets.contains) }
 
   var body: some View {
-    LabeledContent {
+    DisclosureGroup {
+      ForEach(clients, id: \.self) { client in
+        Toggle(
+          client.displayName,
+          isOn: Binding(
+            get: { targets.contains(client) },
+            set: { selected in
+              if selected { targets.insert(client) } else { targets.remove(client) }
+            })
+        )
+        .accessibilityLabel(component.name + " · " + client.displayName)
+      }
       if clients.isEmpty {
         Text("No supported clients").foregroundStyle(.secondary)
-      } else {
-        Menu(
-          selectedClients.isEmpty
-            ? "Choose Clients"
-            : selectedClients.map(\.displayName).joined(separator: ", ")
-        ) {
-          ForEach(clients, id: \.self) { client in
-            Toggle(
-              client.displayName,
-              isOn: Binding(
-                get: { targets.contains(client) },
-                set: { if $0 { targets.insert(client) } else { targets.remove(client) } }
-              ))
-          }
-        }
-        .accessibilityLabel("Clients for " + component.name)
       }
     } label: {
-      VStack(alignment: .leading) {
-        Text(component.name)
-        Text(DeclarationLabels.kind(component.kind.rawValue))
-          .font(.caption).foregroundStyle(.secondary)
+      HStack {
+        VStack(alignment: .leading) {
+          Text(component.name)
+          Text(DeclarationLabels.kind(component.kind.rawValue))
+            .font(.caption).foregroundStyle(.secondary)
+        }
+        Spacer()
+        Text(
+          selectedClients.isEmpty
+            ? "Choose Clients" : selectedClients.map(\.displayName).joined(separator: ", ")
+        )
+        .foregroundStyle(.secondary)
       }
     }
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Clients for " + component.name)
   }
 }
