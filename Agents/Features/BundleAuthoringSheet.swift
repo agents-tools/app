@@ -11,6 +11,7 @@ struct BundleAuthoringSheet: View {
   @State private var selection = Set<String>()
   @State private var name = ""
   @State private var version = "1.0.0"
+  @State private var dependencies: [BundleDependencyDraft] = []
   @State private var working = false
   @State private var notice: String?
   @State private var failure: String?
@@ -25,29 +26,50 @@ struct BundleAuthoringSheet: View {
     VStack(alignment: .leading, spacing: 12) {
       Text("Create Bundle").font(.headline)
       Text(snapshot.scope.title).foregroundStyle(.secondary)
-      Grid(alignment: .leading) {
-        GridRow {
-          Text("Package name")
-          TextField("Name", text: $name).labelsHidden()
+      Form {
+        Section("Package") {
+          TextField("Package name", text: $name)
+          TextField("Version", text: $version)
         }
-        GridRow {
-          Text("Version")
-          TextField("Version", text: $version).labelsHidden()
-        }
-      }
-      List(selection: $selection) {
-        ForEach(components, id: \.record) { component in
-          HStack {
-            VStack(alignment: .leading) {
-              Text(component.name)
-              Text(component.source).font(.caption).foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.middle).help(component.source)
+        Section("Bundle Components") {
+          ForEach(components, id: \.record) { component in
+            Toggle(
+              isOn: Binding(
+                get: { selection.contains(component.record) },
+                set: {
+                  if $0 {
+                    selection.insert(component.record)
+                  } else {
+                    selection.remove(component.record)
+                  }
+                }
+              )
+            ) {
+              VStack(alignment: .leading) {
+                Text(component.name)
+                Text(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.source)
+                  .font(.caption).foregroundStyle(.secondary)
+                  .lineLimit(1).truncationMode(.middle).help(component.source)
+              }
             }
-            Spacer()
-            Text(DeclarationLabels.kind(component.kind.rawValue)).foregroundStyle(.secondary)
-          }.tag(component.record)
+          }
         }
-      }.accessibilityLabel("Bundle components")
+        Section("Package Dependencies") {
+          ForEach($dependencies) { $dependency in
+            BundleDependencyRow(dependency: $dependency) {
+              let id = dependency.id
+              dependencies.removeAll { $0.id == id }
+            }
+          }
+          Button("Add Dependency", systemImage: "plus") { dependencies.append(.init()) }
+          if !dependencies.isEmpty {
+            Text(
+              "Dependencies use the publishing marketplace unless a Git marketplace is specified."
+            )
+            .font(.caption).foregroundStyle(.secondary)
+          }
+        }
+      }.formStyle(.grouped)
       if let failure { Text(failure).foregroundStyle(.red).textSelection(.enabled) }
       if let notice { Text(notice).textSelection(.enabled) }
       HStack {
@@ -57,13 +79,24 @@ struct BundleAuthoringSheet: View {
         Button("Export File…") { chooseDestination(publishing: false) }.disabled(!ready)
         Button("Publish to Marketplace…") { chooseDestination(publishing: true) }.disabled(!ready)
       }
-    }.padding(20).frame(minWidth: 580, minHeight: 390)
+    }.padding(20).frame(minWidth: 580, minHeight: 500)
       .disabled(working).interactiveDismissDisabled(working)
   }
 
   private var ready: Bool { !selection.isEmpty && !name.isEmpty && !version.isEmpty && !working }
 
   private func chooseDestination(publishing: Bool) {
+    let package: BundlePackage
+    do {
+      let requirements = try dependencies.map { try $0.dependency() }
+      if publishing || !requirements.isEmpty {
+        _ = try MarketplaceCoordinate(package: name, version: version)
+      }
+      package = BundlePackage(name: name, version: version, dependencies: requirements)
+    } catch {
+      failure = String(describing: error)
+      return
+    }
     let destination: URL
     if publishing {
       let panel = NSOpenPanel()
@@ -80,7 +113,6 @@ struct BundleAuthoringSheet: View {
       guard panel.runModal() == .OK, let url = panel.url else { return }
       destination = url
     }
-    let package = BundlePackage(name: name, version: version)
     let entries = components.filter { selection.contains($0.record) }.map(\.selection)
     let scope = snapshot.scope.installScope
     let runtime = environment
@@ -106,6 +138,29 @@ struct BundleAuthoringSheet: View {
       } catch {
         failure = String(describing: error)
       }
+    }
+  }
+}
+
+private struct BundleDependencyRow: View {
+  @Binding var dependency: BundleDependencyDraft
+  let remove: () -> Void
+  @State private var expanded = true
+
+  var body: some View {
+    DisclosureGroup(
+      dependency.package.isEmpty ? "New Dependency" : dependency.package, isExpanded: $expanded
+    ) {
+      TextField("Package name", text: $dependency.package)
+      PackageRequirementEditor(requirement: $dependency.requirement)
+      Toggle("Use another Git marketplace", isOn: $dependency.usesGitCatalog)
+      if dependency.usesGitCatalog {
+        TextField("Repository URL", text: $dependency.gitURL)
+        TextField("Branch, tag or commit", text: $dependency.gitRef, prompt: Text("Default branch"))
+        TextField(
+          "Catalog directory", text: $dependency.gitSubpath, prompt: Text("Repository root"))
+      }
+      Button("Remove Dependency", role: .destructive, action: remove)
     }
   }
 }

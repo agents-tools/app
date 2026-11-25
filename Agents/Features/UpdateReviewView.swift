@@ -21,6 +21,9 @@ struct UpdateReviewView: View {
         case .review:
           if let report = session.report {
             Form {
+              if let change = report.marketplaceGraphChange {
+                MarketplaceGraphReview(change: change)
+              }
               if !report.instructions.targets.isEmpty || !report.instructions.advisories.isEmpty
                 || !report.instructions.conflicts.isEmpty
               {
