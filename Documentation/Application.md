@@ -26,6 +26,10 @@ ClientSettingsModel holds passive AgentClientOperations inspection results in me
 
 Detection never invokes clients or version commands. Core owns command candidates, path resolution, metadata recipes and evidence. Settings provenance paths do not enter workspace monitoring, freshness, recovery or editing availability. Superseded requests cannot replace the latest Settings result. Queued cancellation still delivers a terminal; running synchronous inspection stays owned through return, including on quit. Workspace selection does not change the captured user context shown in Settings. Native passive-observation acceptance remains with the delivery owner.
 
+## Cache settings
+
+Settings → Cache shows the location and size of the shared Git, HTTP and deployed-file caches. Prune selects Git groups by age. Clean selects entries in all three stores. Review the selected entries and their sizes before confirming removal. The result shows the space reclaimed and identifies entries that were skipped or failed.
+
 ## Client backups
 
 Backups is available from the sidebar regardless of the workspace’s selected scope or read status. Back Up captures the selected clients, optional registered projects and output folder. Core’s `ClientBackups.create` runs once per client on the app’s serial worker. The form reports each actual package path or individual failure. An empty project selection still includes local sessions and user configuration. Backup packages can include credentials already stored in the backed-up files.
