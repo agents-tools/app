@@ -22,7 +22,10 @@ struct UpdateProposal: Sendable {
   init(scope: WorkspaceScope, bundle: BundleImportPreview) {
     id = UUID()
     self.scope = scope
-    title = "Install " + bundle.package.name + " " + bundle.package.version
+    let replacing =
+      bundle.report.marketplaceChanges?.contains { $0.before != nil && $0.after != nil } == true
+    title =
+      (replacing ? "Update " : "Install ") + bundle.package.name + " " + bundle.package.version
     contents = .bundle(bundle)
   }
 }

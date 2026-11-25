@@ -30,7 +30,7 @@ struct PackageInstallSheet: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
-        Text("Install Package").font(.headline)
+        Text("Packages").font(.headline)
         Spacer()
         Menu("Marketplace") {
           ForEach(preferences.marketplaces, id: \.self) { remembered in
@@ -137,7 +137,7 @@ struct PackageInstallSheet: View {
         Spacer()
         if busy { ProgressView().controlSize(.small) }
         if bundle != nil {
-          Button("Review Installation…") { prepare() }
+          Button(updatingPin == nil ? "Review Installation…" : "Review Update…") { prepare() }
             .disabled(targets.values.allSatisfy(\.isEmpty) || (verified != nil && alias.isEmpty))
         } else if let release = releases.first(where: { $0.coordinate == selected }) {
           Button("Inspect Package") { inspect(release) }

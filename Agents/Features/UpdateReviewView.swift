@@ -203,6 +203,12 @@ private struct UpdateReportSection: View {
         CompactText(text: pin.archiveDigest).font(.caption.monospaced())
       }
     }
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(title)
+    .accessibilityValue(
+      Text(
+        verbatim: pin.dependency.coordinate.package + " " + pin.dependency.coordinate.version + ", "
+          + pin.archiveDigest))
   }
 }
 

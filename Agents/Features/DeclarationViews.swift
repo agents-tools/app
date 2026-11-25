@@ -72,7 +72,7 @@ struct DeclarationListView: View {
       }
       ToolbarItem {
         Menu("Packages", systemImage: "shippingbox") {
-          Button("Install Package…") { model.packageScope = model.scope }
+          Button("Manage Packages…") { model.packageScope = model.scope }
           if model.page == .components {
             Button("Create Bundle…") { authoring = true }
               .disabled(model.snapshot?.inspection.components.isEmpty != false)
