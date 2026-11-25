@@ -31,6 +31,10 @@ struct RegistryBrowserSheet: View {
   @State private var generation = UUID()
   @State private var request: Task<Void, Never>?
 
+  private var hasConfiguredRegistry: Bool {
+    environment.environment["MCP_REGISTRY_URL"]?.isEmpty == false
+  }
+
   private var server: MCPRegistryServer? { page.first { $0.releaseID == selected } }
 
   var body: some View {
@@ -40,12 +44,18 @@ struct RegistryBrowserSheet: View {
           Text("Find MCP Server").font(.headline)
           Spacer()
           Picker("Registry", selection: $custom) {
-            Text("Public").tag(false)
+            Text(hasConfiguredRegistry ? "Configured" : "Public").tag(false)
             Text("Custom").tag(true)
           }.pickerStyle(.segmented).frame(width: 175).labelsHidden()
         }
         if custom {
           TextField("Registry URL", text: $endpoint)
+        } else if hasConfiguredRegistry,
+          let registry = try? MCPRegistry.configured(environment: environment)
+        {
+          LabeledContent("Registry URL", value: registry.endpoint.absoluteString)
+        }
+        if custom || hasConfiguredRegistry {
           SecureField("Bearer token (optional)", text: $token)
         }
         HStack {
@@ -101,6 +111,10 @@ struct RegistryBrowserSheet: View {
       token = ""
       resetSearch()
     }
+    .onChange(of: environment.environment["MCP_REGISTRY_URL"]) {
+      token = ""
+      resetSearch()
+    }
     .onChange(of: endpoint) {
       token = ""
       resetSearch()
@@ -129,14 +143,15 @@ struct RegistryBrowserSheet: View {
     if next == nil { resetSearch() }
     let id = generation
     let text = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let credentials = custom && !token.isEmpty ? ["Authorization": "Bearer " + token] : [:]
+    let credentials =
+      (custom || hasConfiguredRegistry) && !token.isEmpty ? ["Authorization": "Bearer " + token] : [:]
     let registry: MCPRegistry
     do {
       if custom {
         guard let url = URL(string: endpoint) else { throw URLError(.badURL) }
         registry = try MCPRegistry(endpoint: url)
       } else {
-        registry = .official
+        registry = try .configured(environment: environment)
       }
     } catch {
       message = error.localizedDescription

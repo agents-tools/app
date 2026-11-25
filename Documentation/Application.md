@@ -81,7 +81,7 @@ Normal quit and last-window closure go through an AppKit termination delegate. Q
 
 ## Packages and source policies
 
-Choose a scope in the sidebar. In Components, open **Browse MCP Registry** to search the public registry or enter a private registry URL. Select a server, choose its connection, supply any input mappings, and review the installation for the selected clients. Private registry tokens are held in the open sheet.
+Choose a scope in the sidebar. In Components, open **Browse MCP Registry** to search the public registry. When the app environment sets `MCP_REGISTRY_URL`, **Configured** shows that registry’s address. Choose **Custom** to enter another address. Select a server, choose its connection, supply any input mappings, and review the installation for the selected clients. Private registry tokens are held in the open sheet.
 
 In **Packages → Create Bundle**, select installed instructions, skills and MCP servers, enter a package name and version, then export the file or publish it to a team directory. Skills include their directory contents. Add package dependencies with an exact version, a compatible major or minor version, or a range with an exclusive upper bound. Each dependency uses the publishing marketplace by default and can select a Git repository or an HTTPS index for packages from another marketplace.
 
