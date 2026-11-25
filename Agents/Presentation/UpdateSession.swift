@@ -9,6 +9,7 @@ struct UpdateProposal: Sendable {
   enum Contents: Sendable {
     case update(UpdateRequest)
     case bundle(BundleImportPreview)
+    case marketplace(MarketplaceResolutionPreview)
   }
   let contents: Contents
 
@@ -27,6 +28,13 @@ struct UpdateProposal: Sendable {
     title =
       (replacing ? "Update " : "Install ") + bundle.package.name + " " + bundle.package.version
     contents = .bundle(bundle)
+  }
+
+  init(scope: WorkspaceScope, title: String, marketplace: MarketplaceResolutionPreview) {
+    id = UUID()
+    self.scope = scope
+    self.title = title
+    contents = .marketplace(marketplace)
   }
 }
 

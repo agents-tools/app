@@ -42,11 +42,11 @@ struct PromptAuditSheet: View {
         }
         HStack {
           Button("Cancel Review") { self.strip = nil }
-          Button("Apply \(strip.edits.count) Deletions") { apply(strip) }
+          Button("Apply Reviewed Changes") { apply(strip) }
         }.disabled(busy)
       } else if let report {
         Text(
-          "\(report.targets.filter { $0.status == .scanned }.count) files scanned · \(report.findings.count) findings"
+          "Files scanned: \(report.targets.filter { $0.status == .scanned }.count) · Findings: \(report.findings.count)"
         )
         .font(.headline)
         if let file = selectedFile { Text(file.lastPathComponent).foregroundStyle(.secondary) }
@@ -131,7 +131,7 @@ struct PromptAuditSheet: View {
     } receive: {
       strip = nil
       report = $0
-      message = "Removed \(preview.edits.count) characters."
+      message = "Characters removed: \(preview.edits.count)"
     }
   }
 

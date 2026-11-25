@@ -547,6 +547,225 @@ struct UpdateFlowTests {
     #expect(model.snapshot?.inspection.components.contains { $0.name == "handbook" } == true)
   }
 
+  @Test func bundleDependencyDraftUsesCoreVersionAndPortableCatalogValidation() throws {
+    var draft = BundleDependencyDraft()
+    draft.package = "shared-workflows"
+    draft.requirement = .range(from: "1.2.3", to: "2.5.0")
+    #expect(try draft.dependency().catalog == nil)
+    draft.usesGitCatalog = true
+    draft.gitURL = "https://example.invalid/team/catalog.git"
+    draft.gitRef = "stable"
+    draft.gitSubpath = "packages"
+    let dependency = try draft.dependency()
+    #expect(dependency.requirement == .range(from: "1.2.3", to: "2.5.0"))
+    #expect(dependency.catalog?.ref == "stable")
+    #expect(dependency.catalog?.subpath == "packages")
+    draft.requirement = .range(from: "2.5.0", to: "1.2.3")
+    #expect(throws: CoreError.self) { try draft.dependency() }
+    draft.requirement = .exact("1.2.3")
+    draft.gitURL = "./catalog"
+    #expect(throws: MarketplaceError.self) { try draft.dependency() }
+  }
+
+  @Test nonisolated func marketplaceGraphRetainsEachRootsClientsThroughReviewUpgradeAndRemoval()
+    throws
+  {
+    let author = try TestFixture()
+    let consumer = try TestFixture()
+    defer {
+      try? author.remove()
+      try? consumer.remove()
+    }
+    let authorEnvironment = RuntimeEnvironment(
+      projectDirectory: author.project, homeDirectory: author.home, environment: author.environment)
+    let content = author.project.appendingPathComponent("content")
+    let skill = content.appendingPathComponent("skills/shared-skill")
+    let instructions = content.appendingPathComponent("instructions")
+    for directory in [skill, instructions] {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+    try Data("---\nname: shared-skill\ndescription: A fixture.\n---\n# Shared\n".utf8)
+      .write(to: skill.appendingPathComponent("SKILL.md"))
+    try Data("---\ndescription: A fixture.\n---\n# Shared instructions\n".utf8)
+      .write(to: instructions.appendingPathComponent("shared.md"))
+    try author.writeManifest(
+      """
+      version: 1
+      sources: {content: {path: ./content}}
+      components:
+        - {kind: skills, source: content, select: all, agents: [codex]}
+        - kind: instructions
+          agents: [codex]
+          sections: [{name: shared, source: content}]
+        - kind: mcpServer
+          name: handbook
+          transport: {kind: sse, url: "https://example.invalid/sse"}
+          agents: [claude-code]
+      """)
+    _ = try UpdateOperations.withPreparedUpdate(environment: authorEnvironment) { try $0.apply() }
+    let components = try UpdateOperations.inspect(environment: authorEnvironment).components
+    let catalog = author.root.appendingPathComponent("catalog")
+    try FileManager.default.createDirectory(at: catalog, withIntermediateDirectories: true)
+
+    func publish(
+      _ package: String, _ version: String, dependencies: [MarketplacePackageRequirement] = []
+    ) throws -> MarketplaceRelease {
+      let selections = components.filter { ($0.kind == .mcpServer) == (package == "starter") }
+      let archive = try BundleOperations.export(
+        BundlePackage(name: package, version: version, dependencies: dependencies),
+        selections: selections.map(\.selection), scope: .project, environment: authorEnvironment)
+      return try MarketplaceOperations.publishBundle(archive, to: catalog)
+    }
+
+    let first = try publish("shared", "1.0.0")
+    var dependency = BundleDependencyDraft()
+    dependency.package = "shared"
+    dependency.requirement = .upToNextMajor(from: "1.0.0")
+    let starter = try publish("starter", "1.0.0", dependencies: [dependency.dependency()])
+    let scope = WorkspaceScope(kind: .project, root: consumer.project)
+    let actions = CoreActions(home: consumer.home, processEnvironment: consumer.environment)
+    let environment = actions.environment(for: scope)
+    let registration = try MarketplaceRegistration(name: "team", origin: first.origin)
+    try MarketplaceDirectory.register(registration, scope: .project, environment: environment)
+    let registered = try MarketplaceDirectory.lookup(
+      "team", scope: .project, environment: environment)
+    let releases = try MarketplaceOperations.browse(registered, environment: environment)
+
+    func resolve(_ draft: inout MarketplacePackageDraft) throws {
+      draft.capture(try MarketplaceOperations.resolve(draft.request(), environment: environment))
+    }
+
+    func apply(_ checked: MarketplaceResolutionPreview, title: String) throws {
+      let before = try consumer.entries()
+      let proposal = UpdateProposal(scope: scope, title: title, marketplace: checked)
+      let review = actions.preview(proposal)
+      guard case .updatePreview(let id, let report) = review.output else {
+        throw CoreError.invalidState(review.diagnostics.map(\.message).joined(separator: "\n"))
+      }
+      #expect(id == proposal.id)
+      #expect(report == checked.report)
+      #expect(try consumer.entries() == before)
+      let applied = actions.apply(
+        proposal, fingerprint: report.displayedFingerprint, admission: OperationAdmission())
+      #expect(applied.updateTerminal?.disposition == .committed, "\(applied.diagnostics)")
+    }
+
+    var sharedDraft = MarketplacePackageDraft(release: try releases.select(package: "shared"))
+    sharedDraft.requirement = .upToNextMajor(from: "1.0.0")
+    try resolve(&sharedDraft)
+    let shared = try #require(sharedDraft.reachableNodes.first)
+    let members = try #require(shared.availableMembers)
+    let sharedSkill = try #require(members.first { $0.kind == .skills }?.marketplaceKey)
+    #expect(Set(members.map(\.kind)) == [.skills, .instructions])
+    for member in members {
+      try sharedDraft.setTargets([.codex], for: member.marketplaceKey, in: shared)
+    }
+    try apply(
+      sharedDraft.preview(scope: .project, environment: environment), title: sharedDraft.title)
+
+    var starterDraft = MarketplacePackageDraft(release: starter)
+    try resolve(&starterDraft)
+    let starterNode = try #require(starterDraft.reachableNodes.first)
+    let dependencyNode = try #require(
+      starterDraft.reachableNodes.first {
+        $0.versions.node == shared.versions.node
+      })
+    let server = try #require(starterNode.availableMembers?.first)
+    #expect(server.kind == .mcpServer)
+    try starterDraft.setTargets(
+      [.claudeCode, .antigravity], for: server.marketplaceKey, in: starterNode)
+    let unavailable = try #require(starterDraft.unavailableSelections(in: .project).first)
+    #expect(!starterDraft.canReview(in: .project))
+    try starterDraft.removeUnavailableTargets(from: unavailable, in: .project)
+    #expect(
+      starterDraft.targets(for: server.marketplaceKey, in: starterNode.versions.node)
+        == [.claudeCode])
+    try starterDraft.setTargets([.claudeCode], for: sharedSkill, in: dependencyNode)
+    starterDraft.pinOnly = true
+    let lockOnly = try starterDraft.preview(scope: .project, environment: environment)
+    #expect(
+      lockOnly.resolution.roots.first { $0.intent.name == "starter" }?.intent.selections == [])
+    #expect(
+      lockOnly.report.marketplaceGraphChange?.after?.recipientsByRoot(
+        for: sharedSkill, in: dependencyNode.versions.node) == ["shared": [.codex]])
+
+    starterDraft.pinOnly = false
+    #expect(
+      starterDraft.targets(for: sharedSkill, in: dependencyNode.versions.node) == [.claudeCode])
+    try apply(
+      starterDraft.preview(scope: .project, environment: environment), title: starterDraft.title)
+
+    _ = try publish("shared", "1.1.0")
+    _ = try publish("shared", "2.0.0")
+    let installed = try #require(
+      UpdateOperations.inspect(environment: environment).marketplaceGraph)
+    let root = try #require(installed.roots.first { $0.intent.name == "starter" }?.intent)
+    var upgrade = MarketplacePackageDraft(upgrading: root)
+    try resolve(&upgrade)
+    let versions = try #require(
+      upgrade.reachableNodes.first {
+        $0.versions.node == dependencyNode.versions.node
+      }?.versions)
+    #expect(versions.locked?.version == "1.0.0")
+    #expect(versions.eligible.version == "1.1.0")
+    #expect(versions.latest?.version == "2.0.0")
+    #expect(upgrade.selections == root.selections)
+    let checked = try upgrade.preview(scope: .project, environment: environment)
+    #expect(checked.report.marketplaceGraphChange?.affectedRoots == ["shared", "starter"])
+    let beforeCatalogChange = try consumer.entries()
+    _ = try publish("shared", "2.1.0")
+    let refused = actions.apply(
+      .init(scope: scope, title: upgrade.title, marketplace: checked),
+      fingerprint: checked.report.displayedFingerprint, admission: OperationAdmission())
+    #expect(refused.disposition == .failed)
+    #expect(refused.diagnostics.contains { $0.message.contains("marketplace catalog changed") })
+    #expect(try consumer.entries() == beforeCatalogChange)
+    try resolve(&upgrade)
+    try apply(
+      upgrade.preview(scope: .project, environment: environment), title: upgrade.title)
+
+    let removal = try MarketplaceOperations.previewResolution(
+      .remove("starter"), environment: environment)
+    try apply(removal, title: "Remove starter")
+    let afterRemoval = try UpdateOperations.inspect(environment: environment)
+    let remaining = try #require(afterRemoval.marketplaceGraph)
+    #expect(remaining.roots.map(\.intent.name) == ["shared"])
+    #expect(remaining.nodes.map(\.coordinate.version) == ["1.1.0"])
+    #expect(
+      remaining.recipientsByRoot(for: sharedSkill, in: dependencyNode.versions.node)
+        == ["shared": [.codex]])
+    #expect(!afterRemoval.components.contains { $0.name == "handbook" })
+
+    var pinDraft = MarketplacePackageDraft(release: starter)
+    pinDraft.pinOnly = true
+    try resolve(&pinDraft)
+    let pinPreview = try pinDraft.preview(scope: .project, environment: environment)
+    #expect(pinPreview.report.hasChanges)
+    #expect(pinPreview.report.components.filter(\.changed).isEmpty)
+    #expect(pinPreview.report.skills.filter(\.changed).isEmpty)
+    try apply(pinPreview, title: pinDraft.title)
+    let pinned = try #require(UpdateOperations.inspect(environment: environment).marketplaceGraph)
+    #expect(pinned.roots.first { $0.intent.name == "starter" }?.intent.selections == [])
+    #expect(
+      pinned.recipientsByRoot(for: sharedSkill, in: dependencyNode.versions.node)
+        == ["shared": [.codex]])
+    let pinnedRoot = try #require(pinned.roots.first { $0.intent.name == "starter" }?.intent)
+    _ = try publish("starter", "1.1.0", dependencies: [dependency.dependency()])
+    var pinUpgrade = MarketplacePackageDraft(upgrading: pinnedRoot)
+    #expect(pinUpgrade.pinOnly)
+    pinUpgrade.requirement = .upToNextMajor(from: "1.0.0")
+    try resolve(&pinUpgrade)
+    let pinUpgradePreview = try pinUpgrade.preview(scope: .project, environment: environment)
+    #expect(pinUpgradePreview.report.components.filter(\.changed).isEmpty)
+    #expect(pinUpgradePreview.report.skills.filter(\.changed).isEmpty)
+    try apply(pinUpgradePreview, title: pinUpgrade.title)
+    let afterPinUpgrade = try UpdateOperations.inspect(environment: environment)
+    #expect(
+      afterPinUpgrade.marketplaceGraph?.nodes.first {
+        $0.id == starterNode.versions.node
+      }?.coordinate.version == "1.1.0")
+  }
+
   private func loadedModel(_ fixture: TestFixture) async -> AppModel {
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),

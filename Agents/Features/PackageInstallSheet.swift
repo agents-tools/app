@@ -16,10 +16,12 @@ struct PackageInstallSheet: View {
   @State private var origin: MarketplaceOrigin?
   @State private var releases: [MarketplaceRelease] = []
   @State private var pins: [MarketplacePin] = []
+  @State private var installedGraph: MarketplaceGraph?
   @State private var query = ""
   @State private var selected: MarketplaceCoordinate?
   @State private var verified: VerifiedMarketplacePackage?
   @State private var bundle: BundleInspection?
+  @State private var graphDraft: MarketplacePackageDraft?
   @State private var targets: [String: Set<AgentID>] = [:]
   @State private var alias = ""
   @State private var updatingPin: MarketplacePin?
@@ -55,8 +57,24 @@ struct PackageInstallSheet: View {
             }
           }
         }
-        if !pins.isEmpty {
+        if !pins.isEmpty || installedGraph?.roots.isEmpty == false {
           Menu("Installed Packages") {
+            if let graph = installedGraph {
+              ForEach(graph.roots, id: \.intent.name) { root in
+                let version = graph.nodes.first { $0.id == root.node }?.coordinate.version
+                Menu(root.intent.name + (version.map { " · " + $0 } ?? "")) {
+                  Button("Check for Updates") {
+                    clearPackage()
+                    releases = []
+                    origin = root.intent.catalog
+                    selectedRegistration = nil
+                    updatingPin = nil
+                    showGraph(.init(upgrading: root.intent))
+                  }
+                  Button("Review Removal…") { reviewRemoval(root.intent.name) }
+                }
+              }
+            }
             ForEach(pins, id: \.dependency.name) { pin in
               Menu(pin.dependency.name + " · " + pin.dependency.coordinate.version) {
                 Button("Check for Updates") { checkUpdates(for: pin) }
@@ -75,7 +93,10 @@ struct PackageInstallSheet: View {
       if let origin {
         Text(origin.location).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
       }
-      if let bundle {
+      if let draft = Binding($graphDraft) {
+        MarketplaceSelectionView(
+          draft: draft, errorText: $errorText, scope: scope.installScope, resolve: resolveGraph)
+      } else if let bundle {
         Form {
           Section(bundle.package.name + " · " + bundle.package.version) {
             if let verified {
@@ -86,19 +107,18 @@ struct PackageInstallSheet: View {
               LabeledContent("Selected version", value: verified.release.coordinate.version)
             }
             ForEach(bundle.components, id: \.id) { item in
-              HStack {
-                VStack(alignment: .leading) {
-                  Text(item.name)
-                  Text(DeclarationLabels.kind(item.kind.rawValue)).foregroundStyle(.secondary).font(
-                    .caption)
-                }
-                Spacer()
-                Menu(clientSummary(for: item)) {
-                  ForEach(item.supportedTargets(in: scope.installScope), id: \.self) { agent in
-                    Toggle(agent.displayName, isOn: targetBinding(item, agent))
-                  }
-                }
-              }
+              PackageClientPicker(
+                component: item, scope: scope.installScope,
+                targets: Binding(
+                  get: { targets[item.id] ?? [] },
+                  set: { targets[item.id] = $0 }
+                )
+              )
+              .disabled(bundle.package.dependencies != nil)
+            }
+            if bundle.package.dependencies != nil {
+              Text("Publish this bundle to a marketplace to resolve and install its dependencies.")
+                .font(.caption).foregroundStyle(.secondary)
             }
           }
         }.formStyle(.grouped)
@@ -139,12 +159,20 @@ struct PackageInstallSheet: View {
       if let errorText { Text(errorText).foregroundStyle(.red).textSelection(.enabled) }
       HStack {
         Button("Close") { dismiss() }.keyboardShortcut(.cancelAction)
-        if origin != nil && bundle != nil { Button("Back to Releases") { clearPackage() } }
+        if !releases.isEmpty && (bundle != nil || graphDraft != nil) {
+          Button("Back to Releases") { clearPackage() }
+        }
         Spacer()
         if busy { ProgressView().controlSize(.small) }
-        if bundle != nil {
+        if let graphDraft {
+          Button(graphDraft.installed == nil ? "Review Installation…" : "Review Update…") {
+            prepareGraph(graphDraft)
+          }.disabled(!graphDraft.canReview(in: scope.installScope))
+        } else if let bundle {
           Button(updatingPin == nil ? "Review Installation…" : "Review Update…") { prepare() }
-            .disabled(targets.values.allSatisfy(\.isEmpty) || (verified != nil && alias.isEmpty))
+            .disabled(
+              bundle.package.dependencies != nil || targets.values.allSatisfy(\.isEmpty)
+                || (verified != nil && alias.isEmpty))
         } else if let release = releases.first(where: { $0.coordinate == selected }) {
           Button("Inspect Package") { inspect(release) }
         }
@@ -159,11 +187,12 @@ struct PackageInstallSheet: View {
         let values = try await Task.detached {
           try (
             MarketplaceDirectory.list(scope: selectedScope, environment: runtime),
-            MarketplaceOperations.installed(scope: selectedScope, environment: runtime)
+            UpdateOperations.inspect(scope: selectedScope, environment: runtime)
           )
         }.value
         registrations = values.0
-        pins = values.1
+        pins = values.1.marketplacePackages
+        installedGraph = values.1.marketplaceGraph
       } catch {
         errorText = String(describing: error)
         return
@@ -205,6 +234,7 @@ struct PackageInstallSheet: View {
   private func clearPackage() {
     bundle = nil
     verified = nil
+    graphDraft = nil
     selected = nil
     targets = [:]
     errorText = nil
@@ -277,7 +307,9 @@ struct PackageInstallSheet: View {
     releases = []
     origin = source
     run {
-      let registration = try MarketplaceRegistration(name: "team", origin: source)
+      let registration =
+        try registered?.registration
+        ?? MarketplaceRegistration(name: "team", origin: source)
       return try MarketplaceOperations.browse(
         registration, scope: scope.installScope, environment: environment)
     } receive: { catalog in
@@ -294,33 +326,95 @@ struct PackageInstallSheet: View {
       origin = nil
       selectedRegistration = nil
       updatingPin = nil
+      releases = []
       clearPackage()
       bundle = contents
     }
   }
 
+  private enum InspectedRelease: Sendable {
+    case graph(MarketplacePackageDraft)
+    case legacy(
+      VerifiedMarketplacePackage, BundleInspection, MarketplacePin, [BundleImportSelection])
+  }
+
   private func inspect(_ release: MarketplaceRelease) {
     let selectedPin = updatingPin
-    run {
+    run { () -> InspectedRelease in
+      let inspection = try UpdateOperations.inspect(
+        scope: scope.installScope, environment: environment)
+      let roots =
+        inspection.marketplaceGraph?.roots.filter {
+          $0.intent.catalog == release.origin && $0.intent.package == release.coordinate.package
+        } ?? []
+      if selectedPin == nil, roots.count == 1, let root = roots.first {
+        return .graph(.init(upgrading: root.intent, to: release.coordinate.version))
+      }
+      let matches = inspection.marketplacePackages.filter {
+        $0.dependency.catalog == release.origin
+          && $0.dependency.coordinate.package == release.coordinate.package
+      }
+      guard let legacy = selectedPin ?? (matches.count == 1 ? matches.first : nil) else {
+        return .graph(.init(release: release))
+      }
       let package = try MarketplaceOperations.acquire(
         release, scope: scope.installScope, environment: environment)
       let contents = try package.inspectBundle()
-      let inspection = try UpdateOperations.inspect(
-        scope: scope.installScope, environment: environment)
-      let matches = inspection.marketplacePackages.filter {
-        $0.dependency.catalog == release.origin
-          && $0.dependency.coordinate.package == contents.package.name
+      if contents.package.dependencies != nil {
+        return .graph(.init(release: release, legacy: legacy))
       }
-      let installed = selectedPin ?? (matches.count == 1 ? matches.first : nil)
-      let selections =
-        try installed.map { try contents.retainedSelections(for: $0, in: inspection) } ?? []
-      return (package, contents, installed, selections)
-    } receive: { package, contents, installed, selections in
-      verified = package
-      bundle = contents
-      alias = installed?.dependency.name ?? contents.package.name
-      targets = Dictionary(
-        uniqueKeysWithValues: selections.map { ($0.componentID, Set($0.targets)) })
+      return .legacy(
+        package, contents, legacy, try contents.retainedSelections(for: legacy, in: inspection))
+    } receive: { result in
+      switch result {
+      case .graph(let draft):
+        showGraph(draft)
+      case .legacy(let package, let contents, let installed, let selections):
+        verified = package
+        bundle = contents
+        alias = installed.dependency.name
+        targets = Dictionary(
+          uniqueKeysWithValues: selections.map { ($0.componentID, Set($0.targets)) })
+      }
+    }
+  }
+
+  private func showGraph(_ draft: MarketplacePackageDraft) {
+    graphDraft = draft
+    resolveGraph()
+  }
+
+  private func resolveGraph() {
+    guard let draft = graphDraft else { return }
+    if draft.installed == nil
+      && (pins.contains { $0.dependency.name == draft.name }
+        || installedGraph?.roots.contains { $0.intent.name == draft.name } == true)
+    {
+      errorText = "That package alias is already installed. Choose another name."
+      return
+    }
+    run {
+      try MarketplaceOperations.resolve(
+        draft.request(), scope: scope.installScope, environment: environment)
+    } receive: { resolution in
+      graphDraft?.capture(resolution)
+    }
+  }
+
+  private func prepareGraph(_ draft: MarketplacePackageDraft) {
+    run {
+      try draft.preview(scope: scope.installScope, environment: environment)
+    } receive: { preview in
+      review(UpdateProposal(scope: scope, title: draft.title, marketplace: preview))
+    }
+  }
+
+  private func reviewRemoval(_ name: String) {
+    run {
+      try MarketplaceOperations.previewResolution(
+        .remove(name), scope: scope.installScope, environment: environment)
+    } receive: { preview in
+      review(UpdateProposal(scope: scope, title: "Remove " + name, marketplace: preview))
     }
   }
 
@@ -349,23 +443,6 @@ struct PackageInstallSheet: View {
     }
   }
 
-  private func clientSummary(for item: BundleComponent) -> String {
-    let clients = AgentID.allCases.filter { targets[item.id]?.contains($0) == true }
-    return clients.isEmpty ? "Choose Clients" : clients.map(\.displayName).joined(separator: ", ")
-  }
-
-  private func targetBinding(_ item: BundleComponent, _ agent: AgentID) -> Binding<Bool> {
-    Binding(
-      get: { targets[item.id]?.contains(agent) == true },
-      set: { enabled in
-        if enabled {
-          targets[item.id, default: []].insert(agent)
-        } else {
-          targets[item.id]?.remove(agent)
-        }
-      })
-  }
-
   private func run<T: Sendable>(
     _ work: @escaping @Sendable () throws -> T, receive: @escaping (T) -> Void
   ) {
@@ -373,9 +450,14 @@ struct PackageInstallSheet: View {
     busy = true
     errorText = nil
     Task {
-      defer { busy = false }
-      do { receive(try await Task.detached(priority: .userInitiated, operation: work).value) } catch
-      { errorText = String(describing: error) }
+      do {
+        let value = try await Task.detached(priority: .userInitiated, operation: work).value
+        busy = false
+        receive(value)
+      } catch {
+        busy = false
+        errorText = String(describing: error)
+      }
     }
   }
 }

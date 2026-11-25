@@ -32,6 +32,9 @@ extension CoreActions {
       case .bundle(let preview):
         if let conflict = preview.ownershipConflict { throw CoreError.invalidState(conflict) }
         report = preview.report
+      case .marketplace(let preview):
+        if let conflict = preview.ownershipConflict { throw CoreError.invalidState(conflict) }
+        report = preview.report
       }
       return CoreCompletion(
         disposition: .completed, output: .updatePreview(proposal.id, report),
@@ -71,6 +74,9 @@ extension CoreActions {
         environment: environment(for: proposal.scope), bindingProvider: provider, confirm)
     case .bundle(let preview):
       completion = BundleOperations.performImport(preview, bindingProvider: provider, confirm)
+    case .marketplace(let preview):
+      completion = MarketplaceOperations.performResolution(
+        preview, bindingProvider: provider, confirm)
     }
     let succeeded: Bool
     let cancelled: Bool
