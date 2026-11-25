@@ -47,8 +47,7 @@ struct DeclarationListView: View {
     .sheet(isPresented: $authoring) {
       if let snapshot = model.snapshot {
         BundleAuthoringSheet(
-          snapshot: snapshot, environment: model.actions.environment(for: snapshot.scope),
-          didPublish: model.preferences.remember
+          snapshot: snapshot, environment: model.actions.environment(for: snapshot.scope)
         )
         .id(snapshot.scope)
       }

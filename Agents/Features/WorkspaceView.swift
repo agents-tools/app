@@ -132,8 +132,7 @@ struct WorkspaceView: View {
       }
     ) { scope in
       PackageInstallSheet(
-        scope: scope, environment: model.actions.environment(for: scope),
-        preferences: model.preferences
+        scope: scope, environment: model.actions.environment(for: scope)
       ) { proposal in
         pendingReview = proposal
         model.packageScope = nil

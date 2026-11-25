@@ -6,10 +6,13 @@ import SwiftUI
 struct PackageInstallSheet: View {
   let scope: WorkspaceScope
   let environment: RuntimeEnvironment
-  let preferences: AppPreferences
   let review: (UpdateProposal) -> Void
 
   @Environment(\.dismiss) private var dismiss
+  @State private var registrations: [RegisteredMarketplace] = []
+  @State private var registrationName = ""
+  @State private var savingMarketplace = false
+  @State private var selectedRegistration: RegisteredMarketplace?
   @State private var origin: MarketplaceOrigin?
   @State private var releases: [MarketplaceRelease] = []
   @State private var pins: [MarketplacePin] = []
@@ -33,19 +36,22 @@ struct PackageInstallSheet: View {
         Text("Packages").font(.headline)
         Spacer()
         Menu("Marketplace") {
-          ForEach(preferences.marketplaces, id: \.self) { remembered in
-            Button(remembered.location) { browse(remembered) }
+          ForEach(registrations, id: \.registration.name) { entry in
+            Button(entry.registration.name + " · " + entry.scope.rawValue.capitalized) {
+              browse(entry.registration.origin, registered: entry)
+            }
           }
-          Divider()
+          if !registrations.isEmpty { Divider() }
           Button("Choose Directory…") { chooseDirectory() }
-          Button("Add Git Repository…") { editingGit = true }
-          if let origin {
-            Button("Forget This Marketplace") {
-              preferences.forget(origin)
-              self.origin = nil
-              releases = []
-              updatingPin = nil
-              clearPackage()
+          Button("Browse Git Repository…") { editingGit = true }
+          if let entry = selectedRegistration {
+            if entry.scope == scope.installScope {
+              Button("Forget “" + entry.registration.name + "”") { forget(entry) }
+            }
+          } else if origin != nil {
+            Button("Save Marketplace As…") {
+              registrationName = ""
+              savingMarketplace = true
             }
           }
         }
@@ -150,14 +156,25 @@ struct PackageInstallSheet: View {
       let runtime = environment
       let selectedScope = scope.installScope
       do {
-        pins = try await Task.detached {
-          try MarketplaceOperations.installed(scope: selectedScope, environment: runtime)
+        let values = try await Task.detached {
+          try (
+            MarketplaceDirectory.list(scope: selectedScope, environment: runtime),
+            MarketplaceOperations.installed(scope: selectedScope, environment: runtime)
+          )
         }.value
+        registrations = values.0
+        pins = values.1
       } catch {
         errorText = String(describing: error)
         return
       }
-      if let first = preferences.marketplaces.first { browse(first) }
+    }
+    .alert("Save Marketplace", isPresented: $savingMarketplace) {
+      TextField("Marketplace name", text: $registrationName)
+      Button("Cancel", role: .cancel) {}
+      Button("Save") { saveMarketplace() }.disabled(registrationName.isEmpty)
+    } message: {
+      Text("Save in " + scope.installScope.rawValue + " configuration.")
     }
     .sheet(isPresented: $editingGit) {
       VStack(alignment: .leading) {
@@ -198,7 +215,13 @@ struct PackageInstallSheet: View {
     panel.canChooseFiles = false
     panel.canChooseDirectories = true
     guard panel.runModal() == .OK, let url = panel.url else { return }
-    do { browse(try MarketplaceOrigin(kind: .directory, location: url.path)) } catch {
+    var location = url.standardizedFileURL.path
+    let base = scope.root.standardizedFileURL.path
+    if scope.installScope == .project, location == base || location.hasPrefix(base + "/") {
+      let relative = String(location.dropFirst(base.count).drop(while: { $0 == "/" }))
+      location = relative.isEmpty ? "." : relative
+    }
+    do { browse(try MarketplaceOrigin(kind: .directory, location: location)) } catch {
       errorText = String(describing: error)
     }
   }
@@ -207,6 +230,7 @@ struct PackageInstallSheet: View {
     clearPackage()
     releases = []
     origin = pin.dependency.catalog
+    selectedRegistration = nil
     updatingPin = pin
     run {
       try MarketplaceOperations.availableUpdates(
@@ -217,7 +241,37 @@ struct PackageInstallSheet: View {
     }
   }
 
-  private func browse(_ source: MarketplaceOrigin) {
+  private func saveMarketplace() {
+    guard let origin else { return }
+    let name = registrationName
+    run {
+      let entry = try MarketplaceRegistration(name: name, origin: origin)
+      try MarketplaceDirectory.register(entry, scope: scope.installScope, environment: environment)
+      return try MarketplaceDirectory.list(scope: scope.installScope, environment: environment)
+    } receive: { entries in
+      registrations = entries
+      selectedRegistration = entries.first { $0.registration.name == name }
+      self.origin = selectedRegistration?.registration.origin
+    }
+  }
+
+  private func forget(_ entry: RegisteredMarketplace) {
+    run {
+      try MarketplaceDirectory.unregister(
+        entry.registration.name, scope: scope.installScope, environment: environment)
+      return try MarketplaceDirectory.list(scope: scope.installScope, environment: environment)
+    } receive: { entries in
+      registrations = entries
+      selectedRegistration = nil
+      origin = nil
+      releases = []
+      updatingPin = nil
+      clearPackage()
+    }
+  }
+
+  private func browse(_ source: MarketplaceOrigin, registered: RegisteredMarketplace? = nil) {
+    selectedRegistration = registered
     updatingPin = nil
     clearPackage()
     releases = []
@@ -227,7 +281,6 @@ struct PackageInstallSheet: View {
       return try MarketplaceOperations.browse(
         registration, scope: scope.installScope, environment: environment)
     } receive: { catalog in
-      preferences.remember(source)
       releases = catalog.releases
     }
   }
@@ -239,6 +292,7 @@ struct PackageInstallSheet: View {
       try BundleOperations.inspect(Data(contentsOf: file))
     } receive: { contents in
       origin = nil
+      selectedRegistration = nil
       updatingPin = nil
       clearPackage()
       bundle = contents

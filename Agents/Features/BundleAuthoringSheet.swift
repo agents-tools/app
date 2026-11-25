@@ -6,7 +6,6 @@ import SwiftUI
 struct BundleAuthoringSheet: View {
   let snapshot: WorkspaceSnapshot
   let environment: RuntimeEnvironment
-  let didPublish: (MarketplaceOrigin) -> Void
 
   @Environment(\.dismiss) private var dismiss
   @State private var selection = Set<String>()
@@ -91,18 +90,15 @@ struct BundleAuthoringSheet: View {
     Task {
       defer { working = false }
       do {
-        let release = try await Task.detached(priority: .userInitiated) {
-          () -> MarketplaceRelease? in
+        try await Task.detached(priority: .userInitiated) {
           let archive = try BundleOperations.export(
             package, selections: entries, scope: scope, environment: runtime)
           if publishing {
-            return try MarketplaceOperations.publishBundle(archive, to: destination)
+            _ = try MarketplaceOperations.publishBundle(archive, to: destination)
           } else {
             try archive.write(to: destination, options: .atomic)
-            return nil
           }
         }.value
-        if let release { didPublish(release.origin) }
         notice =
           publishing
           ? "Published " + package.name + " " + package.version + " to " + destination.path

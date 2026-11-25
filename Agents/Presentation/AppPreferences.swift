@@ -6,24 +6,6 @@ import Observation
 final class AppPreferences {
   private let defaults: UserDefaults?
   private(set) var projects: [URL]
-  private(set) var marketplaces: [MarketplaceOrigin]
-  func remember(_ origin: MarketplaceOrigin) {
-    guard !marketplaces.contains(origin) else { return }
-    marketplaces.append(origin)
-    persistMarketplaces()
-  }
-
-  func forget(_ origin: MarketplaceOrigin) {
-    marketplaces.removeAll { $0 == origin }
-    persistMarketplaces()
-  }
-
-  private func persistMarketplaces() {
-    if let data = try? JSONEncoder().encode(marketplaces) {
-      defaults?.set(data, forKey: "marketplaces")
-    }
-  }
-
   var selectedScopeID: String? {
     didSet { defaults?.set(selectedScopeID, forKey: "selectedScope") }
   }
@@ -36,10 +18,6 @@ final class AppPreferences {
 
   init(defaults: UserDefaults? = .standard, initialProjects: [URL] = []) {
     self.defaults = defaults
-    marketplaces =
-      defaults?.data(forKey: "marketplaces").flatMap {
-        try? JSONDecoder().decode([MarketplaceOrigin].self, from: $0)
-      } ?? []
     let saved =
       defaults?.stringArray(forKey: "projects")?.map { URL(fileURLWithPath: $0) } ?? initialProjects
     var seen = Set<String>()
