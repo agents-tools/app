@@ -73,9 +73,9 @@ Normal quit and last-window closure go through an AppKit termination delegate. Q
 
 Choose a scope in the sidebar. In Components, open **Browse MCP Registry** to search the public registry or enter a private registry URL. Select a server, choose its connection, supply any input mappings, and review the installation for the selected clients. Private registry tokens are held in the open sheet.
 
-In **Create Bundle**, select the installed instructions, skills and MCP servers, enter a package name and version, then export the file or publish it to a team directory. Skills include their directory contents. The app remembers the marketplace after a successful publication.
+In **Packages → Create Bundle**, select the installed instructions, skills and MCP servers, enter a package name and version, then export the file or publish it to a team directory. Skills include their directory contents. The app remembers the marketplace after a successful publication.
 
-Open **Install Package** to browse a marketplace or open an exported bundle. Choose the release, assign clients to its components, then review and apply the changes. Installed packages show their pinned versions. Select a newer release to preview an upgrade in this scope. Use **Changes → Preview Restore** to restore from the scope's lock. Use **Installed Packages → Review Removal** to preview removing a dependency.
+Open **Packages → Install Package** to browse a marketplace or open an exported bundle. Choose the release, assign clients to its components, then review and apply the changes. Installed packages show their pinned versions. Select a newer release to preview an upgrade in this scope. Use **Changes → Preview Restore** to restore from the scope's lock. Use **Installed Packages → Review Removal** to preview removing a dependency.
 
 In Sources, choose **Edit Source Policy** to configure the selected scope and inspect inherited rules. The organization policy can be supplied via `AGENTS_ORGANIZATION_SOURCE_POLICY`. Project installs must satisfy the organization, user and project layers that are configured. **Export Component Inventory** saves a CycloneDX JSON inventory from the current inspection.
 

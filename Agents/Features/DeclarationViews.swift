@@ -63,8 +63,6 @@ struct DeclarationListView: View {
       ToolbarItem {
         if model.page == .components {
           Button("New Local Skill…") { model.beginCreation(.skill) }
-          Button("Create Bundle…") { authoring = true }
-            .disabled(!model.canModify || model.snapshot?.inspection.components.isEmpty != false)
         }
       }
       ToolbarItem {
@@ -73,8 +71,13 @@ struct DeclarationListView: View {
         }
       }
       ToolbarItem {
-        Button("Install Package…", systemImage: "shippingbox") { model.packageScope = model.scope }
-          .disabled(!model.canModify)
+        Menu("Packages", systemImage: "shippingbox") {
+          Button("Install Package…") { model.packageScope = model.scope }
+          if model.page == .components {
+            Button("Create Bundle…") { authoring = true }
+              .disabled(model.snapshot?.inspection.components.isEmpty != false)
+          }
+        }.disabled(!model.canModify)
       }
       ToolbarItem {
         Button("Browse MCP Registry…", systemImage: "magnifyingglass") { model.browseRegistry() }
