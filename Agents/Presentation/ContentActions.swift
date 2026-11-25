@@ -77,6 +77,8 @@ enum ContentOutput: Sendable {
   case prompt(PromptRequest, String)
   case discovery(UUID, ComponentDiscovery)
   case updatePreview(UUID, CombinedUpdateReport)
+  case globalMigrationAvailable
+  case globalMigrationPreview(GlobalMigrationPreview)
   case mappings(UUID, [MappingItem])
 }
 

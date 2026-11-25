@@ -91,9 +91,20 @@ struct CoreReader: Sendable {
         disposition: .completed, snapshot: snapshot, diagnostics: [],
         readDependencies: readDependencies)
     } catch {
+      var diagnostics = Self.diagnostics(error, scope: scope, operation: "Read configuration")
+      if scope.kind == .user {
+        do {
+          if try GlobalConfigurationMigration.isAvailable(environment: runtime) {
+            return CoreCompletion(disposition: .completed, output: .globalMigrationAvailable)
+          }
+        } catch {
+          diagnostics.append(
+            AppDiagnostic(
+              scope: scope, operation: "Check for migration", message: error.localizedDescription))
+        }
+      }
       return CoreCompletion(
-        disposition: .failed, snapshot: nil,
-        diagnostics: Self.diagnostics(error, scope: scope, operation: "Read configuration"))
+        disposition: .failed, snapshot: nil, diagnostics: diagnostics)
     }
   }
 
@@ -131,7 +142,12 @@ struct CoreReader: Sendable {
       scope: scope.installScope,
       environment: .init(
         projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment))
-    return [store.declarationURL, store.resolvedURL, store.watchURL].map(ReadDependency.subtree)
+    var dependencies = [store.declarationURL, store.resolvedURL, store.watchURL]
+      .map(ReadDependency.subtree)
+    if scope.kind == .user {
+      dependencies.append(.entry(GlobalMigrationSession.previousDeclaration(in: store.directory)))
+    }
+    return dependencies
   }
 
   static func sectionItems(_ document: DeclarationDocument) -> [DeclarationItem] {

@@ -31,6 +31,8 @@ final class AppModel {
     case discovery(UUID)
     case preview(UUID)
     case apply(UUID)
+    case migrationPreview(UUID)
+    case migrationApply(UUID)
     case mappings(UUID)
     case other
   }
@@ -83,6 +85,8 @@ final class AppModel {
   var manifestDraft: ManifestDraft?
   var mappingSession: MappingSession?
   var updateSession: UpdateSession?
+  var migrationSession: GlobalMigrationSession?
+  private(set) var didMigrateGlobalConfiguration = false
   var catalogSession: CatalogSession?
   var discoverySession: DiscoverySession?
   var watchSession: WatchSession?
@@ -99,7 +103,8 @@ final class AppModel {
   var isApplying: Bool {
     operations.values.contains {
       switch $0.purpose {
-      case .apply, .creation, .watchApply, .watchSeen, .clientRestoreWrite: return true
+      case .apply, .migrationApply, .creation, .watchApply, .watchSeen, .clientRestoreWrite:
+        return true
       default: return false
       }
     }
@@ -167,6 +172,8 @@ final class AppModel {
     supplementalReadDependencies = []
     cancelAssistance()
     cancelConnection()
+    cancelGlobalMigration()
+    didMigrateGlobalConfiguration = false
     self.scope = scope
     preferences.selectedScopeID = scope.id
     selectedItem = nil
@@ -564,6 +571,24 @@ final class AppModel {
       updateSession?.messages = result.diagnostics
       updateSession?.terminal = result.updateTerminal
       updateSession?.stage = result.disposition == .cancelled ? .cancelled : .finished
+    case .migrationPreview(let id) where migrationSession?.id == id:
+      migrationSession?.messages = result.diagnostics
+      if case .globalMigrationPreview(let preview) = result.output {
+        migrationSession?.preview = preview
+        if !currentSelection { migrationSession?.stale = true }
+        migrationSession?.stage = .review
+      } else {
+        migrationSession?.stage = .failed
+      }
+    case .migrationApply(let id) where migrationSession?.id == id:
+      if result.disposition == .completed {
+        migrationSession = nil
+        didMigrateGlobalConfiguration = true
+        page = .overview
+      } else {
+        migrationSession?.messages = result.diagnostics
+        migrationSession?.stage = .failed
+      }
     default: break
     }
   }
@@ -685,6 +710,7 @@ final class AppModel {
     importSession?.stale = true
     connectionSession?.stale = true
     connectionSession?.inputs = [:]
+    if migrationSession?.stage != .applying { migrationSession?.stale = true }
     if let session = updateSession, session.stage == .review || session.stage == .preparing {
       updateSession?.stage = .stale
       updateSession?.bindingInputs = [:]
@@ -766,15 +792,25 @@ final class AppModel {
           self.selectedItem = nil
         }
         monitor(snapshot.inspection.readLocations.map(ReadDependency.subtree), since: readBoundary)
+      } else if case .workspace = operation.purpose, case .globalMigrationAvailable = result.output
+      {
+        loadState = .globalMigrationAvailable
+        readsStale = false
       } else if case .workspace = operation.purpose, case .failed = result.disposition {
         loadState = .failed(result.diagnostics)
       } else if case .workspace = operation.purpose, case .cancelled = result.disposition {
         loadState = .idle
       }
+      if case .workspace = operation.purpose, migrationSession?.stage == .review,
+        !canPreviewGlobalMigration
+      {
+        migrationSession?.stale = true
+      }
     }
     if !isTerminating && currentSelection {
       switch operation.purpose {
-      case .apply, .creation, .watchApply, .watchSeen, .clientRestoreWrite: refresh()
+      case .apply, .migrationApply, .creation, .watchApply, .watchSeen, .clientRestoreWrite:
+        refresh()
       default: break
       }
     }

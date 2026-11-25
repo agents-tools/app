@@ -98,6 +98,11 @@ struct WorkspaceView: View {
     .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
     .sheet(item: $model.importSession) { _ in ImportView(model: model) }
     .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
+    .sheet(
+      item: Binding(
+        get: { model.migrationSession },
+        set: { if $0 == nil { model.cancelGlobalMigration() } })
+    ) { _ in GlobalMigrationView(model: model) }
     .sheet(item: $model.catalogSession) { _ in SourceCatalogView(model: model) }
     .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
@@ -124,6 +129,17 @@ struct WorkspaceView: View {
         ProgressView()
         Text("Reading configuration…").foregroundStyle(.secondary)
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    case (_, .globalMigrationAvailable):
+      ContentUnavailableView {
+        Label("Previous-Format Configuration Detected", systemImage: "doc.badge.clock")
+      } description: {
+        Text("Review the changes to your user configuration. Native client files stay as they are.")
+      } actions: {
+        Button("Preview Migration…") { model.previewGlobalMigration() }
+          .buttonStyle(.borderedProminent)
+          .disabled(!model.canPreviewGlobalMigration)
+          .accessibilityIdentifier("migration.preview")
+      }
     case (_, .failed(let diagnostics)):
       ContentUnavailableView {
         Label("Configuration Unavailable", systemImage: "exclamationmark.triangle")
@@ -174,6 +190,10 @@ struct WorkspaceView: View {
         Text(model.operations.values.first?.title ?? "Waiting for operations to finish…")
         Spacer()
       }.padding(8).background(.bar)
+    } else if model.page == .overview && model.didMigrateGlobalConfiguration {
+      Label("User configuration migrated", systemImage: "checkmark.circle")
+        .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
+        .accessibilityIdentifier("migration.success")
     }
   }
 }
