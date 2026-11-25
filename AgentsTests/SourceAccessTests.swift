@@ -151,7 +151,10 @@ struct SourceAccessTests {
   @Test @MainActor func reselectingAnAliasCreatesANewSessionAndClosingClearsIt() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
-    try fixture.writeManifest(manifest)
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
+    let declaration = try fixture.writeManifest(manifest)
+    try await boundary.settle(creation: declaration, root: fixture.root)
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),
       processEnvironment: fixture.environment)

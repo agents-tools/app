@@ -13,12 +13,15 @@ struct SourceAccessSettingsTests {
   @Test func saveAndResetRefreshTheSelectedProjectFromTheUserProfile() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
-    try fixture.writeManifest(
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
+    let declaration = try fixture.writeManifest(
       """
       version: 1
       sources:
         tools: {url: https://github.com/example/tools.git}
       """)
+    try await boundary.settle(creation: declaration, root: fixture.root)
     let model = makeModel(fixture)
     defer { _ = model.requestTermination() }
     let project = WorkspaceScope(kind: .project, root: fixture.project)
@@ -63,10 +66,11 @@ struct SourceAccessSettingsTests {
     #expect(settings.document?.profile?.egress == .proxyOnly)
     #expect(model.scope == project)
     #expect(model.sourceAccessSession == nil)
+    try await settle(model, inspectingSource: true)
     let refreshed = try #require(model.sourceAccessSelection)
     #expect(refreshed.id != selection.id)
-    model.inspectSourceAccess(refreshed)
-    try await settle(model)
+    #expect(refreshed.id.node == selection.id.node)
+    #expect(model.sourceAccessSession?.selection == refreshed.id)
     guard case .failure(.access(.egressDenied)) = model.sourceAccessSession?.inspection else {
       Issue.record("The refreshed project did not use the saved proxy-only policy")
       return
@@ -75,7 +79,8 @@ struct SourceAccessSettingsTests {
     model.previewSourceAccessSettings()
     try await settle(model)
     #expect(settings.review == nil)
-    #expect(model.sourceAccessSelection?.id == refreshed.id)
+    #expect(settings.message == "The profile already matches the saved settings.")
+    #expect(try Data(contentsOf: location) == Data(proxy.utf8))
 
     model.previewSourceAccessSettings(reset: true)
     try await settle(model)
@@ -86,7 +91,12 @@ struct SourceAccessSettingsTests {
     try await settle(model)
     #expect(!FileManager.default.fileExists(atPath: location.path))
     #expect(settings.document?.isPresent == false)
-    #expect(model.sourceAccessSelection?.id != refreshed.id)
+    try await settle(model, inspectingSource: true)
+    let restored = try #require(model.sourceAccessSelection)
+    #expect(restored.id != refreshed.id)
+    #expect(restored.id.node == selection.id.node)
+    #expect(model.sourceAccessSession?.selection == restored.id)
+    #expect(try model.sourceAccessSession?.inspection?.get().report.provider == .github)
   }
 
   @Test func malformedProfileOpensForRepairAndOnlyValidatedDraftCanSave() async throws {
@@ -219,6 +229,13 @@ struct SourceAccessSettingsTests {
     try await settle(model)
     #expect(model.sourceAccessSelection?.id != selection.id)
     #expect(model.sourceAccessSession == nil)
+    try await settle(model, inspectingSource: true)
+    let refreshed = try #require(model.sourceAccessSelection)
+    #expect(refreshed.id.node == selection.id.node)
+    #expect(model.sourceAccessSession?.selection == refreshed.id)
+    #expect(
+      try model.sourceAccessSession?.inspection?.get().settingsFingerprint
+        == after.settingsFingerprint)
   }
 
   private func makeModel(_ fixture: TestFixture) -> AppModel {
@@ -227,8 +244,12 @@ struct SourceAccessSettingsTests {
       processEnvironment: fixture.environment)
   }
 
-  private func settle(_ model: AppModel) async throws {
+  private func settle(_ model: AppModel, inspectingSource: Bool = false) async throws {
     for _ in 0..<1000 {
+      // The inspector submits a new request whenever the model supplies a fresh selection ID.
+      if inspectingSource, let selection = model.sourceAccessSelection {
+        model.inspectSourceAccess(selection)
+      }
       if model.operations.isEmpty, !model.readsStale { return }
       try await Task.sleep(for: .milliseconds(5))
     }
