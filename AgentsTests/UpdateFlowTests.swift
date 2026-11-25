@@ -139,8 +139,8 @@ struct UpdateFlowTests {
       creation: fixture.project.appendingPathComponent(".agent/agents.yaml"), root: fixture.root)
     let model = await loadedModel(fixture)
     defer { _ = model.requestTermination() }
-    model.previewUpdate(title: "Initial update")
-    try await idle(model)
+    try await reviewed(model) { model.previewUpdate(title: "Initial update") }
+    try #require(model.updateSession?.canApplyReport == true)
     model.confirmUpdate()
     try await idle(model)
     let selected = try #require(model.availableComponentSelection.first { $0.name == "first" })
@@ -154,9 +154,8 @@ struct UpdateFlowTests {
     } catch {
       Issue.record("Direct public Core removal preview failed: \(error)")
     }
-    model.previewUpdate(title: "Remove first", request: removal)
-    try await idle(model)
-    #expect(
+    try await reviewed(model) { model.previewUpdate(title: "Remove first", request: removal) }
+    try #require(
       model.updateSession?.report != nil,
       "Removal preview: \(model.updateSession?.messages.map(\.message) ?? [])")
     model.confirmUpdate()
