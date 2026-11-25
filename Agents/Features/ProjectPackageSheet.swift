@@ -10,12 +10,15 @@ struct ProjectPackageSheet: View {
   @Environment(\.dismiss) private var dismiss
   @State private var name = ""
   @State private var version = "1.0.0"
+  @State private var packageAuthor = ""
+  @State private var packageDescription = ""
   @State private var instructions = Set<String>()
   @State private var skills = Set<String>()
   @State private var servers = Set<String>()
   @State private var locked = Set<String>()
   @State private var target: NativePluginTarget?
   @State private var marketplace = ""
+  @State private var marketplaceCategory = ""
   @State private var capture: AuthorPackageArtifact?
   @State private var plugin: NativePluginArtifact?
   @State private var busy = false
@@ -30,7 +33,7 @@ struct ProjectPackageSheet: View {
 
   private var serverNames: [String] {
     (snapshot.inspection.declaration?.components ?? []).compactMap { component in
-      guard case .mcpServer(let name, _, _, nil, _, nil) = component else { return nil }
+      guard case .mcpServer(let name, _, _, nil, _, _) = component else { return nil }
       return name
     }.sorted()
   }
@@ -81,7 +84,14 @@ struct ProjectPackageSheet: View {
                 Text(item.rawValue).tag(Optional(item))
               }
             }
-            if target != nil { TextField("Marketplace name (optional)", text: $marketplace) }
+            if target != nil {
+              TextField("Author", text: $packageAuthor)
+              TextField("Description", text: $packageDescription)
+              TextField("Marketplace name (optional)", text: $marketplace)
+              if target == .codex && !marketplace.isEmpty {
+                TextField("Marketplace category", text: $marketplaceCategory)
+              }
+            }
           }
           if let own = snapshot.ownInstructions, !own.isEmpty {
             Section("Project Instructions") {
@@ -144,10 +154,12 @@ struct ProjectPackageSheet: View {
             ).path)
           {
             Button("Review Project Specification…") { prepare(usingFile: true) }
+              .disabled(needsMarketplaceCategory)
           }
           Button("Review Selection…") { prepare(usingFile: false) }
             .disabled(
-              name.isEmpty || version.isEmpty
+              name.isEmpty || version.isEmpty || needsMarketplaceCategory
+                || (target != nil && (packageAuthor.isEmpty || packageDescription.isEmpty))
                 || (instructions.isEmpty && skills.isEmpty && servers.isEmpty && locked.isEmpty))
         }
       }
@@ -188,13 +200,23 @@ struct ProjectPackageSheet: View {
     skills.formUnion(selected)
   }
 
+  private var needsMarketplaceCategory: Bool {
+    target == .codex && !marketplace.isEmpty && marketplaceCategory.isEmpty
+  }
+
   private func prepare(usingFile: Bool) {
     let selected = lockedComponents.filter { locked.contains($0.record) }
     let spec = AuthorPackageSpecification(
-      package: .init(name: name, version: version),
+      package: .init(
+        name: name, version: version, description: target == nil ? nil : packageDescription,
+        author: target == nil ? nil : packageAuthor),
       instructions: instructions.sorted(), skills: skills.sorted(), mcpServers: servers.sorted(),
       lockedMembers: selected.map { MarketplaceMemberKey(kind: $0.kind, name: $0.name) })
-    let catalog = marketplace.isEmpty ? nil : NativePluginMarketplace(name: marketplace)
+    let catalog =
+      marketplace.isEmpty
+      ? nil
+      : NativePluginMarketplace(
+        name: marketplace, category: target == .codex ? marketplaceCategory : nil)
     let format = target
     let runtime = environment
     run {
