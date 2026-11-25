@@ -12,6 +12,7 @@ struct PackageInstallSheet: View {
   @State private var registrations: [RegisteredMarketplace] = []
   @State private var registrationName = ""
   @State private var savingMarketplace = false
+  @State private var showingVerification = false
   @State private var selectedRegistration: RegisteredMarketplace?
   @State private var origin: MarketplaceOrigin?
   @State private var releases: [MarketplaceRelease] = []
@@ -46,6 +47,12 @@ struct PackageInstallSheet: View {
           if !registrations.isEmpty { Divider() }
           Button("Choose Directory…") { chooseDirectory() }
           Button("Browse Git Repository…") { editingGit = true }
+          if let origin {
+            Button("Verify All Releases") {
+              browse(origin, registered: selectedRegistration, verify: true)
+            }
+            .disabled(busy)
+          }
           if let entry = selectedRegistration {
             if entry.scope == scope.installScope {
               Button("Forget “" + entry.registration.name + "”") { forget(entry) }
@@ -198,6 +205,11 @@ struct PackageInstallSheet: View {
         return
       }
     }
+    .alert("Marketplace Verified", isPresented: $showingVerification) {
+      Button("Done") {}
+    } message: {
+      Text("Verified releases: \(releases.count)")
+    }
     .alert("Save Marketplace", isPresented: $savingMarketplace) {
       TextField("Marketplace name", text: $registrationName)
       Button("Cancel", role: .cancel) {}
@@ -300,7 +312,10 @@ struct PackageInstallSheet: View {
     }
   }
 
-  private func browse(_ source: MarketplaceOrigin, registered: RegisteredMarketplace? = nil) {
+  private func browse(
+    _ source: MarketplaceOrigin, registered: RegisteredMarketplace? = nil, verify: Bool = false
+  ) {
+    guard !busy else { return }
     selectedRegistration = registered
     updatingPin = nil
     clearPackage()
@@ -310,10 +325,15 @@ struct PackageInstallSheet: View {
       let registration =
         try registered?.registration
         ?? MarketplaceRegistration(name: "team", origin: source)
+      if verify {
+        return try MarketplaceOperations.verifyCatalog(
+          registration, scope: scope.installScope, environment: environment)
+      }
       return try MarketplaceOperations.browse(
         registration, scope: scope.installScope, environment: environment)
     } receive: { catalog in
       releases = catalog.releases
+      showingVerification = verify
     }
   }
 
