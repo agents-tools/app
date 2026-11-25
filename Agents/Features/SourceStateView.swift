@@ -1,4 +1,5 @@
 import AgentsCore
+import AgentsUpdates
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -6,6 +7,7 @@ struct SourceStateView: View {
   let snapshot: WorkspaceSnapshot
   let model: AppModel
   @State private var inventory: InventoryFile?
+  @State private var inventoryFilename = "inventory.cdx.json"
   @State private var exportingInventory = false
   @State private var exportError: String?
   @State private var editingPolicy = false
@@ -16,13 +18,9 @@ struct SourceStateView: View {
         Button("Edit Source Policy…") { editingPolicy = true }.disabled(!model.canModify)
         Button("Review Declared Sources…") { model.discoverComponents() }
           .disabled(!model.canModify || snapshot.inspection.declaration == nil)
-        Button("Export Component Inventory…") {
-          do {
-            inventory = try InventoryFile(data: snapshot.inspection.cycloneDXInventory())
-            exportingInventory = true
-          } catch {
-            exportError = error.localizedDescription
-          }
+        Menu("Export Component Inventory…") {
+          Button("CycloneDX 1.6 (JSON)…") { exportInventory(.cycloneDX) }
+          Button("SPDX 2.3 (JSON)…") { exportInventory(.spdx) }
         }
         .disabled(snapshot.inspection.recovery.pending)
         Button("Import Configuration…") { model.beginImport() }
@@ -86,7 +84,7 @@ struct SourceStateView: View {
     }
     .fileExporter(
       isPresented: $exportingInventory, document: inventory, contentType: .json,
-      defaultFilename: "inventory.cdx.json"
+      defaultFilename: inventoryFilename
     ) { result in
       if case .failure(let error) = result { exportError = error.localizedDescription }
     }
@@ -98,6 +96,14 @@ struct SourceStateView: View {
     } message: {
       Text(exportError ?? "")
     }
+  }
+
+  private func exportInventory(_ format: InventoryFormat) {
+    do {
+      inventory = try InventoryFile(data: snapshot.inspection.inventory(format: format))
+      inventoryFilename = format == .spdx ? "inventory.spdx.json" : "inventory.cdx.json"
+      exportingInventory = true
+    } catch { exportError = error.localizedDescription }
   }
 }
 

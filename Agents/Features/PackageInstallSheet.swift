@@ -19,7 +19,10 @@ struct PackageInstallSheet: View {
   @State private var bundle: BundleInspection?
   @State private var targets: [String: Set<AgentID>] = [:]
   @State private var alias = ""
+  @State private var updatingPin: MarketplacePin?
   @State private var gitURL = ""
+  @State private var gitRef = ""
+  @State private var gitSubpath = ""
   @State private var editingGit = false
   @State private var busy = false
   @State private var errorText: String?
@@ -41,6 +44,7 @@ struct PackageInstallSheet: View {
               preferences.forget(origin)
               self.origin = nil
               releases = []
+              updatingPin = nil
               clearPackage()
             }
           }
@@ -49,7 +53,7 @@ struct PackageInstallSheet: View {
           Menu("Installed Packages") {
             ForEach(pins, id: \.dependency.name) { pin in
               Menu(pin.dependency.name + " · " + pin.dependency.coordinate.version) {
-                Button("View Releases") { browse(pin.dependency.catalog) }
+                Button("Check for Updates") { checkUpdates(for: pin) }
                 Button("Review Removal…") {
                   review(
                     UpdateProposal(
@@ -93,23 +97,34 @@ struct PackageInstallSheet: View {
           }
         }.formStyle(.grouped)
       } else if origin != nil {
-        TextField("Filter packages", text: $query)
-        List(
-          releases.filter {
-            query.isEmpty || $0.coordinate.package.localizedCaseInsensitiveContains(query)
-              || $0.summary?.localizedCaseInsensitiveContains(query) == true
-          }, id: \.coordinate, selection: $selected
-        ) { release in
-          HStack {
-            VStack(alignment: .leading) {
-              Text(release.coordinate.package)
-              if let summary = release.summary {
-                Text(summary).font(.caption).foregroundStyle(.secondary)
+        if let updatingPin {
+          LabeledContent(
+            "Installed",
+            value: updatingPin.dependency.name + " · " + updatingPin.dependency.coordinate.version)
+        } else {
+          TextField("Filter packages", text: $query)
+        }
+        if updatingPin != nil && releases.isEmpty && !busy && errorText == nil {
+          ContentUnavailableView("No Newer Releases", systemImage: "checkmark.circle")
+        } else {
+          List(
+            releases.filter {
+              updatingPin != nil || query.isEmpty
+                || $0.coordinate.package.localizedCaseInsensitiveContains(query)
+                || $0.summary?.localizedCaseInsensitiveContains(query) == true
+            }, id: \.coordinate, selection: $selected
+          ) { release in
+            HStack {
+              VStack(alignment: .leading) {
+                Text(release.coordinate.package)
+                if let summary = release.summary {
+                  Text(summary).font(.caption).foregroundStyle(.secondary)
+                }
               }
-            }
-            Spacer()
-            Text(release.coordinate.version).monospacedDigit()
-          }.tag(release.coordinate)
+              Spacer()
+              Text(release.coordinate.version).monospacedDigit()
+            }.tag(release.coordinate)
+          }
         }
       } else {
         ContentUnavailableView("Choose a Marketplace or Bundle", systemImage: "shippingbox")
@@ -144,14 +159,29 @@ struct PackageInstallSheet: View {
       }
       if let first = preferences.marketplaces.first { browse(first) }
     }
-    .alert("Add Git Marketplace", isPresented: $editingGit) {
-      TextField("Repository URL", text: $gitURL)
-      Button("Cancel", role: .cancel) {}
-      Button("Browse") {
-        do { browse(try MarketplaceOrigin(kind: .git, location: gitURL)) } catch {
-          errorText = String(describing: error)
+    .sheet(isPresented: $editingGit) {
+      VStack(alignment: .leading) {
+        Text("Add Git Marketplace").font(.headline)
+        Form {
+          TextField("Repository URL", text: $gitURL)
+          TextField("Branch, tag or commit", text: $gitRef, prompt: Text("Default branch"))
+          TextField("Catalog directory", text: $gitSubpath, prompt: Text("Repository root"))
         }
-      }
+        HStack {
+          Button("Cancel") { editingGit = false }.keyboardShortcut(.cancelAction)
+          Spacer()
+          Button("Browse") {
+            editingGit = false
+            do {
+              browse(
+                try MarketplaceOrigin(
+                  kind: .git, location: gitURL,
+                  ref: gitRef.isEmpty ? nil : gitRef, subpath: gitSubpath.isEmpty ? nil : gitSubpath
+                ))
+            } catch { errorText = String(describing: error) }
+          }.keyboardShortcut(.defaultAction).disabled(gitURL.isEmpty)
+        }
+      }.padding().frame(minWidth: 420)
     }
   }
 
@@ -173,7 +203,22 @@ struct PackageInstallSheet: View {
     }
   }
 
+  private func checkUpdates(for pin: MarketplacePin) {
+    clearPackage()
+    releases = []
+    origin = pin.dependency.catalog
+    updatingPin = pin
+    run {
+      try MarketplaceOperations.availableUpdates(
+        for: pin, scope: scope.installScope, environment: environment)
+    } receive: { updates in
+      releases = updates
+      selected = updates.first?.coordinate
+    }
+  }
+
   private func browse(_ source: MarketplaceOrigin) {
+    updatingPin = nil
     clearPackage()
     releases = []
     origin = source
@@ -194,38 +239,34 @@ struct PackageInstallSheet: View {
       try BundleOperations.inspect(Data(contentsOf: file))
     } receive: { contents in
       origin = nil
+      updatingPin = nil
       clearPackage()
       bundle = contents
     }
   }
 
   private func inspect(_ release: MarketplaceRelease) {
+    let selectedPin = updatingPin
     run {
       let package = try MarketplaceOperations.acquire(
         release, scope: scope.installScope, environment: environment)
       let contents = try package.inspectBundle()
-      let components = try UpdateOperations.inspect(
-        scope: scope.installScope, environment: environment
-      ).components
-      return (package, contents, components)
-    } receive: { package, contents, current in
-      verified = package
-      bundle = contents
-      let installed = pins.first {
+      let inspection = try UpdateOperations.inspect(
+        scope: scope.installScope, environment: environment)
+      let matches = inspection.marketplacePackages.filter {
         $0.dependency.catalog == release.origin
           && $0.dependency.coordinate.package == contents.package.name
       }
+      let installed = selectedPin ?? (matches.count == 1 ? matches.first : nil)
+      let selections =
+        try installed.map { try contents.retainedSelections(for: $0, in: inspection) } ?? []
+      return (package, contents, installed, selections)
+    } receive: { package, contents, installed, selections in
+      verified = package
+      bundle = contents
       alias = installed?.dependency.name ?? contents.package.name
-      if let installed {
-        let existing = current.filter { installed.componentRecords.contains($0.record) }
-        for item in contents.components {
-          let matches = existing.filter { $0.kind == item.kind && $0.name == item.name }
-          if matches.count == 1, let match = matches.first {
-            targets[item.id] = Set(match.recipients).intersection(
-              item.supportedTargets(in: scope.installScope))
-          }
-        }
-      }
+      targets = Dictionary(
+        uniqueKeysWithValues: selections.map { ($0.componentID, Set($0.targets)) })
     }
   }
 
