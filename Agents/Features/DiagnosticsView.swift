@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DiagnosticsView: View {
   let model: AppModel
+  @State private var auditScope: WorkspaceScope?
 
   var body: some View {
     List {
@@ -26,6 +27,10 @@ struct DiagnosticsView: View {
       }
     }
     .textSelection(.enabled)
+    .toolbar { Button("Audit Prompts…") { auditScope = model.scope } }
+    .sheet(item: $auditScope) { scope in
+      PromptAuditSheet(scope: scope, environment: model.actions.environment(for: scope))
+    }
   }
 }
 

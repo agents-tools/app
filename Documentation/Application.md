@@ -2,6 +2,12 @@
 
 Agents App has one main window and a Settings window. Its navigator selects a user or project scope and a configuration page; the inspector shows the current selection. It uses Core’s public manifest, skill, instruction and combined update APIs directly.
 
+## Prompt audit
+
+Open **Diagnostics → Audit Prompts** to scan the selected project or user scope. **Choose File** inspects one prompt in that scope. Findings show their location, severity and reason. Export the same report as Markdown, JSON or SARIF.
+
+For a text prompt with removable characters, choose **Review Character Removal** to inspect the code points and their positions. **Apply** removes the displayed characters if the file still matches the preview, then scans the file again.
+
 ## Configuration and preferences
 
 Core owns declaration parsing, defaults, managed state, source/resource provenance, deployment diagnostics and recovery. The main inspection returns one immutable generation containing the document, full typed declaration, managed components, sources, groups, resources, deployments, subscriptions and actual read locations. Browsing does not initialize configuration. Missing manifests, invalid manifests, orphan state, recovery pending and unavailable roots remain distinct. Supplemental own-instruction and cross-project mapping reads have separate admission and do not claim an atomic cross-project snapshot.
