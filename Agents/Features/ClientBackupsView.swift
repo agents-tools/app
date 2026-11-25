@@ -49,10 +49,11 @@ struct ClientBackupsView: View {
         Section("Backup Results") {
           ForEach(model.backupOutcomes) { outcome in
             LabeledContent(outcome.client.displayName) {
-              if let package = outcome.package {
+              switch outcome.result {
+              case .created(let package):
                 PathView(url: package)
-              } else {
-                Label("Backup failed", systemImage: "exclamationmark.triangle")
+              case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle")
               }
             }
           }
@@ -158,10 +159,17 @@ private struct ClientRestoreView: View {
       ProgressView("Comparing files…")
     case .review(let review):
       VStack(alignment: .leading, spacing: 8) {
-        if review.hasReplacements {
-          Label(
-            "Restore will overwrite the files marked Replace.",
-            systemImage: "exclamationmark.triangle")
+        if review.hasChanges {
+          Label {
+            VStack(alignment: .leading, spacing: 4) {
+              Text("Quit \(review.preview.client.displayName) before restoring.")
+              if review.hasReplacements {
+                Text("Restore will overwrite the files marked Replace.")
+              }
+            }
+          } icon: {
+            Image(systemName: "exclamationmark.triangle")
+          }
         }
         if review.rows.isEmpty {
           Text("The package has no file changes to show.").foregroundStyle(.secondary)

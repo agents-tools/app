@@ -11,13 +11,13 @@ extension CoreActions {
       do {
         let package = try ClientBackups.create(
           client: client, projects: projects, to: directory, environment: environment)
-        return ClientBackupOutcome(client: client, package: package)
+        return ClientBackupOutcome(client: client, result: .created(package))
       } catch {
+        let message = ClientBackupAction.backup(client).failureMessage(for: error)
         diagnostics.append(
           AppDiagnostic(
-            scope: scope, operation: "Back up \(client.displayName)",
-            message: "Couldn’t create the backup package.", path: directory.path))
-        return ClientBackupOutcome(client: client, package: nil)
+            scope: scope, operation: "Back up \(client.displayName)", message: message))
+        return ClientBackupOutcome(client: client, result: .failed(message))
       }
     }
     return CoreCompletion(
@@ -43,7 +43,7 @@ extension CoreActions {
           info.client, projects: info.projects, destinations: destinations))
     } catch {
       return backupFailure(
-        "Couldn’t open this backup package. Choose a readable Agents backup.",
+        ClientBackupAction.inspect.failureMessage(for: error),
         operation: "Inspect backup package", scope: scope)
     }
   }
@@ -64,7 +64,7 @@ extension CoreActions {
       )
     } catch {
       return backupFailure(
-        "Couldn’t review this backup. Check the package and the selected project folders.",
+        ClientBackupAction.preview(client).failureMessage(for: error),
         operation: "Preview backup restore", scope: scope)
     }
   }
@@ -75,7 +75,7 @@ extension CoreActions {
       return CoreCompletion(disposition: .completed)
     } catch {
       return backupFailure(
-        "Couldn’t complete the restore. Review the file changes again before retrying.",
+        ClientBackupAction.restore(preview.client).failureMessage(for: error),
         operation: "Restore backup", scope: scope)
     }
   }
@@ -83,9 +83,55 @@ extension CoreActions {
   private func backupFailure(_ message: String, operation: String, scope: WorkspaceScope)
     -> CoreCompletion
   {
-    // Package errors can originate in client files. Report the failed action without echoing input.
     CoreCompletion(
       disposition: .failed,
       diagnostics: [AppDiagnostic(scope: scope, operation: operation, message: message)])
+  }
+}
+
+private enum ClientBackupAction {
+  case backup(BackupClient)
+  case inspect
+  case preview(BackupClient)
+  case restore(BackupClient)
+
+  func failureMessage(for error: any Error) -> String {
+    // Core error details can include data from client files or the selected archive.
+    switch (error as? ClientBackupError, self) {
+    case (.invalidPackage, .backup):
+      "Couldn’t verify the new package. Back up again."
+    case (.invalidPackage, _):
+      "This backup package is invalid or damaged. Choose another Agents backup."
+    case (.unsupportedLayout, _):
+      "This client’s data layout is unsupported. Check for an Agents App update."
+    case (.invalidLocation, .backup):
+      "A backup location is unavailable or unsupported. Check the client and selected folders."
+    case (.invalidLocation, .inspect):
+      "The package location is unavailable or unsupported. Choose another backup file."
+    case (.invalidLocation, _):
+      "A restore location is unavailable or unsupported. Check the package and destination folders."
+    case (.conflict, .backup(let client)):
+      "Files changed or conflict. Quit \(client.displayName) and check the selected folders."
+    case (.conflict, .inspect):
+      "The package changed while it was being read. Open it again."
+    case (.conflict, .preview(let client)):
+      "Files changed, are in use, or conflict. Quit \(client.displayName) and check the destinations."
+    case (.conflict, .restore(let client)):
+      "The preview is out of date or files are in use. Quit \(client.displayName), then review again."
+    case (.storageFailure, .inspect):
+      "Couldn’t read the package. Check that its drive is connected and the file is readable."
+    case (.storageFailure, .backup):
+      "Couldn’t read or write backup data. Check storage access and free space."
+    case (.storageFailure, _):
+      "Couldn’t read or write restore data. Check storage access and free space, then review again."
+    case (nil, .backup):
+      "Couldn’t create the package. Check access to the client data and the selected folders."
+    case (nil, .inspect):
+      "Couldn’t open the package. Check that the file is readable or choose another Agents backup."
+    case (nil, .preview):
+      "Couldn’t review the backup. Check access to the package and destination folders."
+    case (nil, .restore):
+      "Couldn’t restore the backup. Check access to the destination folders, then review again."
+    }
   }
 }

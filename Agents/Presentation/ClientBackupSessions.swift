@@ -2,8 +2,13 @@ import AgentsCore
 import Foundation
 
 struct ClientBackupOutcome: Identifiable, Sendable {
+  enum Result: Sendable {
+    case created(URL)
+    case failed(String)
+  }
+
   let client: BackupClient
-  let package: URL?
+  let result: Result
   var id: BackupClient { client }
 }
 
@@ -17,6 +22,7 @@ struct ClientRestoreReview: Sendable {
   let preview: ClientBackupPreview
   let rows: [Row]
   let hasReplacements: Bool
+  var hasChanges: Bool { rows.contains { $0.kind != .unchanged } }
 
   init(preview: ClientBackupPreview) {
     self.preview = preview
