@@ -23,6 +23,9 @@ final class AppModel {
     case watchApply(UUID)
     case catalog(UUID)
     case catalogSelection(UUID)
+    case sourceAccessInspection(SourceAccessSelection.ID)
+    case sourceAccessValidation(SourceAccessSelection.ID)
+    case sourceAccessSettings(UUID)
     case sourceImport(UUID)
     case importRequest(UUID)
     case connectionSnapshot(UUID)
@@ -51,8 +54,10 @@ final class AppModel {
 
   let preferences: AppPreferences
   let clientSettings = ClientSettingsModel()
+  let sourceAccessSettings = SourceAccessSettingsModel()
   let home: URL
   private let executor: CoreExecutor
+  private let sourceAccessValidationExecutor = CoreExecutor()
   let processEnvironment: [String: String]
   private var reader: CoreReader {
     CoreReader(
@@ -88,8 +93,14 @@ final class AppModel {
   private var operationSequence = 0
   private var recoverySequence: [WorkspaceScope: Int] = [:]
   private var unresolvedCoreRecovery: Set<WorkspaceScope> = []
-  var page: WorkspacePage = .overview
-  var selectedItem: NodeID?
+  var page: WorkspacePage = .overview {
+    didSet { if page != oldValue { discardSourceAccess() } }
+  }
+  var selectedItem: NodeID? {
+    didSet { if selectedItem != oldValue { discardSourceAccess() } }
+  }
+  private(set) var sourceAccessSession: SourceAccessSession?
+  private var sourceAccessPresentation = UUID()
   var search = ""
   var creationSession: CreationSession?
   var promptSession: PromptSession?
@@ -211,6 +222,7 @@ final class AppModel {
 
   func refresh() {
     guard !isTerminating, !isApplying else { return }
+    discardSourceAccess()
     // Superseded queued reads still report a terminal; running reads are allowed to finish.
     for operation in operations.values where operation.title == "Read configuration" {
       operation.admission.cancel()
@@ -238,13 +250,14 @@ final class AppModel {
   func startOperation(
     title: String, scope: WorkspaceScope, generation: UUID? = nil,
     purpose: OperationPurpose = .other, admission: OperationAdmission? = nil,
+    executor: CoreExecutor? = nil,
     work: @escaping @Sendable () -> CoreCompletion
   ) -> UUID? {
     guard let operation = registerOperation(
       title: title, scope: scope, generation: generation ?? self.generation,
       purpose: purpose, admission: admission ?? OperationAdmission())
     else { return nil }
-    executor.submit(admission: operation.admission, work: work) { result in
+    (executor ?? self.executor).submit(admission: operation.admission, work: work) { result in
       Task { @MainActor [self] in finish(operation.id, result: result) }
     }
     return operation.id
@@ -292,6 +305,7 @@ final class AppModel {
       id: id, scope: scope, selectionScope: self.scope, purpose: purpose,
       generation: generation, sequence: operationSequence, title: title, admission: admission)
     operations[id] = operation
+    if sourceAccessSession != nil, isApplying { discardSourceAccess() }
     return operation
   }
 
@@ -503,6 +517,13 @@ final class AppModel {
       }
     case .clients(let id):
       clientSettings.finish(id: id, result: result)
+    case .sourceAccessSettings(let id):
+      sourceAccessSettings.finish(id: id, result: result)
+      switch result.output {
+      case .sourceAccessSettings(.saved), .sourceAccessSettings(.failed(.core(.changed))):
+        inputsChanged(in: scope)
+      default: break
+      }
     case .clientBackup:
       isBackingUp = false
       if case .clientBackup(let outcomes) = result.output { backupOutcomes = outcomes }
@@ -573,6 +594,21 @@ final class AppModel {
         previewUpdate(title: "Add Selected Source Content", request: request)
       } else if !currentSelection {
         catalogSession?.stale = true
+      }
+    case .sourceAccessInspection(let selection) where sourceAccessSession?.selection == selection:
+      guard currentSelection, sourceAccessSelection?.id == selection else { return }
+      if case .sourceAccessInspection(let inspection) = result.output {
+        sourceAccessSession?.inspection = inspection
+      } else {
+        sourceAccessSession?.inspection = .failure(.unavailable)
+      }
+    case .sourceAccessValidation(let selection) where sourceAccessSession?.selection == selection:
+      guard currentSelection, sourceAccessSelection?.id == selection,
+        sourceAccessSession?.validationOperation == operation.id
+      else { return }
+      sourceAccessSession?.validationOperation = nil
+      if case .sourceAccessValidation(let validation) = result.output {
+        sourceAccessSession?.validation = validation
       }
     case .sourceImport(let id) where importSession?.id == id:
       importSession?.busy = false
@@ -777,6 +813,7 @@ final class AppModel {
 
   private func inputsChanged(in watchedScope: WorkspaceScope) {
     guard watchedScope == scope, !isTerminating else { return }
+    discardSourceAccess()
     readsStale = true
     manifestDraft?.isStale = true
     creationSession?.stale = true
@@ -814,6 +851,7 @@ final class AppModel {
   func cancelQueuedOperations() {
     for operation in operations.values { operation.admission.cancel() }
     for task in asyncTasks.values { task.cancel() }
+    if let selection = sourceAccessSession?.selection { cancelSourceAccessValidation(selection) }
   }
 
   func requestTermination() -> TerminationDecision {
@@ -822,6 +860,7 @@ final class AppModel {
       return .cancel
     }
     isTerminating = true
+    discardSourceAccess()
     stopMonitoring()
     cancelQueuedOperations()
     return operations.isEmpty ? .now : .later
@@ -909,6 +948,82 @@ final class AppModel {
       }
       terminationReply?(mayQuit)
     }
+  }
+}
+
+extension AppModel {
+  var sourceAccessSelection: SourceAccessSelection? {
+    guard page == .sources, preferences.inspectorVisible, !isTerminating, !isApplying, !readsStale,
+      let selectedItem, let snapshot, snapshot.scope == scope
+    else { return nil }
+    return SourceAccessSelection(
+      snapshot: snapshot, node: selectedItem, presentation: sourceAccessPresentation)
+  }
+
+  var isSourceAccessValidationOutstanding: Bool {
+    operations.values.contains {
+      if case .sourceAccessValidation = $0.purpose { return true }
+      return false
+    }
+  }
+
+  func setInspectorVisible(_ visible: Bool) {
+    if !visible { discardSourceAccess() }
+    preferences.inspectorVisible = visible
+  }
+
+  func inspectSourceAccess(_ selection: SourceAccessSelection) {
+    guard selection.id == sourceAccessSelection?.id,
+      selection.id != sourceAccessSession?.selection
+    else { return }
+    sourceAccessSession = SourceAccessSession(selection: selection.id)
+    let environment = actions.environment(for: selection.id.scope)
+    startOperation(
+      title: "Inspect source access", scope: selection.id.scope,
+      purpose: .sourceAccessInspection(selection.id)
+    ) {
+      selection.inspect(environment: environment)
+    }
+  }
+
+  func validateSourceAccess(_ selection: SourceAccessSelection) {
+    guard selection.id == sourceAccessSelection?.id,
+      let session = sourceAccessSession, selection.id == session.selection,
+      let inspection = session.inspectionForValidation,
+      !isSourceAccessValidationOutstanding
+    else { return }
+    let environment = actions.environment(for: selection.id.scope)
+    let admission = OperationAdmission()
+    sourceAccessSession?.validation = nil
+    let operation = startOperation(
+      title: "Validate source access", scope: selection.id.scope,
+      purpose: .sourceAccessValidation(selection.id), admission: admission,
+      executor: sourceAccessValidationExecutor
+    ) {
+      selection.validate(inspection: inspection, environment: environment, admission: admission)
+    }
+    sourceAccessSession?.validationOperation = operation
+  }
+
+  func cancelSourceAccessValidation(_ selection: SourceAccessSelection.ID) {
+    guard let session = sourceAccessSession, session.selection == selection,
+      let operation = session.validationOperation
+    else { return }
+    operations[operation]?.admission.cancel()
+    sourceAccessSession?.validationOperation = nil
+  }
+
+  func discardSourceAccess() {
+    sourceAccessPresentation = UUID()
+    guard let session = sourceAccessSession else { return }
+    for operation in operations.values {
+      switch operation.purpose {
+      case .sourceAccessInspection(let id), .sourceAccessValidation(let id):
+        if id == session.selection { operation.admission.cancel() }
+      default: break
+      }
+    }
+    sourceAccessSession = nil
   }
 }
 

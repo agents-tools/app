@@ -30,6 +30,7 @@ struct AgentsApp: App {
           }
           if case .idle = model.loadState { model.refresh() }
         }
+        .onDisappear { model.discardSourceAccess() }
         .onReceive(
           NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
         ) { _ in
@@ -47,8 +48,12 @@ struct AgentsApp: App {
         Button("Refresh Configuration") { model.refresh() }
           .keyboardShortcut("r", modifiers: .command)
           .disabled(model.isTerminating || model.isApplying)
-        Toggle("Show Inspector", isOn: Bindable(model.preferences).inspectorVisible)
-          .keyboardShortcut("i", modifiers: [.command, .option])
+        Toggle(
+          "Show Inspector",
+          isOn: Binding(
+            get: { model.preferences.inspectorVisible }, set: model.setInspectorVisible)
+        )
+        .keyboardShortcut("i", modifiers: [.command, .option])
       }
     }
     Settings {

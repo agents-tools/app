@@ -23,7 +23,10 @@ struct SettingsView: View {
             .font(.caption).foregroundStyle(.secondary)
         }
         Section("Appearance") {
-          Toggle("Show inspector", isOn: Bindable(model.preferences).inspectorVisible)
+          Toggle(
+            "Show inspector",
+            isOn: Binding(
+              get: { model.preferences.inspectorVisible }, set: model.setInspectorVisible))
         }
       }
       .formStyle(.grouped)
@@ -36,6 +39,9 @@ struct SettingsView: View {
 
       ClientSettingsView(model: model)
         .tabItem { Label("Agent Clients", systemImage: "desktopcomputer") }
+
+      SourceAccessSettingsView(model: model)
+        .tabItem { Label("Source Access", systemImage: "lock.shield") }
 
       Form {
         Section("On-device Assistance") {

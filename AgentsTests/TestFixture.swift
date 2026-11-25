@@ -20,11 +20,14 @@ struct TestFixture: Sendable {
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
   }
 
-  func writeManifest(_ text: String, user: Bool = false) throws {
+  @discardableResult
+  func writeManifest(_ text: String, user: Bool = false) throws -> URL {
     let directory =
       user ? home.appendingPathComponent(".agents") : project.appendingPathComponent(".agent")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try Data(text.utf8).write(to: directory.appendingPathComponent("agents.yaml"))
+    let manifest = directory.appendingPathComponent("agents.yaml")
+    try Data(text.utf8).write(to: manifest)
+    return manifest
   }
 
   func externalWrite(_ text: String, to url: URL, atomic: Bool = false) throws {

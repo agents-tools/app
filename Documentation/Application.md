@@ -30,6 +30,12 @@ Detection never invokes clients or version commands. Core owns command candidate
 
 Settings → Cache shows the location and size of the shared Git, HTTP and deployed-file caches. Prune selects Git groups by age. Clean selects entries in all three stores. Review the selected entries and their sizes before confirming removal. The result shows the space reclaimed and identifies entries that were skipped or failed.
 
+## Source Access settings
+
+Open **Settings → Source Access** to edit the operator’s YAML profile. The tab shows its location and the saved network mode, provider registrations, mirrors and credential references. The profile applies to both user and project operations. Credential references name environment variables supplied to the App.
+
+Use **Validate and Preview** to review the profile before saving. A malformed file in an operator-controlled location opens for repair. If the file changes while you edit, the App keeps the draft and asks you to reload. **Reset Profile** removes the saved profile after confirmation and restores direct access defaults. Saving or resetting refreshes the workspace and clears any current source validation.
+
 ## Client backups
 
 Backups is available from the sidebar regardless of the workspace’s selected scope or read status. Back Up captures the selected clients, optional registered projects and output folder. Core’s `ClientBackups.create` runs once per client on the app’s serial worker. The form reports each actual package path or individual failure. An empty project selection still includes local sessions and user configuration. Backup packages can include credentials already stored in the backed-up files.
@@ -106,6 +112,8 @@ In an existing user or project configuration, **Add Action Configuration** prepa
 Bundle imports, marketplace installs, updates and removals, package lock saves, and offline deployment show applicable actions in their review. **Changes → Preview Full Update** and **Instructions / Rules → Review Compilation** also show applicable actions. The preview reads configuration. Confirming the operation submits that review, and the result shows which actions ran or were withheld.
 
 In Sources, choose **Edit Source Policy** to configure the selected scope and inspect inherited rules. The organization policy can be supplied via `AGENTS_ORGANIZATION_SOURCE_POLICY`. Project installs must satisfy the organization, user and project layers that are configured. **Export Component Inventory** saves a CycloneDX JSON inventory from the current inspection.
+
+Select a declared source in either scope to see **Source Access** in the inspector, including sources that have never been installed. The offline report shows Core’s effective host, provider, transport, credential category and availability under the scope’s source policy. **Validate Source** explicitly asks Core to verify an available direct HTTPS credential when its trusted binding authorizes the provider’s identity endpoint. The result is Accepted, Refused or Inconclusive. Selecting another source, hiding the inspector or refreshing clears the result and cancels pending admission. Cancel Validation also clears the pending result. An admitted synchronous check remains owned through Core’s return.
 
 ## On-device assistance
 
