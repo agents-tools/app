@@ -179,7 +179,8 @@ struct PackageInstallSheet: View {
     origin = source
     run {
       let registration = try MarketplaceRegistration(name: "team", origin: source)
-      return try MarketplaceOperations.browse(registration, environment: environment)
+      return try MarketplaceOperations.browse(
+        registration, scope: scope.installScope, environment: environment)
     } receive: { catalog in
       preferences.remember(source)
       releases = catalog.releases
@@ -200,7 +201,8 @@ struct PackageInstallSheet: View {
 
   private func inspect(_ release: MarketplaceRelease) {
     run {
-      let package = try MarketplaceOperations.acquire(release, environment: environment)
+      let package = try MarketplaceOperations.acquire(
+        release, scope: scope.installScope, environment: environment)
       let contents = try package.inspectBundle()
       let components = try UpdateOperations.inspect(
         scope: scope.installScope, environment: environment

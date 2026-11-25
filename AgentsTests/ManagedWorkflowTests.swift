@@ -108,7 +108,7 @@ struct ManagedWorkflowTests {
     try await idle(model)
     #expect(model.updateRecords.last?.terminal.disposition == .committed)
     let component = try #require(model.snapshot?.inspection.declaration?.components.first)
-    guard case .mcpServer(_, .stdio(let run), _, _, _) = component else {
+    guard case .mcpServer(_, .stdio(let run), _, _, _, _) = component else {
       Issue.record("Expected imported MCP intent")
       return
     }

@@ -134,6 +134,14 @@ private struct UpdateReportSection: View {
       if !report.hasChanges && report.instructions.conflicts.isEmpty {
         Text("No changes are needed.")
       }
+      ForEach(Array((report.marketplaceChanges ?? []).enumerated()), id: \.offset) { _, change in
+        if let pin = change.after ?? change.before {
+          DetailsGroup("Package · " + pin.dependency.name) {
+            if let before = change.before { packageRelease("Installed", pin: before) }
+            if let after = change.after { packageRelease("Proposed", pin: after) }
+          }
+        }
+      }
       ForEach(Array(report.skills.enumerated()), id: \.offset) { _, skill in
         DetailsGroup("Skill · " + skill.skill) {
           LabeledContent("Status", value: skill.changed ? "Changed" : "Unchanged")
@@ -184,6 +192,15 @@ private struct UpdateReportSection: View {
             LabeledContent("Resource", value: resource.path)
           }
         }
+      }
+    }
+  }
+
+  private func packageRelease(_ title: LocalizedStringKey, pin: MarketplacePin) -> some View {
+    LabeledContent(title) {
+      VStack(alignment: .trailing) {
+        Text(verbatim: pin.dependency.coordinate.package + "@" + pin.dependency.coordinate.version)
+        CompactText(text: pin.archiveDigest).font(.caption.monospaced())
       }
     }
   }

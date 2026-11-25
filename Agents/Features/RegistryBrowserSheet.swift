@@ -2,8 +2,18 @@ import AgentsCore
 import AgentsUpdates
 import SwiftUI
 
+private struct RegistryReleaseID: Hashable {
+  let name: String
+  let version: String
+}
+
+private extension MCPRegistryServer {
+  var releaseID: RegistryReleaseID { RegistryReleaseID(name: name, version: version) }
+}
+
 struct RegistryBrowserSheet: View {
   let inspection: ScopeInspection
+  let environment: RuntimeEnvironment
   let review: (ComponentDiscovery) -> Void
 
   @Environment(\.dismiss) private var dismiss
@@ -13,14 +23,15 @@ struct RegistryBrowserSheet: View {
   @State private var query = ""
   @State private var page: [MCPRegistryServer] = []
   @State private var cursor: String?
-  @State private var selected: String?
+  @State private var selected: RegistryReleaseID?
+  @State private var allVersions = false
   @State private var didSearch = false
   @State private var busy = false
   @State private var message: String?
   @State private var generation = UUID()
   @State private var request: Task<Void, Never>?
 
-  private var server: MCPRegistryServer? { page.first { $0.name == selected } }
+  private var server: MCPRegistryServer? { page.first { $0.releaseID == selected } }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 0) {
@@ -40,6 +51,7 @@ struct RegistryBrowserSheet: View {
         HStack {
           TextField("Search MCP servers", text: $query)
             .onSubmit { search() }
+          Toggle("All versions", isOn: $allVersions)
           Button("Search") { search() }.disabled(busy || (custom && endpoint.isEmpty))
         }
       }.padding()
@@ -48,11 +60,11 @@ struct RegistryBrowserSheet: View {
         VStack(spacing: 0) {
           if !page.isEmpty {
             List(selection: $selected) {
-              ForEach(page, id: \.name) { server in
+              ForEach(page, id: \.releaseID) { server in
                 VStack(alignment: .leading) {
                   Text(server.title ?? server.name)
-                  Text(server.name).font(.caption).foregroundStyle(.secondary)
-                }.tag(server.name)
+                  Text(verbatim: server.name + " · " + server.version).font(.caption).foregroundStyle(.secondary)
+                }.tag(server.releaseID)
               }
             }
           } else if busy {
@@ -68,7 +80,7 @@ struct RegistryBrowserSheet: View {
         }.frame(minWidth: 220, idealWidth: 260)
         if let server {
           RegistryServerDetail(inspection: inspection, server: server, review: review)
-            .id(server.name + "@" + server.version)
+            .id(server.releaseID)
         } else {
           ContentUnavailableView("Select a Server", systemImage: "server.rack")
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -95,6 +107,7 @@ struct RegistryBrowserSheet: View {
     }
     .onChange(of: token) { resetSearch() }
     .onChange(of: query) { resetSearch() }
+    .onChange(of: allVersions) { search() }
     .onDisappear {
       request?.cancel()
       token = ""
@@ -135,11 +148,11 @@ struct RegistryBrowserSheet: View {
       defer { if generation == id { busy = false } }
       do {
         let result = try await registry.search(
-          text.isEmpty ? nil : text, version: "latest", limit: 30, cursor: next,
-          credentials: credentials)
+          text.isEmpty ? nil : text, version: allVersions ? nil : "latest", limit: 30, cursor: next,
+          credentials: credentials, scope: inspection.scope, environment: environment)
         guard generation == id, !Task.isCancelled else { return }
-        var seen = Set(page.map(\.name))
-        page += result.servers.filter { seen.insert($0.name).inserted }
+        var seen = Set(page.map(\.releaseID))
+        page += result.servers.filter { seen.insert($0.releaseID).inserted }
         cursor = result.nextCursor
         didSearch = true
       } catch {

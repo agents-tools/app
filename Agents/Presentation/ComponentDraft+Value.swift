@@ -16,7 +16,8 @@ extension ComponentDraft {
       agents = declaration.agents
       condition = declaration.condition
       native = declaration.native
-    case .mcpServer(let name, let transport, let agents, let condition, let native):
+    case .mcpServer(let name, let transport, let agents, let condition, let native, let registry):
+      self.registry = registry
       self.name = name
       self.transport = transport
       self.agents = agents

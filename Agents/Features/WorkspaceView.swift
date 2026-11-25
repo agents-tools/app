@@ -114,7 +114,9 @@ struct WorkspaceView: View {
         model.previewUpdate(proposal)
       }
     ) { session in
-      RegistryBrowserSheet(inspection: session.inspection) { addition in
+      RegistryBrowserSheet(
+        inspection: session.inspection, environment: model.actions.environment(for: session.scope)
+      ) { addition in
         pendingReview = UpdateProposal(
           id: UUID(), scope: session.scope, title: "Install MCP Server",
           request: addition.updateRequest())

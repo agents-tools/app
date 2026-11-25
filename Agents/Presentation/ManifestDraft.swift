@@ -159,6 +159,7 @@ struct ComponentDraft: Equatable {
   var native: NativeConfiguration = [:]
   var skills = SkillDeclaration(select: .all)
   var instructions = InstructionsDeclaration()
+  var registry: MCPRegistryEvidence?
   var transport = MCPTransportDeclaration.stdio(.init(executable: ""))
   var run = ExecutableDeclaration(executable: "")
   var event = HookEventDeclaration.beforeTool
@@ -195,7 +196,8 @@ struct ComponentDraft: Equatable {
       return .instructions(value)
     case .mcpServer:
       return .mcpServer(
-        name: name, transport: transport, agents: agents, condition: condition, native: native)
+        name: name, transport: transport, agents: agents, condition: condition, native: native,
+        registry: registry)
     case .hook:
       return .hook(
         name: name, event: event, run: run, matcher: matcher, timeoutSeconds: timeout,

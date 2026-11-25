@@ -215,7 +215,7 @@ struct SourceReplacementTests {
   private func references(_ model: AppModel) throws {
     let components = try #require(model.snapshot?.inspection.declaration?.components)
     guard case .skills(let alias, _) = components[0],
-      case .mcpServer(_, .stdio(let run), _, _, _) = components[1]
+      case .mcpServer(_, .stdio(let run), _, _, _, _) = components[1]
     else {
       Issue.record("Missing renamed typed references")
       return

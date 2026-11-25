@@ -85,7 +85,7 @@ struct UpdateFlowTests {
     try await idle(model)
     #expect(model.updateRecords.last?.terminal.disposition == .committed)
     let declaration = try #require(model.snapshot?.inspection.declaration)
-    guard case .mcpServer(_, let transport, _, _, let native) = declaration.components[0] else {
+    guard case .mcpServer(_, let transport, _, _, let native, _) = declaration.components[0] else {
       Issue.record("Expected server")
       return
     }
