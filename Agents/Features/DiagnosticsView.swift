@@ -3,6 +3,7 @@ import SwiftUI
 struct DiagnosticsView: View {
   let model: AppModel
   @State private var auditScope: WorkspaceScope?
+  @State private var policyScope: WorkspaceScope?
 
   var body: some View {
     List {
@@ -27,7 +28,13 @@ struct DiagnosticsView: View {
       }
     }
     .textSelection(.enabled)
-    .toolbar { Button("Audit Prompts…") { auditScope = model.scope } }
+    .toolbar {
+      Button("Organization Policy…") { policyScope = model.scope }
+      Button("Audit Prompts…") { auditScope = model.scope }
+    }
+    .sheet(item: $policyScope) { scope in
+      OrganizationPolicySheet(model: model, scope: scope)
+    }
     .sheet(item: $auditScope) { scope in
       PromptAuditSheet(scope: scope, environment: model.actions.environment(for: scope))
     }

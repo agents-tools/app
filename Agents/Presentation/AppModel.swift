@@ -51,8 +51,17 @@ final class AppModel {
   let clientSettings = ClientSettingsModel()
   let home: URL
   private let executor: CoreExecutor
-  private let reader: CoreReader
-  let actions: CoreActions
+  let processEnvironment: [String: String]
+  private var reader: CoreReader {
+    CoreReader(
+      home: home, processEnvironment: processEnvironment,
+      policyFiles: preferences.organizationPolicyFiles)
+  }
+  var actions: CoreActions {
+    CoreActions(
+      home: home, processEnvironment: processEnvironment,
+      policyFiles: preferences.organizationPolicyFiles)
+  }
   private let assistance: AssistanceService
   private let connectionTest:
     @Sendable (MCPConnectionSnapshot, RuntimeEnvironment, [String: Data]) async ->
@@ -134,8 +143,7 @@ final class AppModel {
     self.executor = executor
     self.assistance = assistance
     self.connectionTest = connectionTest
-    reader = CoreReader(home: home, processEnvironment: processEnvironment)
-    actions = CoreActions(home: home, processEnvironment: processEnvironment)
+    self.processEnvironment = processEnvironment
     let user = WorkspaceScope(kind: .user, root: home)
     scope =
       preferences.projects.map { WorkspaceScope(kind: .project, root: $0) }

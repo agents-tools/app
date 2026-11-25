@@ -10,6 +10,38 @@ import Testing
 @Suite("Public API presentation integration", .serialized, .timeLimit(.minutes(2)))
 @MainActor
 struct PublicAPIConsumerTests {
+  @Test func selectedOrganizationPolicyGovernsAppPreviewBeforeAnyWrite() throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    let user = WorkspaceScope(kind: .user, root: fixture.home)
+    let unavailable = fixture.home.appendingPathComponent("required-policy.yaml")
+    let actions = CoreActions(
+      home: fixture.home, processEnvironment: fixture.environment,
+      policyFiles: [user.id: unavailable.path])
+    let before = try fixture.entries()
+    let proposal = UpdateProposal(
+      id: UUID(), scope: scope, title: "Install handbook",
+      request: .init(
+        operation: .declaration(
+          .init(
+            agents: [.codex],
+            components: [
+              .mcpServer(
+                name: "handbook",
+                transport: .streamableHTTP(url: "https://example.invalid/mcp", headers: [:]))
+            ]))))
+    let preview = actions.preview(proposal)
+    #expect(!preview.diagnostics.isEmpty)
+    let audit = try OrganizationPolicyOperations.audit(
+      scope: .project, environment: actions.environment(for: scope))
+    #expect(
+      audit.organization.findings.contains {
+        $0.authority == .user && $0.outcome == .block && $0.rule == "policy-unavailable"
+      })
+    #expect(try fixture.entries() == before)
+  }
+
   @Test func symbolicReviewAndConnectionDescriptionUseTheCapturedPublicValues() throws {
     let f = try TestFixture()
     defer { try? f.remove() }

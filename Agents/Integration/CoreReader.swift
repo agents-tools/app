@@ -8,10 +8,15 @@ struct CoreReader: Sendable {
   let home: URL
   let processEnvironment: [String: String]
 
+  var policyFiles: [String: String] = [:]
+
+  private func environment(for scope: WorkspaceScope) -> RuntimeEnvironment {
+    CoreActions(home: home, processEnvironment: processEnvironment, policyFiles: policyFiles)
+      .environment(for: scope)
+  }
+
   func read(scope: WorkspaceScope) -> CoreCompletion {
-    let runtime = RuntimeEnvironment(
-      projectDirectory: scope.root, homeDirectory: home,
-      environment: processEnvironment)
+    let runtime = environment(for: scope)
     let store = StateStore(scope: scope.installScope, environment: runtime)
     do {
       try ProjectRootAccess.requireAvailable(scope)
@@ -157,13 +162,17 @@ struct CoreReader: Sendable {
     Self.stateDependencies(
       store: StateStore(
         scope: scope.installScope,
-        environment: .init(
-          projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment)))
+        environment: environment(for: scope)))
   }
 
   static func stateDependencies(store: StateStore) -> [ReadDependency] {
     var dependencies = [store.declarationURL, store.resolvedURL, store.watchURL]
       .map(ReadDependency.subtree)
+    var selections = [store.environment.userOrganizationPolicy]
+    if store.scope == .project { selections.append(store.environment.projectOrganizationPolicy) }
+    for selection in selections {
+      if case .local(let url) = selection?.source { dependencies.append(.entry(url)) }
+    }
     if store.scope == .user {
       dependencies.append(
         .entry(ExistingConfigurationSession.existingDeclaration(in: store.directory)))

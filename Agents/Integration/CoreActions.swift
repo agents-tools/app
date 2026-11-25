@@ -8,6 +8,7 @@ import Foundation
 struct CoreActions: Sendable {
   let home: URL
   let processEnvironment: [String: String]
+  var policyFiles: [String: String] = [:]
 
   func create(_ request: CreationRequest) -> CoreCompletion {
     let described = describeCreation(request)
@@ -64,7 +65,17 @@ struct CoreActions: Sendable {
   }
 
   func environment(for scope: WorkspaceScope) -> RuntimeEnvironment {
-    RuntimeEnvironment(
+    var runtime = RuntimeEnvironment(
       projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment)
+    let user = WorkspaceScope(kind: .user, root: home)
+    if runtime.userOrganizationPolicy == nil, let path = policyFiles[user.id] {
+      runtime.userOrganizationPolicy = .init(.local(URL(fileURLWithPath: path)))
+    }
+    if scope.kind == .project, runtime.projectOrganizationPolicy == nil,
+      let path = policyFiles[scope.id]
+    {
+      runtime.projectOrganizationPolicy = .init(.local(URL(fileURLWithPath: path)))
+    }
+    return runtime
   }
 }

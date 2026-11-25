@@ -6,6 +6,9 @@ import Observation
 final class AppPreferences {
   private let defaults: UserDefaults?
   private(set) var projects: [URL]
+  var organizationPolicyFiles: [String: String] {
+    didSet { defaults?.set(organizationPolicyFiles, forKey: "organizationPolicyFiles") }
+  }
   var selectedScopeID: String? {
     didSet { defaults?.set(selectedScopeID, forKey: "selectedScope") }
   }
@@ -18,6 +21,8 @@ final class AppPreferences {
 
   init(defaults: UserDefaults? = .standard, initialProjects: [URL] = []) {
     self.defaults = defaults
+    organizationPolicyFiles =
+      defaults?.dictionary(forKey: "organizationPolicyFiles") as? [String: String] ?? [:]
     let saved =
       defaults?.stringArray(forKey: "projects")?.map { URL(fileURLWithPath: $0) } ?? initialProjects
     var seen = Set<String>()
