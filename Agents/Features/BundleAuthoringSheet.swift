@@ -120,7 +120,8 @@ struct BundleAuthoringSheet: View {
           let archive = try BundleOperations.export(
             package, selections: entries, scope: scope, environment: runtime)
           if publishing {
-            _ = try MarketplaceOperations.publishBundle(archive, to: destination)
+            _ = try MarketplaceOperations.publishBundle(
+              archive, to: destination, scope: scope, environment: runtime)
           } else {
             try archive.write(to: destination, options: .atomic)
           }

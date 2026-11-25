@@ -33,7 +33,7 @@ struct ProjectPackageSheet: View {
 
   private var serverNames: [String] {
     (snapshot.inspection.declaration?.components ?? []).compactMap { component in
-      guard case .mcpServer(let name, _, _, nil, _, _) = component else { return nil }
+      guard case .mcpServer(let name, _, _, nil, _, nil) = component else { return nil }
       return name
     }.sorted()
   }
