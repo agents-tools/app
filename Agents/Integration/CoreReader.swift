@@ -46,17 +46,26 @@ struct CoreReader: Sendable {
             message: deployment.diagnostic ?? deployment.status.rawValue,
             path: deployment.location.path))
       }
+      // Frozen owners can share a skill name and carry different recipient modes.
+      let skillsByRecord = Dictionary(
+        uniqueKeysWithValues: inspection.components.lazy.filter { $0.kind == .skills }
+          .map { ($0.record, $0) })
       let inventory = inspection.deployments.flatMap { deployment in
-        inspection.components.filter {
-          deployment.ownerRecords.contains($0.record) && $0.kind == .skills
-        }
-        .flatMap { component in
-          deployment.recipients.map { agent in
+        deployment.ownerRecords.compactMap { skillsByRecord[$0] }.flatMap { component in
+          let mode: InstallMode?
+          if case .object(let fields) = component.configuration,
+            case .string(let value) = fields["mode"]
+          {
+            mode = InstallMode(rawValue: value)
+          } else {
+            mode = nil
+          }
+          return deployment.recipients.filter(component.recipients.contains).map { agent in
             InventoryItem(
               id: .init(
                 name: component.name, agent: agent, scope: scope.installScope,
                 path: deployment.location.path), status: deployment.status.rawValue,
-              mode: deployment.ownership, source: component.source)
+              mode: mode, source: component.source)
           }
         }
       }

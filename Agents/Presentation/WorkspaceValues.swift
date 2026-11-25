@@ -85,7 +85,7 @@ struct InventoryItem: Identifiable, Sendable {
   }
   let id: ID
   let status: String
-  let mode: String?
+  let mode: InstallMode?
   let source: String?
 }
 

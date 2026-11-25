@@ -1,5 +1,6 @@
 import AgentsCore
 import AgentsManifest
+import AgentsUpdates
 import Foundation
 import Testing
 
@@ -98,6 +99,55 @@ struct CoreReaderTests {
     #expect(instruction.description == "Style rules.")
     #expect(instruction.authorFile == author)
     #expect(try fixture.entries() == before)
+  }
+
+  @Test func skillInventoryUsesEachRecipientsResolvedInstallationMode() throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let source = fixture.home.appendingPathComponent("content")
+    for name in ["shared", "editable"] {
+      let skill = source.appendingPathComponent("skills/\(name)")
+      try FileManager.default.createDirectory(at: skill, withIntermediateDirectories: true)
+      try Data("---\nname: \(name)\ndescription: Fixture skill.\n---\nFixture body.\n".utf8)
+        .write(to: skill.appendingPathComponent("SKILL.md"))
+    }
+    try fixture.writeManifest(
+      """
+      version: 1
+      sources: {local: {path: ./content}}
+      components:
+        - {kind: skills, source: local, select: [shared], agents: [codex], mode: copy}
+        - {kind: skills, source: local, select: [shared], agents: [claude-code], mode: link}
+        - {kind: skills, source: local, select: [editable], agents: [codex], mode: edit}
+      """, user: true)
+    let environment = RuntimeEnvironment(
+      projectDirectory: fixture.home, homeDirectory: fixture.home, environment: fixture.environment)
+    _ = try UpdateOperations.withPreparedUpdate(scope: .user, environment: environment) {
+      try $0.apply()
+    }
+
+    let scope = WorkspaceScope(kind: .user, root: fixture.home)
+    let result = CoreReader(home: fixture.home, processEnvironment: fixture.environment)
+      .read(scope: scope)
+    let snapshot = try #require(result.snapshot)
+    let inventory = try #require(snapshot.inventory)
+    #expect(inventory.count == 3)
+    let expected: [(String, AgentID, InstallMode)] = [
+      ("shared", .codex, .copy), ("shared", .claudeCode, .link), ("editable", .codex, .edit),
+    ]
+    for (name, agent, mode) in expected {
+      let row = try #require(inventory.first { $0.id.name == name && $0.id.agent == agent })
+      #expect(row.mode == mode)
+      let deployment = try #require(
+        snapshot.inspection.deployments.first {
+          $0.location.path == row.id.path && $0.recipients == [agent]
+        })
+      #expect(deployment.ownership == "generated")
+      #expect(deployment.status == .current)
+      let owner = try #require(
+        snapshot.inspection.components.first { deployment.ownerRecords == [$0.record] })
+      #expect(owner.name == name && owner.recipients == [agent])
+    }
   }
 
   @Test func orphanResolvedStateIsNotAnEmptyScope() throws {

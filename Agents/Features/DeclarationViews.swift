@@ -35,7 +35,7 @@ struct DeclarationListView: View {
             TableColumn("Skill") { Text($0.id.name) }
             TableColumn("Agent") { Text($0.id.agent.displayName) }
             TableColumn("Status", value: \.status)
-            TableColumn("Mode") { Text($0.mode ?? "Unmanaged") }
+            TableColumn("Mode") { Text($0.mode?.rawValue ?? "Unavailable") }
             TableColumn("Location") {
               PathView(url: URL(fileURLWithPath: $0.id.path), scope: model.scope)
             }
