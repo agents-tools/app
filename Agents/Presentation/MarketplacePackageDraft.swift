@@ -36,6 +36,7 @@ struct MarketplacePackageDraft: Sendable {
   }
 
   var title: String { (installed == nil ? "Install " : "Update ") + name }
+  var lifecycleIntent: LifecycleOperationIntent { installed == nil ? .install : .update }
 
   private var root: MarketplaceResolvedRoot? {
     resolution?.roots.first { $0.intent.name == name }
@@ -143,23 +144,27 @@ struct MarketplacePackageDraft: Sendable {
   }
 
   func preview(scope: InstallScope, environment: RuntimeEnvironment, hostedAccess: HostedMarketplaceAccess? = nil) throws
-    -> MarketplaceResolutionPreview
+    -> LifecyclePackageReview<MarketplaceResolutionPreview, UpdateApplyResult>
   {
-    let candidate = try MarketplaceOperations.previewResolution(
-      reviewedRequest(in: scope), scope: scope, environment: environment, hostedAccess: hostedAccess)
+    let review = try MarketplaceOperations.previewResolutionLifecycle(
+      reviewedRequest(in: scope), intent: lifecycleIntent, scope: scope,
+      environment: environment, hostedAccess: hostedAccess)
+    let candidate = review.report
     try validate(candidate.resolution, graph: candidate.report.marketplaceGraphChange,
                  changes: candidate.report.marketplaceChanges)
-    return candidate
+    return review
   }
 
   func previewLock(scope: InstallScope, environment: RuntimeEnvironment, hostedAccess: HostedMarketplaceAccess? = nil) throws
-    -> MarketplaceLockPreview
+    -> LifecyclePackageReview<MarketplaceLockPreview, MarketplaceLockReport>
   {
-    let candidate = try MarketplaceOperations.previewLockOnly(
-      reviewedRequest(in: scope), scope: scope, environment: environment, hostedAccess: hostedAccess)
+    let review = try MarketplaceOperations.previewLockOnlyLifecycle(
+      reviewedRequest(in: scope), intent: lifecycleIntent, scope: scope,
+      environment: environment, hostedAccess: hostedAccess)
+    let candidate = review.report
     try validate(candidate.resolution, graph: candidate.report.marketplaceGraphChange,
                  changes: candidate.report.marketplaceChanges)
-    return candidate
+    return review
   }
 
   private func reviewedRequest(in scope: InstallScope) throws -> MarketplaceResolutionRequest {

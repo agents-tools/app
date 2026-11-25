@@ -523,18 +523,20 @@ struct UpdateFlowTests {
     let catalog = author.root.appendingPathComponent("catalog")
     try FileManager.default.createDirectory(at: catalog, withIntermediateDirectories: true)
     let release = try MarketplaceOperations.publishBundle(archive, to: catalog)
-    let model = await loadedModel(consumer)
+    let model = await loadedModel(consumer, disablePackageActions: true)
     let environment = model.actions.environment(for: model.scope)
     let package = try MarketplaceOperations.acquire(release, environment: environment)
     let bundle = try package.inspectBundle()
-    let preview = try package.previewImport(
+    let preview = try package.previewImportLifecycle(
       as: "team-kit",
       selections: bundle.components.map {
         BundleImportSelection(componentID: $0.id, targets: [.codex])
-      }, scope: .project, environment: environment)
+      }, intent: .install, scope: .project, environment: environment)
     let before = try consumer.entries()
     try await reviewed(model) {
-      model.previewUpdate(UpdateProposal(scope: model.scope, bundle: preview))
+      model.previewUpdate(UpdateProposal(
+        scope: model.scope, title: "Install team-kit",
+        packageReview: .init(preview, scope: model.scope, report: \.report)))
     }
     #expect(model.updateSession?.stage == .review)
     #expect(try consumer.entries() == before)
@@ -571,7 +573,7 @@ struct UpdateFlowTests {
   }
 
   @Test nonisolated func marketplaceGraphRetainsEachRootsClientsThroughReviewUpgradeAndRemoval()
-    throws
+    async throws
   {
     let author = try TestFixture()
     let consumer = try TestFixture()
@@ -626,7 +628,9 @@ struct UpdateFlowTests {
     dependency.requirement = .upToNextMajor(from: "1.0.0")
     let starter = try publish("starter", "1.0.0", dependencies: [dependency.dependency()])
     let scope = WorkspaceScope(kind: .project, root: consumer.project)
-    let actions = CoreActions(home: consumer.home, processEnvironment: consumer.environment)
+    let actions = CoreActions(
+      home: consumer.home,
+      processEnvironment: consumer.environment.merging(["APM_NO_SCRIPTS": "1"]) { _, value in value })
     let environment = actions.environment(for: scope)
     let registration = try MarketplaceRegistration(name: "team", origin: first.origin)
     try MarketplaceDirectory.register(registration, scope: .project, environment: environment)
@@ -638,18 +642,21 @@ struct UpdateFlowTests {
       draft.capture(try MarketplaceOperations.resolve(draft.request(), environment: environment))
     }
 
-    func apply(_ checked: MarketplaceResolutionPreview, title: String) throws {
+    func apply(
+      _ checked: LifecyclePackageReview<MarketplaceResolutionPreview, UpdateApplyResult>,
+      title: String
+    ) async throws {
       let before = try consumer.entries()
-      let proposal = UpdateProposal(scope: scope, title: title, marketplace: checked)
+      let proposal = UpdateProposal(
+        scope: scope, title: title, packageReview: .init(checked, scope: scope, report: \.report))
       let review = actions.preview(proposal)
-      guard case .updatePreview(let id, let report) = review.output else {
+      guard case .packageUpdatePreview(let id, let package) = review.output else {
         throw CoreError.invalidState(review.diagnostics.map(\.message).joined(separator: "\n"))
       }
       #expect(id == proposal.id)
-      #expect(report == checked.report)
+      #expect(package.report == checked.report.report)
       #expect(try consumer.entries() == before)
-      let applied = actions.apply(
-        proposal, fingerprint: report.displayedFingerprint, admission: OperationAdmission())
+      let applied = await package.apply(title, EphemeralBindings(values: [:]))
       #expect(applied.updateTerminal?.disposition == .committed, "\(applied.diagnostics)")
     }
 
@@ -664,19 +671,22 @@ struct UpdateFlowTests {
       try sharedDraft.setTargets([.codex], for: member.marketplaceKey, in: shared)
     }
     let lock = try sharedDraft.previewLock(scope: .project, environment: environment)
-    _ = try MarketplaceOperations.writeLockOnly(lock)
+    let locked = await CoreActions.performPackage(
+      lock, scope: scope, title: "Save Package Lock", output: ContentOutput.packageLock)
+    #expect(locked.updateTerminal?.disposition == .committed)
     let instructionFile = consumer.project.appendingPathComponent("AGENTS.md")
     #expect(!FileManager.default.fileExists(atPath: instructionFile.path))
     let pending = try UpdateOperations.inspect(environment: environment).pendingMarketplaceDeployment
-    #expect(pending?.digest == lock.report.pendingDeployment.digest)
-    let deployment = UpdateProposal(id: UUID(), scope: scope, title: "Deploy Locked Packages",
-                                    request: MarketplaceOperations.frozenDeploymentRequest())
+    #expect(pending?.digest == lock.report.report.pendingDeployment.digest)
+    let frozen = try MarketplaceOperations.previewFrozenLifecycle(intent: .install, environment: environment)
+    let deployment = UpdateProposal(
+      scope: scope, title: "Deploy Locked Packages",
+      packageReview: .init(frozen, scope: scope, report: \.self))
     let prepared = actions.preview(deployment)
-    guard case .updatePreview(_, let report) = prepared.output else {
+    guard case .packageUpdatePreview(_, let package) = prepared.output else {
       throw CoreError.invalidState(prepared.diagnostics.map(\.message).joined(separator: "\n"))
     }
-    let deployed = actions.apply(deployment, fingerprint: report.displayedFingerprint,
-                                 admission: OperationAdmission())
+    let deployed = await package.apply(deployment.title, EphemeralBindings(values: [:]))
     #expect(deployed.updateTerminal?.disposition == .committed)
     #expect(FileManager.default.fileExists(atPath: instructionFile.path))
     #expect(try UpdateOperations.inspect(environment: environment).pendingMarketplaceDeployment == nil)
@@ -702,15 +712,15 @@ struct UpdateFlowTests {
     starterDraft.pinOnly = true
     let lockOnly = try starterDraft.preview(scope: .project, environment: environment)
     #expect(
-      lockOnly.resolution.roots.first { $0.intent.name == "starter" }?.intent.selections == [])
+      lockOnly.report.resolution.roots.first { $0.intent.name == "starter" }?.intent.selections == [])
     #expect(
-      lockOnly.report.marketplaceGraphChange?.after?.recipientsByRoot(
+      lockOnly.report.report.marketplaceGraphChange?.after?.recipientsByRoot(
         for: sharedSkill, in: dependencyNode.versions.node) == ["shared": [.codex]])
 
     starterDraft.pinOnly = false
     #expect(
       starterDraft.targets(for: sharedSkill, in: dependencyNode.versions.node) == [.claudeCode])
-    try apply(
+    try await apply(
       starterDraft.preview(scope: .project, environment: environment), title: starterDraft.title)
 
     _ = try publish("shared", "1.1.0")
@@ -729,22 +739,21 @@ struct UpdateFlowTests {
     #expect(versions.latest?.version == "2.0.0")
     #expect(upgrade.selections == root.selections)
     let checked = try upgrade.preview(scope: .project, environment: environment)
-    #expect(checked.report.marketplaceGraphChange?.affectedRoots == ["shared", "starter"])
+    #expect(checked.report.report.marketplaceGraphChange?.affectedRoots == ["shared", "starter"])
     let beforeCatalogChange = try consumer.entries()
     _ = try publish("shared", "2.1.0")
-    let refused = actions.apply(
-      .init(scope: scope, title: upgrade.title, marketplace: checked),
-      fingerprint: checked.report.displayedFingerprint, admission: OperationAdmission())
+    let stale = PackageUpdateReview(checked, scope: scope, report: \.report)
+    let refused = await stale.apply(upgrade.title, EphemeralBindings(values: [:]))
     #expect(refused.disposition == .failed)
     #expect(refused.diagnostics.contains { $0.message.contains("marketplace catalog changed") })
     #expect(try consumer.entries() == beforeCatalogChange)
     try resolve(&upgrade)
-    try apply(
+    try await apply(
       upgrade.preview(scope: .project, environment: environment), title: upgrade.title)
 
-    let removal = try MarketplaceOperations.previewResolution(
-      .remove("starter"), environment: environment)
-    try apply(removal, title: "Remove starter")
+    let removal = try MarketplaceOperations.previewResolutionLifecycle(
+      .remove("starter"), intent: .uninstall, environment: environment)
+    try await apply(removal, title: "Remove starter")
     let afterRemoval = try UpdateOperations.inspect(environment: environment)
     let remaining = try #require(afterRemoval.marketplaceGraph)
     #expect(remaining.roots.map(\.intent.name) == ["shared"])
@@ -758,10 +767,10 @@ struct UpdateFlowTests {
     pinDraft.pinOnly = true
     try resolve(&pinDraft)
     let pinPreview = try pinDraft.preview(scope: .project, environment: environment)
-    #expect(pinPreview.report.hasChanges)
-    #expect(pinPreview.report.components.filter(\.changed).isEmpty)
-    #expect(pinPreview.report.skills.filter(\.changed).isEmpty)
-    try apply(pinPreview, title: pinDraft.title)
+    #expect(pinPreview.report.report.hasChanges)
+    #expect(pinPreview.report.report.components.filter(\.changed).isEmpty)
+    #expect(pinPreview.report.report.skills.filter(\.changed).isEmpty)
+    try await apply(pinPreview, title: pinDraft.title)
     let pinned = try #require(UpdateOperations.inspect(environment: environment).marketplaceGraph)
     #expect(pinned.roots.first { $0.intent.name == "starter" }?.intent.selections == [])
     #expect(
@@ -774,9 +783,9 @@ struct UpdateFlowTests {
     pinUpgrade.requirement = .upToNextMajor(from: "1.0.0")
     try resolve(&pinUpgrade)
     let pinUpgradePreview = try pinUpgrade.preview(scope: .project, environment: environment)
-    #expect(pinUpgradePreview.report.components.filter(\.changed).isEmpty)
-    #expect(pinUpgradePreview.report.skills.filter(\.changed).isEmpty)
-    try apply(pinUpgradePreview, title: pinUpgrade.title)
+    #expect(pinUpgradePreview.report.report.components.filter(\.changed).isEmpty)
+    #expect(pinUpgradePreview.report.report.skills.filter(\.changed).isEmpty)
+    try await apply(pinUpgradePreview, title: pinUpgrade.title)
     let afterPinUpgrade = try UpdateOperations.inspect(environment: environment)
     #expect(
       afterPinUpgrade.marketplaceGraph?.nodes.first {
@@ -784,10 +793,12 @@ struct UpdateFlowTests {
       }?.coordinate.version == "1.1.0")
   }
 
-  private func loadedModel(_ fixture: TestFixture) async -> AppModel {
+  private func loadedModel(_ fixture: TestFixture, disablePackageActions: Bool = false) async -> AppModel {
+    var environment = fixture.environment
+    if disablePackageActions { environment["APM_NO_SCRIPTS"] = "1" }
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),
-      processEnvironment: fixture.environment)
+      processEnvironment: environment)
     model.select(.init(kind: .project, root: fixture.project))
     try? await idle(model)
     for _ in 0..<2000 {

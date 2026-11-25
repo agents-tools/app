@@ -99,6 +99,12 @@ To connect a static team catalog, open **Packages → Marketplace → Add HTTPS 
 
 **Installed Packages → Check for Updates** shows the locked release, the release eligible under the current graph constraints, and the latest published release. Choose **Review Update** to see proposed changes to releases, client selections and other affected roots. **Review Removal** shows the effect of removing one root, including retained contributions from other roots. The app applies the checked Core preview through the same review and apply flow as other configuration changes. Use **Changes → Preview Restore** to restore from the scope’s lock.
 
+Open **Package Actions** from the toolbar for the selected user or project scope. **Actions** lists configured events, sources, and withholding reasons. Use **Validate** to check the configuration and **Simulate** to see which actions would run for one event. **Run Test** starts the permitted actions after confirmation and shows their status. Shell commands run with your access, and HTTPS actions send requests to the listed destinations.
+
+In an existing user or project configuration, **Add Action Configuration** prepares an empty lifecycle section. **Edit YAML** lets you change that section and review it before saving. In a project, use **Project Access → Review and Enable** to review the exact actions for that folder. Changing the action definitions requires a new review. **Revoke Access** removes a saved grant, including for a project folder that is no longer available.
+
+Bundle imports, marketplace installs, updates and removals, package lock saves, and offline deployment show applicable actions in their review. **Changes → Preview Full Update** and **Instructions / Rules → Review Compilation** also show applicable actions. The preview reads configuration. Confirming the operation submits that review, and the result shows which actions ran or were withheld.
+
 In Sources, choose **Edit Source Policy** to configure the selected scope and inspect inherited rules. The organization policy can be supplied via `AGENTS_ORGANIZATION_SOURCE_POLICY`. Project installs must satisfy the organization, user and project layers that are configured. **Export Component Inventory** saves a CycloneDX JSON inventory from the current inspection.
 
 ## On-device assistance

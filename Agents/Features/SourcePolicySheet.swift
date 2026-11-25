@@ -20,9 +20,7 @@ struct SourcePolicySheet: View {
       Text("Source Policy").font(.headline)
       if let editor {
         Text(editor.url.path).font(.caption).foregroundStyle(.secondary).textSelection(.enabled)
-        TextEditor(text: $draft)
-          .font(.system(.body, design: .monospaced))
-          .accessibilityLabel("Source policy YAML")
+        ConfigurationYAMLEditor(label: "Source policy YAML", text: $draft)
         ForEach(layers.filter { $0.scope.rawValue != scope.installScope.rawValue }, id: \.url) {
           layer in
           DisclosureGroup(layer.scope == .organization ? "Organization Policy" : "User Policy") {

@@ -3,12 +3,16 @@ import AgentsUpdates
 import SwiftUI
 
 struct MarketplaceLockReview: View {
-  let preview: MarketplaceLockPreview
+  let model: AppModel
+  let scope: WorkspaceScope
+  let review: LifecyclePackageReview<MarketplaceLockPreview, MarketplaceLockReport>
   let saved: (MarketplaceLockReport) -> Void
 
   @Environment(\.dismiss) private var dismiss
   @State private var working = false
-  @State private var error: String?
+  @State private var completion: CoreCompletion?
+
+  private var preview: MarketplaceLockPreview { review.report }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
@@ -32,29 +36,64 @@ struct MarketplaceLockReview: View {
             }
           }
         }
+        PackageActionPreview(inspection: review.lifecycle)
       }.formStyle(.grouped)
-      if let error { Text(error).foregroundStyle(.red).textSelection(.enabled) }
+      if let completion {
+        if let terminal = completion.updateTerminal {
+          Text(terminal.message)
+          PackageActionResults(results: terminal.packageActions)
+        } else if completion.disposition == .cancelled {
+          Text("Cancelled before the operation started.")
+        }
+        ForEach(completion.diagnostics.filter { $0.message != completion.updateTerminal?.message })
+        {
+          diagnostic in
+          Text(verbatim: diagnostic.message)
+            .foregroundStyle(diagnostic.severity == .error ? .red : .secondary)
+            .textSelection(.enabled)
+        }
+      }
       HStack {
-        Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
+        Button(completion == nil ? "Cancel" : "Done") {
+          if working {
+            model.cancelQueuedOperations()
+          } else {
+            dismiss()
+          }
+        }.keyboardShortcut(.cancelAction)
         Spacer()
         if working { ProgressView().controlSize(.small) }
-        Button("Save Lock") {
-          working = true
-          Task {
-            defer { working = false }
-            do {
-              let result = try await Task.detached(priority: .userInitiated) { [preview] in
-                try MarketplaceOperations.writeLockOnly(preview)
-              }.value
-              saved(result)
-            } catch {
-              self.error = String(describing: error)
-            }
-          }
+        if completion == nil {
+          Button(preview.report.hasChanges ? "Save Lock" : "Run Package Actions") { save() }
+            .keyboardShortcut(.defaultAction)
+            .disabled(
+              working || !model.canModify
+                || (!preview.report.hasChanges && !review.lifecycle.hasRunnableActions))
         }
-        .keyboardShortcut(.defaultAction).disabled(!preview.report.hasChanges)
       }
     }.padding(20).frame(minWidth: 500, minHeight: 380)
-      .disabled(working).interactiveDismissDisabled(working)
+      .interactiveDismissDisabled(working)
+  }
+
+  private func save() {
+    working = model.startPackageActionEffect(title: "Save Package Lock", scope: scope, writes: true)
+    {
+      [review, scope] in
+      await CoreActions.performPackage(
+        review, scope: scope, title: "Save Package Lock",
+        output: ContentOutput.packageLock)
+    } receive: { result in
+      working = false
+      if case .packageLock(let report) = result.output {
+        saved(report)
+        if result.updateTerminal?.packageActions.isEmpty != false,
+          result.updateTerminal?.recovery.pending != true
+        {
+          dismiss()
+          return
+        }
+      }
+      completion = result
+    }
   }
 }

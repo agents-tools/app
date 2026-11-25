@@ -109,6 +109,12 @@ struct InstructionsView: View {
     .textSelection(.enabled)
     .toolbar {
       ToolbarItem {
+        Button("Review Compilation…") {
+          model.previewUpdate(UpdateProposal(compilingInstructionsIn: snapshot.scope))
+        }
+        .disabled(!model.canModify)
+      }
+      ToolbarItem {
         if model.scope.kind == .project {
           Button("New Local Instructions…", systemImage: "plus") {
             model.beginCreation(.instructions)
