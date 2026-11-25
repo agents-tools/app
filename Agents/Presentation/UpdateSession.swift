@@ -6,7 +6,25 @@ struct UpdateProposal: Sendable {
   let id: UUID
   let scope: WorkspaceScope
   let title: String
-  let request: UpdateRequest
+  enum Contents: Sendable {
+    case update(UpdateRequest)
+    case bundle(BundleImportPreview)
+  }
+  let contents: Contents
+
+  init(id: UUID, scope: WorkspaceScope, title: String, request: UpdateRequest) {
+    self.id = id
+    self.scope = scope
+    self.title = title
+    contents = .update(request)
+  }
+
+  init(scope: WorkspaceScope, bundle: BundleImportPreview) {
+    id = UUID()
+    self.scope = scope
+    title = "Install " + bundle.package.name + " " + bundle.package.version
+    contents = .bundle(bundle)
+  }
 }
 
 struct UpdateTerminal: Sendable {

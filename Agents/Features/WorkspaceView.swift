@@ -1,9 +1,11 @@
 import AgentsCore
 import AgentsManifest
+import AgentsUpdates
 import SwiftUI
 
 struct WorkspaceView: View {
   @Bindable var model: AppModel
+  @State private var pendingReview: UpdateProposal?
 
   var body: some View {
     NavigationSplitView {
@@ -103,6 +105,38 @@ struct WorkspaceView: View {
         get: { model.existingConfigurationSession },
         set: { if $0 == nil { model.cancelExistingConfiguration() } })
     ) { _ in ExistingConfigurationView(model: model) }
+    .sheet(
+      item: $model.registrySession,
+      onDismiss: {
+        guard let proposal = pendingReview else { return }
+        pendingReview = nil
+        guard model.scope == proposal.scope else { return }
+        model.previewUpdate(proposal)
+      }
+    ) { session in
+      RegistryBrowserSheet(inspection: session.inspection) { addition in
+        pendingReview = UpdateProposal(
+          id: UUID(), scope: session.scope, title: "Install MCP Server",
+          request: addition.updateRequest())
+        model.registrySession = nil
+      }
+    }
+    .sheet(
+      item: $model.packageScope,
+      onDismiss: {
+        guard let proposal = pendingReview else { return }
+        pendingReview = nil
+        model.previewUpdate(proposal)
+      }
+    ) { scope in
+      PackageInstallSheet(
+        scope: scope, environment: model.actions.environment(for: scope),
+        preferences: model.preferences
+      ) { proposal in
+        pendingReview = proposal
+        model.packageScope = nil
+      }
+    }
     .sheet(item: $model.catalogSession) { _ in SourceCatalogView(model: model) }
     .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
@@ -216,6 +250,8 @@ struct OverviewView: View {
           Button("New Local Instructions…") { model.beginCreation(.instructions) }
         }
         Button("Add from Source…") { model.beginCatalog() }
+        Button("Install Package…") { model.packageScope = model.scope }.disabled(!model.canModify)
+        Button("Browse MCP Registry…") { model.browseRegistry() }.disabled(!model.canModify)
         Button("Import…") { model.beginImport() }
       }
     } else {

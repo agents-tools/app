@@ -87,6 +87,8 @@ final class AppModel {
   var updateSession: UpdateSession?
   var existingConfigurationSession: ExistingConfigurationSession?
   private(set) var didApplyExistingConfiguration = false
+  var registrySession: RegistrySession?
+  var packageScope: WorkspaceScope?
   var catalogSession: CatalogSession?
   var discoverySession: DiscoverySession?
   var watchSession: WatchSession?
@@ -340,10 +342,15 @@ final class AppModel {
 
   func previewUpdate(title: String, request: UpdateRequest = UpdateRequest()) {
     guard canModify else { return }
-    let proposal = UpdateProposal(id: UUID(), scope: scope, title: title, request: request)
+    previewUpdate(UpdateProposal(id: UUID(), scope: scope, title: title, request: request))
+  }
+
+  func previewUpdate(_ proposal: UpdateProposal) {
+    guard canModify, proposal.scope == scope else { return }
     updateSession = UpdateSession(proposal: proposal)
     let actions = actions
-    startOperation(title: "Prepare " + title, scope: scope, purpose: .preview(proposal.id)) {
+    startOperation(title: "Prepare " + proposal.title, scope: scope, purpose: .preview(proposal.id))
+    {
       actions.preview(proposal)
     }
   }

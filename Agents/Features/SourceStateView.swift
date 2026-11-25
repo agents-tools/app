@@ -8,10 +8,12 @@ struct SourceStateView: View {
   @State private var inventory: InventoryFile?
   @State private var exportingInventory = false
   @State private var exportError: String?
+  @State private var editingPolicy = false
 
   var body: some View {
     Form {
       Section("Recorded Source State") {
+        Button("Edit Source Policy…") { editingPolicy = true }.disabled(!model.canModify)
         Button("Review Declared Sources…") { model.discoverComponents() }
           .disabled(!model.canModify || snapshot.inspection.declaration == nil)
         Button("Export Component Inventory…") {
@@ -75,6 +77,13 @@ struct SourceStateView: View {
       }
     }
     .formStyle(.grouped)
+    .sheet(isPresented: $editingPolicy) {
+      SourcePolicySheet(
+        scope: snapshot.scope, environment: model.actions.environment(for: snapshot.scope)
+      ) {
+        model.refresh()
+      }
+    }
     .fileExporter(
       isPresented: $exportingInventory, document: inventory, contentType: .json,
       defaultFilename: "inventory.cdx.json"

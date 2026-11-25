@@ -1,7 +1,19 @@
 import AgentsCore
+import AgentsUpdates
 import Foundation
 
+struct RegistrySession: Identifiable {
+  let id = UUID()
+  let scope: WorkspaceScope
+  let inspection: ScopeInspection
+}
+
 extension AppModel {
+  func browseRegistry() {
+    guard canModify, let snapshot, snapshot.scope == scope else { return }
+    registrySession = RegistrySession(scope: scope, inspection: snapshot.inspection)
+  }
+
   func beginCatalog(alias: String = "", source: SourceDeclaration? = nil) {
     guard canModify else { return }
     catalogSession = .init(

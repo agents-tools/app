@@ -3,6 +3,7 @@ import SwiftUI
 
 struct DeclarationListView: View {
   @Bindable var model: AppModel
+  @State private var authoring = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -43,6 +44,15 @@ struct DeclarationListView: View {
         }.padding(16)
       }
     }
+    .sheet(isPresented: $authoring) {
+      if let snapshot = model.snapshot {
+        BundleAuthoringSheet(
+          snapshot: snapshot, environment: model.actions.environment(for: snapshot.scope),
+          didPublish: model.preferences.remember
+        )
+        .id(snapshot.scope)
+      }
+    }
     .searchable(text: $model.search, prompt: "Search \(model.page.title.lowercased())")
     .toolbar {
       ToolbarItem {
@@ -53,12 +63,22 @@ struct DeclarationListView: View {
       ToolbarItem {
         if model.page == .components {
           Button("New Local Skill…") { model.beginCreation(.skill) }
+          Button("Create Bundle…") { authoring = true }
+            .disabled(!model.canModify || model.snapshot?.inspection.components.isEmpty != false)
         }
       }
       ToolbarItem {
         if model.page == .sources {
           Button("Add from Source…") { model.beginCatalog() }.disabled(!model.canModify)
         }
+      }
+      ToolbarItem {
+        Button("Install Package…", systemImage: "shippingbox") { model.packageScope = model.scope }
+          .disabled(!model.canModify)
+      }
+      ToolbarItem {
+        Button("Browse MCP Registry…", systemImage: "magnifyingglass") { model.browseRegistry() }
+          .disabled(!model.canModify)
       }
       ToolbarItem {
         Button("Edit Configuration…") { model.beginDraft(.defaults) }

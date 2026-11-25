@@ -497,6 +497,56 @@ struct UpdateFlowTests {
     #expect(model.manifestDraft?.scope.kind == .user)
   }
 
+  @Test func marketplaceBundlePublishesThroughTheDisplayedReview() async throws {
+    let author = try TestFixture()
+    let consumer = try TestFixture()
+    defer {
+      try? author.remove()
+      try? consumer.remove()
+    }
+    try author.writeManifest(
+      """
+      version: 1
+      components:
+        - kind: mcpServer
+          name: handbook
+          transport: {kind: stdio, executable: fixture-command}
+          agents: [codex]
+      """)
+    let producer = RuntimeEnvironment(
+      projectDirectory: author.project, homeDirectory: author.home, environment: author.environment)
+    _ = try UpdateOperations.withPreparedUpdate(environment: producer) { try $0.apply() }
+    let selections = try UpdateOperations.inspect(environment: producer).components.map(\.selection)
+    let archive = try BundleOperations.export(
+      BundlePackage(name: "team-kit", version: "1.0.0"), selections: selections,
+      scope: .project, environment: producer)
+    let catalog = author.root.appendingPathComponent("catalog")
+    try FileManager.default.createDirectory(at: catalog, withIntermediateDirectories: true)
+    let release = try MarketplaceOperations.publishBundle(archive, to: catalog)
+    let model = await loadedModel(consumer)
+    let environment = model.actions.environment(for: model.scope)
+    let package = try MarketplaceOperations.acquire(release, environment: environment)
+    let bundle = try package.inspectBundle()
+    let preview = try package.previewImport(
+      as: "team-kit",
+      selections: bundle.components.map {
+        BundleImportSelection(componentID: $0.id, targets: [.codex])
+      }, scope: .project, environment: environment)
+    let before = try consumer.entries()
+    try await reviewed(model) {
+      model.previewUpdate(UpdateProposal(scope: model.scope, bundle: preview))
+    }
+    #expect(model.updateSession?.stage == .review)
+    #expect(try consumer.entries() == before)
+    model.confirmUpdate()
+    try await idle(model)
+    #expect(model.updateRecords.last?.terminal.disposition == .committed)
+    #expect(
+      try MarketplaceOperations.installed(scope: .project, environment: environment).first?
+        .archiveDigest == release.archiveDigest)
+    #expect(model.snapshot?.inspection.components.contains { $0.name == "handbook" } == true)
+  }
+
   private func loadedModel(_ fixture: TestFixture) async -> AppModel {
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),

@@ -23,9 +23,16 @@ extension CoreActions {
   func preview(_ proposal: UpdateProposal) -> CoreCompletion {
     do {
       try ProjectRootAccess.requireAvailable(proposal.scope)
-      let report = try UpdateOperations.preview(
-        proposal.request, scope: proposal.scope.installScope,
-        environment: environment(for: proposal.scope))
+      let report: CombinedUpdateReport
+      switch proposal.contents {
+      case .update(let request):
+        report = try UpdateOperations.preview(
+          request, scope: proposal.scope.installScope,
+          environment: environment(for: proposal.scope))
+      case .bundle(let preview):
+        if let conflict = preview.ownershipConflict { throw CoreError.invalidState(conflict) }
+        report = preview.report
+      }
       return CoreCompletion(
         disposition: .completed, output: .updatePreview(proposal.id, report),
         readDependencies: report.readLocations.map(ReadDependency.subtree))
@@ -50,14 +57,20 @@ extension CoreActions {
           error, scope: proposal.scope, operation: proposal.title))
     }
     // Preparation, comparison and publication stay on this worker and inside one Core lifetime.
-    let completion = UpdateOperations.perform(
-      proposal.request, scope: proposal.scope.installScope,
-      environment: environment(for: proposal.scope),
-      bindingProvider: EphemeralBindings(values: bindings)
-    ) { update -> Bool in
+    let confirm: (PreparedUpdate) throws -> Bool = { update in
       guard !recoveryOnly, admission.begin() else { return false }
       _ = try update.apply(ifUnchangedFrom: fingerprint)
       return true
+    }
+    let provider = EphemeralBindings(values: bindings)
+    let completion: UpdateCompletion<Bool>
+    switch proposal.contents {
+    case .update(let request):
+      completion = UpdateOperations.perform(
+        request, scope: proposal.scope.installScope,
+        environment: environment(for: proposal.scope), bindingProvider: provider, confirm)
+    case .bundle(let preview):
+      completion = BundleOperations.performImport(preview, bindingProvider: provider, confirm)
     }
     let succeeded: Bool
     let cancelled: Bool
