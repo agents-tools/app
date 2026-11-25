@@ -574,10 +574,10 @@ final class AppModel {
       updateSession?.stage = result.disposition == .cancelled ? .cancelled : .finished
     case .existingConfigurationPreview(let id) where existingConfigurationSession?.id == id:
       existingConfigurationSession?.messages = result.diagnostics
-      if case .existingConfigurationPreview(let preview) = result.output {
-        existingConfigurationSession?.preview = preview
-        if !currentSelection { existingConfigurationSession?.stale = true }
+      if case .existingConfigurationPreview(let review) = result.output {
+        existingConfigurationSession?.review = review
         existingConfigurationSession?.stage = .review
+        invalidateExistingConfigurationIfChanged()
       } else {
         existingConfigurationSession?.stage = .failed
       }
@@ -711,9 +711,7 @@ final class AppModel {
     importSession?.stale = true
     connectionSession?.stale = true
     connectionSession?.inputs = [:]
-    if existingConfigurationSession?.stage != .applying {
-      existingConfigurationSession?.stale = true
-    }
+    invalidateExistingConfigurationIfChanged()
     if let session = updateSession, session.stage == .review || session.stage == .preparing {
       updateSession?.stage = .stale
       updateSession?.bindingInputs = [:]
@@ -727,6 +725,13 @@ final class AppModel {
       refreshScheduled = false
       if !isTerminating && !isApplying { refresh() }
     }
+  }
+
+  private func invalidateExistingConfigurationIfChanged() {
+    guard let session = existingConfigurationSession, session.stage == .review,
+      !session.stale, session.review?.inputs.hasChanged == true
+    else { return }
+    existingConfigurationSession?.stale = true
   }
 
   func cancelQueuedOperations() {
@@ -805,11 +810,7 @@ final class AppModel {
       } else if case .workspace = operation.purpose, case .cancelled = result.disposition {
         loadState = .idle
       }
-      if case .workspace = operation.purpose, existingConfigurationSession?.stage == .review,
-        !canPreviewExistingConfiguration
-      {
-        existingConfigurationSession?.stale = true
-      }
+      if case .workspace = operation.purpose { invalidateExistingConfigurationIfChanged() }
     }
     if !isTerminating && currentSelection {
       switch operation.purpose {

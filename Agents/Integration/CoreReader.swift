@@ -139,13 +139,17 @@ struct CoreReader: Sendable {
   }
 
   func stateDependencies(scope: WorkspaceScope) -> [ReadDependency] {
-    let store = StateStore(
-      scope: scope.installScope,
-      environment: .init(
-        projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment))
+    Self.stateDependencies(
+      store: StateStore(
+        scope: scope.installScope,
+        environment: .init(
+          projectDirectory: scope.root, homeDirectory: home, environment: processEnvironment)))
+  }
+
+  static func stateDependencies(store: StateStore) -> [ReadDependency] {
     var dependencies = [store.declarationURL, store.resolvedURL, store.watchURL]
       .map(ReadDependency.subtree)
-    if scope.kind == .user {
+    if store.scope == .user {
       dependencies.append(
         .entry(ExistingConfigurationSession.existingDeclaration(in: store.directory)))
     }

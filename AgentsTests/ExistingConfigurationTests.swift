@@ -31,6 +31,55 @@ struct ExistingConfigurationTests {
     #expect(try fixture.entries() == before)
   }
 
+  @Test func directoryNotificationDuringPreviewKeepsUnchangedFilesReviewable() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
+    let directory = fixture.home.appendingPathComponent(".agents")
+    try writeExistingConfiguration(directory)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+    try await boundary.settle(
+      creation: directory.appendingPathComponent("agents.resolved"),
+      root: fixture.root)
+    let before = try fixture.entries()
+    let model = makeModel(fixture)
+    defer { _ = model.requestTermination() }
+    model.refresh()
+    try await waitUntil { model.canPreviewExistingConfiguration && model.operations.isEmpty }
+
+    let gate = DispatchSemaphore(value: 0)
+    defer { gate.signal() }
+    let (events, entered) = AsyncStream.makeStream(of: Void.self)
+    model.startOperation(title: "Hold preview worker", scope: model.scope) {
+      entered.yield(())
+      gate.wait()
+      return CoreCompletion(disposition: .completed)
+    }
+    var event = events.makeAsyncIterator()
+    _ = await event.next()
+    model.previewExistingConfiguration()
+    try #require(model.existingConfigurationSession?.stage == .preparing)
+
+    let change = Process()
+    change.executableURL = URL(fileURLWithPath: "/bin/chmod")
+    change.arguments = ["700", directory.path]
+    try change.run()
+    change.waitUntilExit()
+    try #require(change.terminationStatus == 0)
+    try await waitUntil {
+      model.operations.values.contains { operation in
+        if case .workspace = operation.purpose { return true }
+        return false
+      }
+    }
+
+    gate.signal()
+    try await waitUntil { model.operations.isEmpty }
+    #expect(model.canApplyExistingConfiguration)
+    #expect(try fixture.entries() == before)
+  }
+
   @Test func changedExistingDeclarationRequiresFreshPreviewThenReloadsOverview() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

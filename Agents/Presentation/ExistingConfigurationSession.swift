@@ -7,9 +7,11 @@ struct ExistingConfigurationSession: Identifiable {
   let id = UUID()
   let scope: WorkspaceScope
   var stage: Stage = .preparing
-  var preview: ExistingGlobalConfigurationPreview?
+  var review: ExistingConfigurationReview?
   var stale = false
   var messages: [AppDiagnostic] = []
+
+  var preview: ExistingGlobalConfigurationPreview? { review?.preview }
 
   static func existingDeclaration(in directory: URL) -> URL {
     directory.appendingPathComponent("agents.json")
@@ -38,7 +40,7 @@ extension AppModel {
       existingConfigurationSession?.stage = .preparing
       existingConfigurationSession?.stale = false
       existingConfigurationSession?.messages = []
-      existingConfigurationSession?.preview = nil
+      existingConfigurationSession?.review = nil
     } else {
       guard canPreviewExistingConfiguration else { return }
       existingConfigurationSession = ExistingConfigurationSession(scope: scope)

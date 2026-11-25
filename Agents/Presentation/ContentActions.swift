@@ -78,7 +78,7 @@ enum ContentOutput: Sendable {
   case discovery(UUID, ComponentDiscovery)
   case updatePreview(UUID, CombinedUpdateReport)
   case existingConfigurationAvailable
-  case existingConfigurationPreview(ExistingGlobalConfigurationPreview)
+  case existingConfigurationPreview(ExistingConfigurationReview)
   case mappings(UUID, [MappingItem])
 }
 
