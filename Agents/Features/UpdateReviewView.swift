@@ -316,6 +316,7 @@ private struct InstructionFileReview: View {
 struct ChangesView: View {
   @Bindable var model: AppModel
   @State private var selection: Set<ComponentSelection> = []
+  @State private var showingPatches = false
   var body: some View {
     Form {
       Section("Configuration") {
@@ -325,6 +326,9 @@ struct ChangesView: View {
           model.previewUpdate(title: "Restore Managed Outputs", request: .init(operation: .restore))
         }
       }.disabled(!model.canModify)
+      Section("Local Edits") {
+        Button("Export Patches…") { showingPatches = true }
+      }
       Section("Managed Components") {
         if model.availableComponentSelection.isEmpty { Text("No managed components are recorded.") }
         ForEach(model.availableComponentSelection, id: \.record) { component in
@@ -362,6 +366,10 @@ struct ChangesView: View {
         }
       }
     }.formStyle(.grouped)
+      .sheet(isPresented: $showingPatches) {
+        ProducerPatchSheet(scope: model.scope.installScope, environment: model.actions.environment(for: model.scope))
+          .id(model.scope.id)
+      }
       .onChange(of: model.snapshot?.inspection.generation) { selection.removeAll() }
   }
 }
