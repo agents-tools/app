@@ -13,7 +13,7 @@ struct WorkspaceScope: Hashable, Codable, Sendable, Identifiable {
 }
 
 enum WorkspacePage: String, CaseIterable, Identifiable {
-  case overview, components, instructions, sources, changes, diagnostics
+  case overview, components, instructions, sources, changes, diagnostics, backups
   var id: Self { self }
   var title: String {
     switch self {
@@ -23,6 +23,7 @@ enum WorkspacePage: String, CaseIterable, Identifiable {
     case .sources: "Sources"
     case .changes: "Changes"
     case .diagnostics: "Diagnostics"
+    case .backups: "Backups"
     }
   }
   var symbol: String {
@@ -33,6 +34,7 @@ enum WorkspacePage: String, CaseIterable, Identifiable {
     case .sources: "externaldrive"
     case .changes: "arrow.triangle.2.circlepath"
     case .diagnostics: "stethoscope"
+    case .backups: "archivebox"
     }
   }
 }

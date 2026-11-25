@@ -10,6 +10,9 @@ final class AppModel {
   enum TerminationDecision { case now, later, cancel }
   enum OperationPurpose {
     case clients(UUID)
+    case clientBackup
+    case clientRestoreRead(UUID)
+    case clientRestoreWrite(UUID)
     case watchSeen(UUID)
     case assistance(UUID)
     case workspace
@@ -86,11 +89,17 @@ final class AppModel {
   var watchStatusSession: WatchStatusSession?
   var importSession: ImportSession?
   var connectionSession: ConnectionSession?
+  var backupClients: Set<BackupClient> = []
+  var backupProjects: Set<URL> = []
+  var backupDirectory: URL?
+  var backupOutcomes: [ClientBackupOutcome] = []
+  var isBackingUp = false
+  var restoreSession: ClientRestoreSession?
   private(set) var updateRecords: [UpdateRecord] = []
   var isApplying: Bool {
     operations.values.contains {
       switch $0.purpose {
-      case .apply, .creation, .watchApply, .watchSeen: return true
+      case .apply, .creation, .watchApply, .watchSeen, .clientRestoreWrite: return true
       default: return false
       }
     }
@@ -174,6 +183,7 @@ final class AppModel {
   func removeProject(_ url: URL) {
     guard !isTerminating, !isApplying else { return }
     preferences.removeProject(url)
+    backupProjects.remove(url.standardizedFileURL)
     if scope.root == url, scope.kind == .project {
       select(WorkspaceScope(kind: .user, root: home))
     }
@@ -413,6 +423,11 @@ final class AppModel {
       }
     case .clients(let id):
       clientSettings.finish(id: id, result: result)
+    case .clientBackup:
+      isBackingUp = false
+      if case .clientBackup(let outcomes) = result.output { backupOutcomes = outcomes }
+    case .clientRestoreRead(let id), .clientRestoreWrite(let id):
+      finishClientRestore(id: id, result: result)
     case .watchSeen(let id) where watchStatusSession?.id == id:
       watchStatusSession?.busy = false
       watchStatusSession?.terminal = result.updateTerminal
@@ -759,7 +774,7 @@ final class AppModel {
     }
     if !isTerminating && currentSelection {
       switch operation.purpose {
-      case .apply, .creation, .watchApply, .watchSeen: refresh()
+      case .apply, .creation, .watchApply, .watchSeen, .clientRestoreWrite: refresh()
       default: break
       }
     }

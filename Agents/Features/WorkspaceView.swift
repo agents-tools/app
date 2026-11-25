@@ -43,11 +43,16 @@ struct WorkspaceView: View {
             .accessibilityIdentifier("project.add")
         }
         Section(model.scope.title) {
-          ForEach(WorkspacePage.allCases) { page in
+          ForEach(WorkspacePage.allCases.filter { $0 != .backups }) { page in
             Label(page.title, systemImage: page.symbol)
               .tag(page)
               .accessibilityIdentifier("page.\(page.rawValue)")
           }
+        }
+        Section("Tools") {
+          Label(WorkspacePage.backups.title, systemImage: WorkspacePage.backups.symbol)
+            .tag(WorkspacePage.backups)
+            .accessibilityIdentifier("page.backups")
         }
       }
       .listStyle(.sidebar)
@@ -56,23 +61,30 @@ struct WorkspaceView: View {
     } detail: {
       workspace
         .navigationTitle(model.page.title)
-        .navigationSubtitle(model.scope.title)
+        .navigationSubtitle(model.page == .backups ? "" : model.scope.title)
         .toolbar {
-          ToolbarItem {
-            Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
-              .disabled(model.isTerminating || model.isApplying)
-              .help("Read configuration again")
-          }
-          ToolbarItem {
-            Button("Inspector", systemImage: "sidebar.right") {
-              model.preferences.inspectorVisible.toggle()
+          if model.page != .backups {
+            ToolbarItem {
+              Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
+                .disabled(model.isTerminating || model.isApplying)
+                .help("Read configuration again")
             }
-            .help("Show or hide the inspector")
+            ToolbarItem {
+              Button("Inspector", systemImage: "sidebar.right") {
+                model.preferences.inspectorVisible.toggle()
+              }
+              .help("Show or hide the inspector")
+            }
           }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) { operationStatus }
     }
-    .inspector(isPresented: Bindable(model.preferences).inspectorVisible) {
+    .inspector(
+      isPresented: Binding(
+        get: { model.page != .backups && model.preferences.inspectorVisible },
+        set: { if model.page != .backups { model.preferences.inspectorVisible = $0 } }
+      )
+    ) {
       InspectorView(model: model)
         .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
     }
@@ -96,41 +108,40 @@ struct WorkspaceView: View {
   }
 
   @ViewBuilder private var workspace: some View {
-    if model.page == .diagnostics {
+    switch (model.page, model.loadState) {
+    case (.backups, _):
+      ClientBackupsView(model: model)
+    case (.diagnostics, _):
       DiagnosticsView(model: model)
-    } else {
-      switch model.loadState {
-      case .idle:
-        ContentUnavailableView {
-          Label("Configuration Not Loaded", systemImage: "doc.text.magnifyingglass")
-        } actions: {
-          Button("Read Configuration") { model.refresh() }
-        }
-      case .loading:
-        VStack(spacing: 12) {
-          ProgressView()
-          Text("Reading configuration…").foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-      case .failed(let diagnostics):
-        ContentUnavailableView {
-          Label("Configuration Unavailable", systemImage: "exclamationmark.triangle")
-        } description: {
-          Text(diagnostics.map(\.message).joined(separator: "\n")).textSelection(.enabled)
-        } actions: {
-          Button("Try Again") { model.refresh() }
-          Button("Show Diagnostics") { model.page = .diagnostics }
-        }
-      case .loaded(let snapshot):
-        switch model.page {
-        case .overview: OverviewView(model: model, snapshot: snapshot)
-        case .components, .sources: DeclarationListView(model: model)
-        case .instructions: InstructionsView(model: model, snapshot: snapshot)
-        case .changes: ChangesView(model: model)
-        case .diagnostics: DiagnosticsView(model: model)
-        }
+    case (_, .idle):
+      ContentUnavailableView {
+        Label("Configuration Not Loaded", systemImage: "doc.text.magnifyingglass")
+      } actions: {
+        Button("Read Configuration") { model.refresh() }
       }
+    case (_, .loading):
+      VStack(spacing: 12) {
+        ProgressView()
+        Text("Reading configuration…").foregroundStyle(.secondary)
+      }.frame(maxWidth: .infinity, maxHeight: .infinity)
+    case (_, .failed(let diagnostics)):
+      ContentUnavailableView {
+        Label("Configuration Unavailable", systemImage: "exclamationmark.triangle")
+      } description: {
+        Text(diagnostics.map(\.message).joined(separator: "\n")).textSelection(.enabled)
+      } actions: {
+        Button("Try Again") { model.refresh() }
+        Button("Show Diagnostics") { model.page = .diagnostics }
+      }
+    case (.overview, .loaded(let snapshot)):
+      OverviewView(model: model, snapshot: snapshot)
+    case (.components, .loaded), (.sources, .loaded):
+      DeclarationListView(model: model)
+    case (.instructions, .loaded(let snapshot)):
+      InstructionsView(model: model, snapshot: snapshot)
+    case (.changes, .loaded):
+      ChangesView(model: model)
     }
-
   }
 
   private func scopeLabel(_ scope: WorkspaceScope, symbol: String) -> some View {

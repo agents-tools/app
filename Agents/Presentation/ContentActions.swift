@@ -60,6 +60,9 @@ struct PromptSession: Identifiable {
 enum ContentOutput: Sendable {
   case clientInspection(UUID, AgentClientInspection)
   case clientInspectionFailed(UUID, String)
+  case clientBackup([ClientBackupOutcome])
+  case clientRestoreInspection(BackupClient, projects: [String], destinations: [String: URL])
+  case clientRestoreReview(ClientRestoreReview)
   case creationDescription(UUID, InitializationDescription)
   case watchStatus(UUID, [WatchStatus])
   case watchPreview(UUID, WatchMutationPreview)
