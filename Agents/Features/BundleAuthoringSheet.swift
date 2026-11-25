@@ -42,6 +42,7 @@ struct BundleAuthoringSheet: View {
             VStack(alignment: .leading) {
               Text(component.name)
               Text(component.source).font(.caption).foregroundStyle(.secondary)
+                .lineLimit(1).truncationMode(.middle).help(component.source)
             }
             Spacer()
             Text(DeclarationLabels.kind(component.kind.rawValue)).foregroundStyle(.secondary)
