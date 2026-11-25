@@ -1,22 +1,22 @@
 import AgentsUpdates
 import SwiftUI
 
-struct GlobalMigrationView: View {
+struct ExistingConfigurationView: View {
   let model: AppModel
 
   var body: some View {
-    if let session = model.migrationSession {
+    if let session = model.existingConfigurationSession {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Migrate User Configuration")
+        Text("Use Existing Configuration")
           .font(.headline)
           .padding(.horizontal, 16)
           .padding(.top, 16)
         Form {
           if session.stage == .preparing {
-            ProgressView("Preparing migration preview…").controlSize(.small)
+            ProgressView("Preparing configuration preview…").controlSize(.small)
           }
           if let preview = session.preview {
-            Section("Configuration to Carry Forward") {
+            Section("Configuration Contents") {
               LabeledContent("Declared sources", value: String(preview.sourceCount))
               LabeledContent("Locked skills", value: String(preview.skillCount))
               LabeledContent(
@@ -28,9 +28,9 @@ struct GlobalMigrationView: View {
               .font(.caption).foregroundStyle(.secondary)
             }
             Section("Configuration Files") {
-              LabeledContent("Keep previous declaration") {
+              LabeledContent("Keep existing declaration") {
                 PathView(
-                  url: GlobalMigrationSession.previousDeclaration(
+                  url: ExistingConfigurationSession.existingDeclaration(
                     in: preview.declarationURL.deletingLastPathComponent()), scope: session.scope)
               }
               LabeledContent("Create declaration") {
@@ -52,7 +52,7 @@ struct GlobalMigrationView: View {
               systemImage: "exclamationmark.triangle")
           }
           if !session.messages.isEmpty {
-            Section("Migration Couldn’t Continue") {
+            Section("Unable to Use Existing Configuration") {
               ForEach(session.messages) { diagnostic in
                 Text(verbatim: diagnostic.message).textSelection(.enabled)
               }
@@ -65,21 +65,21 @@ struct GlobalMigrationView: View {
 
         Divider()
         HStack {
-          Button("Cancel") { model.cancelGlobalMigration() }
+          Button("Cancel") { model.cancelExistingConfiguration() }
             .keyboardShortcut(.cancelAction)
             .disabled(session.stage == .applying)
-            .accessibilityIdentifier("migration.cancel")
+            .accessibilityIdentifier("existingConfiguration.cancel")
           Spacer()
           if session.stage == .applying {
-            ProgressView("Migrating…").controlSize(.small)
+            ProgressView("Applying…").controlSize(.small)
           } else if session.stage == .failed || (session.stage == .review && session.stale) {
-            Button("Refresh Preview") { model.previewGlobalMigration() }
+            Button("Refresh Preview") { model.previewExistingConfiguration() }
               .disabled(model.isApplying || model.isTerminating)
           }
-          Button("Migrate") { model.confirmGlobalMigration() }
+          Button("Apply") { model.applyExistingConfiguration() }
             .keyboardShortcut(.defaultAction)
-            .disabled(!model.canConfirmGlobalMigration)
-            .accessibilityIdentifier("migration.confirm")
+            .disabled(!model.canApplyExistingConfiguration)
+            .accessibilityIdentifier("existingConfiguration.apply")
         }
         .padding([.horizontal, .bottom], 16)
       }

@@ -146,6 +146,6 @@ enum WorkspaceLoadState {
   case idle
   case loading
   case loaded(WorkspaceSnapshot)
-  case globalMigrationAvailable
+  case existingConfigurationAvailable
   case failed([AppDiagnostic])
 }

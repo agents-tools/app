@@ -2,7 +2,7 @@ import XCTest
 
 final class AgentsUITests: XCTestCase {
   @MainActor
-  func testMigrationPreviewOpensFromInitialOverviewAndCanBeCancelled() throws {
+  func testExistingConfigurationPreviewOpensFromInitialOverviewAndCanBeCancelled() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
       .deletingLastPathComponent().appendingPathComponent(".agent/evidence/m3/fixtures")
       .appendingPathComponent(UUID().uuidString)
@@ -26,13 +26,15 @@ final class AgentsUITests: XCTestCase {
     app.launch()
     defer { app.terminate() }
 
-    let preview = app.buttons["migration.preview"]
+    let preview = app.buttons["existingConfiguration.preview"]
     XCTAssertTrue(preview.waitForExistence(timeout: 10))
+    XCTAssertEqual(preview.label, "Preview Configuration…")
     preview.click()
-    let confirm = app.buttons["migration.confirm"]
-    XCTAssertTrue(confirm.wait(for: \.isEnabled, toEqual: true, timeout: 10))
-    app.buttons["migration.cancel"].click()
-    XCTAssertTrue(confirm.waitForNonExistence(timeout: 5))
+    let apply = app.buttons["existingConfiguration.apply"]
+    XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 10))
+    XCTAssertEqual(apply.label, "Apply")
+    app.buttons["existingConfiguration.cancel"].click()
+    XCTAssertTrue(apply.waitForNonExistence(timeout: 5))
     XCTAssertTrue(preview.isEnabled)
     XCTAssertEqual(try Data(contentsOf: declaration), declarationBytes)
     XCTAssertEqual(try Data(contentsOf: ledger), ledgerBytes)

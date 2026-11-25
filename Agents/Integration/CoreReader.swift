@@ -94,13 +94,14 @@ struct CoreReader: Sendable {
       var diagnostics = Self.diagnostics(error, scope: scope, operation: "Read configuration")
       if scope.kind == .user {
         do {
-          if try GlobalConfigurationMigration.isAvailable(environment: runtime) {
-            return CoreCompletion(disposition: .completed, output: .globalMigrationAvailable)
+          if try ExistingGlobalConfiguration.isAvailable(environment: runtime) {
+            return CoreCompletion(disposition: .completed, output: .existingConfigurationAvailable)
           }
         } catch {
           diagnostics.append(
             AppDiagnostic(
-              scope: scope, operation: "Check for migration", message: error.localizedDescription))
+              scope: scope, operation: "Check for existing configuration",
+              message: error.localizedDescription))
         }
       }
       return CoreCompletion(
@@ -145,7 +146,8 @@ struct CoreReader: Sendable {
     var dependencies = [store.declarationURL, store.resolvedURL, store.watchURL]
       .map(ReadDependency.subtree)
     if scope.kind == .user {
-      dependencies.append(.entry(GlobalMigrationSession.previousDeclaration(in: store.directory)))
+      dependencies.append(
+        .entry(ExistingConfigurationSession.existingDeclaration(in: store.directory)))
     }
     return dependencies
   }

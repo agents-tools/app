@@ -100,9 +100,9 @@ struct WorkspaceView: View {
     .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
     .sheet(
       item: Binding(
-        get: { model.migrationSession },
-        set: { if $0 == nil { model.cancelGlobalMigration() } })
-    ) { _ in GlobalMigrationView(model: model) }
+        get: { model.existingConfigurationSession },
+        set: { if $0 == nil { model.cancelExistingConfiguration() } })
+    ) { _ in ExistingConfigurationView(model: model) }
     .sheet(item: $model.catalogSession) { _ in SourceCatalogView(model: model) }
     .sheet(item: $model.discoverySession) { _ in DiscoveryView(model: model) }
     .sheet(item: $model.mappingSession) { _ in MappingView(model: model) }
@@ -129,16 +129,16 @@ struct WorkspaceView: View {
         ProgressView()
         Text("Reading configuration…").foregroundStyle(.secondary)
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
-    case (_, .globalMigrationAvailable):
+    case (_, .existingConfigurationAvailable):
       ContentUnavailableView {
-        Label("Previous-Format Configuration Detected", systemImage: "doc.badge.clock")
+        Label("Use Existing Configuration", systemImage: "doc.text")
       } description: {
         Text("Review the changes to your user configuration. Native client files stay as they are.")
       } actions: {
-        Button("Preview Migration…") { model.previewGlobalMigration() }
+        Button("Preview Configuration…") { model.previewExistingConfiguration() }
           .buttonStyle(.borderedProminent)
-          .disabled(!model.canPreviewGlobalMigration)
-          .accessibilityIdentifier("migration.preview")
+          .disabled(!model.canPreviewExistingConfiguration)
+          .accessibilityIdentifier("existingConfiguration.preview")
       }
     case (_, .failed(let diagnostics)):
       ContentUnavailableView {
@@ -190,10 +190,10 @@ struct WorkspaceView: View {
         Text(model.operations.values.first?.title ?? "Waiting for operations to finish…")
         Spacer()
       }.padding(8).background(.bar)
-    } else if model.page == .overview && model.didMigrateGlobalConfiguration {
-      Label("User configuration migrated", systemImage: "checkmark.circle")
+    } else if model.page == .overview && model.didApplyExistingConfiguration {
+      Label("Existing configuration applied", systemImage: "checkmark.circle")
         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
-        .accessibilityIdentifier("migration.success")
+        .accessibilityIdentifier("existingConfiguration.success")
     }
   }
 }

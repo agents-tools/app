@@ -3,81 +3,81 @@ import Testing
 
 @testable import AgentsApp
 
-@MainActor @Suite("Global configuration migration")
-struct GlobalMigrationTests {
+@MainActor @Suite("Use existing configuration")
+struct ExistingConfigurationTests {
   @Test func initialUserReadOffersPreviewAndCancelLeavesFilesUnchanged() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
-    try writePreviousConfiguration(fixture.home.appendingPathComponent(".agents"))
+    try writeExistingConfiguration(fixture.home.appendingPathComponent(".agents"))
     let before = try fixture.entries()
     let model = makeModel(fixture)
     defer { _ = model.requestTermination() }
     #expect(model.page == .overview)
     #expect(model.scope.kind == .user)
     model.refresh()
-    try await waitUntil { model.canPreviewGlobalMigration && model.operations.isEmpty }
+    try await waitUntil { model.canPreviewExistingConfiguration && model.operations.isEmpty }
 
-    model.previewGlobalMigration()
-    try await waitUntil { model.canConfirmGlobalMigration }
-    let preview = try #require(model.migrationSession?.preview)
+    model.previewExistingConfiguration()
+    try await waitUntil { model.canApplyExistingConfiguration }
+    let preview = try #require(model.existingConfigurationSession?.preview)
     #expect(preview.declarationURL.lastPathComponent == "agents.yaml")
     #expect(preview.ledgerURL.lastPathComponent == "agents.resolved")
     #expect(preview.originalLedgerURL != preview.ledgerURL)
     #expect(try fixture.entries() == before)
-    model.cancelGlobalMigration()
-    model.confirmGlobalMigration()
-    #expect(model.migrationSession == nil)
+    model.cancelExistingConfiguration()
+    model.applyExistingConfiguration()
+    #expect(model.existingConfigurationSession == nil)
     #expect(model.operations.isEmpty)
     #expect(try fixture.entries() == before)
   }
 
-  @Test func changedPreviousDeclarationRequiresFreshPreviewThenReloadsOverview() async throws {
+  @Test func changedExistingDeclarationRequiresFreshPreviewThenReloadsOverview() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
     let directory = fixture.home.appendingPathComponent(".agents")
-    try writePreviousConfiguration(directory)
+    try writeExistingConfiguration(directory)
     let model = makeModel(fixture)
     defer { _ = model.requestTermination() }
     model.refresh()
-    try await waitUntil { model.canPreviewGlobalMigration && model.operations.isEmpty }
-    model.previewGlobalMigration()
-    try await waitUntil { model.canConfirmGlobalMigration }
+    try await waitUntil { model.canPreviewExistingConfiguration && model.operations.isEmpty }
+    model.previewExistingConfiguration()
+    try await waitUntil { model.canApplyExistingConfiguration }
 
-    let previousDeclaration = directory.appendingPathComponent("agents.json")
+    let existingDeclaration = directory.appendingPathComponent("agents.json")
     let replacement = "{\"agents\":[\"codex\"],\"sources\":{}}\n"
-    try fixture.externalWrite(replacement, to: previousDeclaration, atomic: true)
+    try fixture.externalWrite(replacement, to: existingDeclaration, atomic: true)
     try await waitUntil {
-      model.migrationSession?.stale == true && model.canPreviewGlobalMigration
+      model.existingConfigurationSession?.stale == true && model.canPreviewExistingConfiguration
         && model.operations.isEmpty
     }
     let before = try fixture.entries()
-    #expect(!model.canConfirmGlobalMigration)
-    model.confirmGlobalMigration()
+    #expect(!model.canApplyExistingConfiguration)
+    model.applyExistingConfiguration()
     #expect(model.operations.isEmpty)
     #expect(try fixture.entries() == before)
 
-    model.previewGlobalMigration()
-    try await waitUntil { model.canConfirmGlobalMigration }
-    let preview = try #require(model.migrationSession?.preview)
-    let previousLedger = try Data(contentsOf: preview.ledgerURL)
-    model.confirmGlobalMigration()
+    model.previewExistingConfiguration()
+    try await waitUntil { model.canApplyExistingConfiguration }
+    let preview = try #require(model.existingConfigurationSession?.preview)
+    let originalLedger = try Data(contentsOf: preview.ledgerURL)
+    model.applyExistingConfiguration()
     #expect(model.isApplying)
     try await waitUntil { model.snapshot?.document != nil && model.operations.isEmpty }
 
     #expect(!model.isApplying)
-    #expect(model.migrationSession == nil)
-    #expect(model.didMigrateGlobalConfiguration)
+    #expect(model.existingConfigurationSession == nil)
+    #expect(model.didApplyExistingConfiguration)
     #expect(model.page == .overview)
     #expect(model.snapshot?.effectiveDefaultAgents.map(\.rawValue) == ["codex"])
-    #expect(try Data(contentsOf: previousDeclaration) == Data(replacement.utf8))
-    #expect(try Data(contentsOf: preview.originalLedgerURL) == previousLedger)
+    #expect(try Data(contentsOf: existingDeclaration) == Data(replacement.utf8))
+    #expect(try Data(contentsOf: preview.originalLedgerURL) == originalLedger)
   }
 
   @Test func projectPairKeepsOrdinaryReadFailure() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
-    try writePreviousConfiguration(fixture.home.appendingPathComponent(".agents"))
-    try writePreviousConfiguration(fixture.project.appendingPathComponent(".agent"))
+    try writeExistingConfiguration(fixture.home.appendingPathComponent(".agents"))
+    try writeExistingConfiguration(fixture.project.appendingPathComponent(".agent"))
     let before = try fixture.entries()
     let model = makeModel(fixture)
     defer { _ = model.requestTermination() }
@@ -88,31 +88,31 @@ struct GlobalMigrationTests {
       return
     }
     #expect(!diagnostics.isEmpty)
-    #expect(!model.canPreviewGlobalMigration)
-    model.previewGlobalMigration()
-    #expect(model.migrationSession == nil)
+    #expect(!model.canPreviewExistingConfiguration)
+    model.previewExistingConfiguration()
+    #expect(model.existingConfigurationSession == nil)
     #expect(try fixture.entries() == before)
   }
 
-  @Test func unsafePreviousConfigurationShowsPreviewErrorWithoutWriting() async throws {
+  @Test func unsafeExistingConfigurationShowsPreviewErrorWithoutWriting() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
     let directory = fixture.home.appendingPathComponent(".agents")
-    try writePreviousConfiguration(directory)
+    try writeExistingConfiguration(directory)
     try Data("{\"instructions\":{\"sections\":[\"team-style\"]}}\n".utf8)
       .write(to: directory.appendingPathComponent("agents.json"))
     let before = try fixture.entries()
     let model = makeModel(fixture)
     defer { _ = model.requestTermination() }
     model.refresh()
-    try await waitUntil { model.canPreviewGlobalMigration && model.operations.isEmpty }
-    model.previewGlobalMigration()
-    try await waitUntil { model.migrationSession?.stage == .failed }
+    try await waitUntil { model.canPreviewExistingConfiguration && model.operations.isEmpty }
+    model.previewExistingConfiguration()
+    try await waitUntil { model.existingConfigurationSession?.stage == .failed }
 
-    #expect(model.migrationSession?.messages.isEmpty == false)
-    #expect(model.migrationSession?.preview == nil)
-    #expect(!model.canConfirmGlobalMigration)
-    #expect(!model.didMigrateGlobalConfiguration)
+    #expect(model.existingConfigurationSession?.messages.isEmpty == false)
+    #expect(model.existingConfigurationSession?.preview == nil)
+    #expect(!model.canApplyExistingConfiguration)
+    #expect(!model.didApplyExistingConfiguration)
     #expect(try fixture.entries() == before)
   }
 
@@ -122,7 +122,7 @@ struct GlobalMigrationTests {
       processEnvironment: fixture.environment)
   }
 
-  private func writePreviousConfiguration(_ directory: URL) throws {
+  private func writeExistingConfiguration(_ directory: URL) throws {
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     try Data("{\"agents\":[],\"sources\":{}}\n".utf8)
       .write(to: directory.appendingPathComponent("agents.json"))
