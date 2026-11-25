@@ -103,11 +103,15 @@ struct InspectorView: View {
   @Bindable var model: AppModel
 
   var body: some View {
+    let sourceAccess = model.sourceAccessSelection
     Form {
       if let item = model.selectedDeclaration {
         Section(item.title) {
           LabeledContent("Kind", value: DeclarationLabels.kind(item.record.kind))
           LabeledContent("Container", value: item.container)
+        }
+        if let sourceAccess {
+          SourceAccessSection(model: model, selection: sourceAccess)
         }
         Section("Declared Values") {
           RecordFields(
@@ -162,6 +166,14 @@ struct InspectorView: View {
     }
     .formStyle(.grouped)
     .accessibilityIdentifier("workspace.inspector")
+    .onChange(of: sourceAccess?.id, initial: true) {
+      if let sourceAccess { model.inspectSourceAccess(sourceAccess) }
+    }
+    .onDisappear {
+      if let sourceAccess, model.sourceAccessSelection?.id == sourceAccess.id {
+        model.discardSourceAccess()
+      }
+    }
     .contextMenu {
       if let snapshot = model.snapshot, let digest = snapshot.document?.digest {
         Button("Copy Manifest Digest") { copyText(digest) }

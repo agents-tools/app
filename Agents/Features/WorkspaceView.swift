@@ -73,7 +73,7 @@ struct WorkspaceView: View {
             }
             ToolbarItem {
               Button("Inspector", systemImage: "sidebar.right") {
-                model.preferences.inspectorVisible.toggle()
+                model.setInspectorVisible(!model.preferences.inspectorVisible)
               }
               .help("Show or hide the inspector")
             }
@@ -84,7 +84,7 @@ struct WorkspaceView: View {
     .inspector(
       isPresented: Binding(
         get: { model.page != .backups && model.preferences.inspectorVisible },
-        set: { if model.page != .backups { model.preferences.inspectorVisible = $0 } }
+        set: { if model.page != .backups { model.setInspectorVisible($0) } }
       )
     ) {
       InspectorView(model: model)

@@ -101,6 +101,8 @@ To connect a static team catalog, open **Packages → Marketplace → Add HTTPS 
 
 In Sources, choose **Edit Source Policy** to configure the selected scope and inspect inherited rules. The organization policy can be supplied via `AGENTS_ORGANIZATION_SOURCE_POLICY`. Project installs must satisfy the organization, user and project layers that are configured. **Export Component Inventory** saves a CycloneDX JSON inventory from the current inspection.
 
+Select a declared source in either scope to see **Source Access** in the inspector, including sources that have never been installed. The offline report shows Core’s effective host, provider, transport, credential category and availability under the scope’s source policy. **Validate Source** explicitly asks Core to verify an available direct HTTPS credential when its trusted binding authorizes the provider’s identity endpoint. The result is Accepted, Refused or Inconclusive. Selecting another source, hiding the inspector or refreshing clears the result and cancels pending admission. Cancel Validation also clears the pending result. An admitted synchronous check remains owned through Core’s return.
+
 ## On-device assistance
 
 Settings offers an opt-out preference and displays actual SystemLanguageModel availability on macOS 26 or later. Actions are hidden when disabled or unavailable. A selected managed skill’s public name and description can be explained or translated. A reviewed Core update can be summarized or its configuration changes explained. The change projection includes structural facts only: counts, kinds, missing-state reconstruction and access-change/binding-slot counts. It excludes native values, file contents, paths, source URLs, prompt bodies, binding names and runtime inputs.

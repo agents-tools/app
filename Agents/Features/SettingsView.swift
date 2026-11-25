@@ -23,7 +23,10 @@ struct SettingsView: View {
             .font(.caption).foregroundStyle(.secondary)
         }
         Section("Appearance") {
-          Toggle("Show inspector", isOn: Bindable(model.preferences).inspectorVisible)
+          Toggle(
+            "Show inspector",
+            isOn: Binding(
+              get: { model.preferences.inspectorVisible }, set: model.setInspectorVisible))
         }
       }
       .formStyle(.grouped)
