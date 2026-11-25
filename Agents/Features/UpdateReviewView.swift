@@ -1,4 +1,5 @@
 import AgentsCore
+import AgentsInstructions
 import AgentsUpdates
 import SwiftUI
 
@@ -20,6 +21,27 @@ struct UpdateReviewView: View {
         case .review:
           if let report = session.report {
             Form {
+              if !report.instructions.targets.isEmpty || !report.instructions.advisories.isEmpty
+                || !report.instructions.conflicts.isEmpty
+              {
+                Section("Instruction Files") {
+                  ForEach(Array(report.instructions.conflicts.enumerated()), id: \.offset) {
+                    _, conflict in
+                    Label {
+                      Text(verbatim: conflict).textSelection(.enabled)
+                    } icon: {
+                      Image(systemName: "exclamationmark.triangle")
+                    }
+                    .foregroundStyle(.red)
+                  }
+                  ForEach(report.instructions.advisories, id: \.self) { advisory in
+                    Text(verbatim: advisory).foregroundStyle(.secondary)
+                  }
+                  if !report.instructions.targets.isEmpty {
+                    InstructionFileReview(targets: report.instructions.targets)
+                  }
+                }
+              }
               UpdateReportSection(report: report, scope: session.proposal.scope)
               if model.assistanceAvailable {
                 HStack {
@@ -64,13 +86,21 @@ struct UpdateReviewView: View {
             if let diagnostic = terminal.recovery.diagnostic { Text(diagnostic) }
           }
         }
-        ForEach(
-          session.messages.filter {
-            $0.message != session.terminal?.message
-              && $0.message != session.terminal?.recovery.diagnostic
-          }
-        ) { message in
-          Text(message.message).foregroundStyle(message.severity == .error ? .red : .secondary)
+        let messages = session.messages.filter {
+          $0.message != session.terminal?.message
+            && $0.message != session.terminal?.recovery.diagnostic
+        }
+        if !messages.isEmpty {
+          ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+              ForEach(messages) { message in
+                Text(verbatim: message.message)
+                  .foregroundStyle(message.severity == .error ? .red : .secondary)
+                  .textSelection(.enabled)
+                if let path = message.path { PathView(url: URL(fileURLWithPath: path)) }
+              }
+            }.frame(maxWidth: .infinity, alignment: .leading)
+          }.defaultScrollAnchor(.top).frame(maxHeight: 180)
         }
         HStack {
           Button(model.isApplying ? "Cancel Before Apply" : session.closeTitle) {
@@ -84,7 +114,7 @@ struct UpdateReviewView: View {
           if case .review = session.stage {
             Button("Apply Changes") { model.confirmUpdate() }
               .disabled(
-                !model.canModify || !session.bindingsReady || session.report?.hasChanges != true
+                !model.canModify || !session.bindingsReady || !session.canApplyReport
               )
               .keyboardShortcut(.defaultAction)
           }
@@ -101,7 +131,9 @@ private struct UpdateReportSection: View {
   let scope: WorkspaceScope
   var body: some View {
     Section("Proposed Changes") {
-      Text(report.hasChanges ? "Review the changes below." : "No changes are needed.")
+      if !report.hasChanges && report.instructions.conflicts.isEmpty {
+        Text("No changes are needed.")
+      }
       ForEach(Array(report.skills.enumerated()), id: \.offset) { _, skill in
         DetailsGroup("Skill · " + skill.skill) {
           LabeledContent("Status", value: skill.changed ? "Changed" : "Unchanged")
@@ -118,17 +150,6 @@ private struct UpdateReportSection: View {
             LabeledContent(
               file.before == nil ? "Add" : (file.after == nil ? "Remove" : "Change"),
               value: file.path)
-          }
-        }
-      }
-      ForEach(Array(report.instructions.targets.enumerated()), id: \.offset) { _, target in
-        DetailsGroup("Instructions · " + target.target) {
-          LabeledContent("Status", value: target.changed ? "Changed" : "Unchanged")
-          LabeledContent("Location") { PathView(url: target.url, scope: scope) }
-          LabeledContent(
-            "Agents", value: target.afterAgents.map(\.displayName).joined(separator: ", "))
-          if target.foreign {
-            Label("Existing unmanaged content", systemImage: "exclamationmark.triangle")
           }
         }
       }
@@ -165,6 +186,104 @@ private struct UpdateReportSection: View {
         }
       }
     }
+  }
+}
+
+struct InstructionFileReviewRow: Identifiable {
+  let target: InstructionTargetChange
+  var id: URL { target.url }
+
+  var action: String {
+    if target.after == nil && target.afterAgents.isEmpty
+      && (target.before != nil || target.beforeAgents != nil)
+    {
+      return "Remove"
+    }
+    if target.before == nil && target.after != nil { return "Add" }
+    if target.changed { return "Update" }
+    if target.agentsChanged && target.beforeAgents != nil { return "Update recipients" }
+    return "Unchanged"
+  }
+
+  var verification: String {
+    if target.foreign { return "Conflict" }
+    switch target.drift {
+    case .clean: return "Matches lock"
+    case .missing: return "Missing"
+    case .drifted: return "Modified"
+    case nil: return "No prior lock"
+    }
+  }
+}
+
+private struct InstructionFileReview: View {
+  let targets: [InstructionTargetChange]
+  @State private var selection: URL?
+
+  var body: some View {
+    let rows = targets.map(InstructionFileReviewRow.init(target:))
+    VSplitView {
+      Table(rows, selection: $selection) {
+        TableColumn("Path") { row in
+          PathView(url: row.target.url).monospaced()
+        }
+        TableColumn("Change") { row in Text(row.action) }.width(110)
+        TableColumn("Verification") { row in
+          Text(row.verification).foregroundStyle(row.target.foreign ? .red : .primary)
+        }.width(98)
+        TableColumn("New size") { row in
+          if let count = row.target.after?.count {
+            Text("\(count.formatted()) B").monospacedDigit()
+              .accessibilityLabel("\(count.formatted()) bytes")
+          } else {
+            Text("—").foregroundStyle(.secondary)
+          }
+        }.width(74)
+      }
+      .frame(minHeight: 124, idealHeight: 158)
+      if let row = rows.first(where: { $0.id == selection }) {
+        detail(row.target).frame(minHeight: 125, idealHeight: 165)
+      }
+    }
+    .frame(height: 330)
+    .onChange(of: targets.map(\.url), initial: true) { _, paths in
+      if selection.map(paths.contains) != true { selection = paths.first }
+    }
+  }
+
+  private func detail(_ target: InstructionTargetChange) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      PathView(url: target.url).monospaced()
+      let agents = target.afterAgents.isEmpty ? (target.beforeAgents ?? []) : target.afterAgents
+      if !agents.isEmpty {
+        LabeledContent("Recipients", value: agents.map(\.displayName).joined(separator: ", "))
+      }
+      if target.foreign {
+        Label("Existing unmanaged content", systemImage: "exclamationmark.triangle")
+          .foregroundStyle(.red)
+      }
+      HSplitView {
+        fileText("Before", bytes: target.before)
+        fileText("After", bytes: target.after)
+      }
+    }.padding(8)
+  }
+
+  private func fileText(_ title: String, bytes: Data?) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(title).font(.caption).foregroundStyle(.secondary)
+      if let bytes, let text = String(data: bytes, encoding: .utf8) {
+        ScrollView {
+          Text(verbatim: text).monospaced().textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+      } else {
+        Text(bytes == nil ? "No file" : "Text unavailable").foregroundStyle(.secondary)
+        Spacer(minLength: 0)
+      }
+    }
+    .frame(minWidth: 155, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    .padding(.horizontal, 4)
   }
 }
 

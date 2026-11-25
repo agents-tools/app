@@ -41,10 +41,17 @@ struct OptionalLines: View {
 
 struct AgentsEditor: View {
   @Binding var value: [AgentID]?
+  var title = "Specify agents"
+  var allowsAntigravity = false
+
+  static func choices(allowsAntigravity: Bool) -> [AgentID] {
+    AgentID.allCases.filter { allowsAntigravity || $0 != .antigravity }
+  }
+
   var body: some View {
-    Toggle("Specify agents", isOn: Binding(get: { value != nil }, set: { value = $0 ? [] : nil }))
+    Toggle(title, isOn: Binding(get: { value != nil }, set: { value = $0 ? [] : nil }))
     if value != nil {
-      ForEach(AgentID.allCases, id: \.self) { agent in
+      ForEach(Self.choices(allowsAntigravity: allowsAntigravity), id: \.self) { agent in
         Toggle(
           agent.displayName,
           isOn: Binding(
@@ -61,13 +68,18 @@ struct AgentsEditor: View {
 
 struct ConditionEditor: View {
   @Binding var value: DeclarationCondition?
+  var agentTitle = "Specify agents"
+  var allowsAntigravity = false
+
   var body: some View {
     Toggle(
       "Specify conditions",
       isOn: Binding(get: { value != nil }, set: { value = $0 ? .init() : nil }))
     if value != nil {
       DisclosureGroup("Conditions") {
-        AgentsEditor(value: Binding(get: { value?.agents }, set: { value?.agents = $0 }))
+        AgentsEditor(
+          value: Binding(get: { value?.agents }, set: { value?.agents = $0 }),
+          title: agentTitle, allowsAntigravity: allowsAntigravity)
         Toggle(
           "Restrict scopes",
           isOn: Binding(get: { value?.scopes != nil }, set: { value?.scopes = $0 ? [] : nil }))

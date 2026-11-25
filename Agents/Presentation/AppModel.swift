@@ -332,7 +332,8 @@ final class AppModel {
 
   func confirmUpdate() {
     guard canModify, let session = updateSession, case .review = session.stage,
-      session.proposal.scope == scope, session.bindingsReady, let report = session.report
+      session.proposal.scope == scope, session.bindingsReady, session.canApplyReport,
+      let report = session.report
     else { return }
     updateSession?.stage = .applying
     let proposal = session.proposal

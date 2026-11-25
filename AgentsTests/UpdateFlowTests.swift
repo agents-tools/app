@@ -196,6 +196,138 @@ struct UpdateFlowTests {
     #expect(model.updateRecords.last?.terminal.disposition == .committed)
   }
 
+  @Test func userInstructionDraftPreviewsAppliesAndVerifiesAntigravityFiles() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let source = fixture.root.appendingPathComponent("source/instructions")
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    for name in ["shared", "antigravity-only"] {
+      try Data("---\ndescription: Fixture instruction\n---\n# \(name)\nRule body.\n".utf8)
+        .write(to: source.appendingPathComponent(name + ".md"))
+    }
+    try fixture.writeManifest(
+      """
+      version: 1
+      defaultAgents: []
+      sources: {fixture: {path: "\(source.deletingLastPathComponent().path)"}}
+      """, user: true)
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    defer { _ = model.requestTermination() }
+    model.refresh()
+    try await idle(model)
+    model.beginDraft(.component)
+    model.manifestDraft?.component.kind = .instructions
+    model.manifestDraft?.component.agents = [.codex, .geminiCLI, .antigravity]
+    model.manifestDraft?.component.instructions.sectionReferences = [
+      .init(name: "shared", source: "fixture"),
+      .init(name: "antigravity-only", source: "fixture", condition: .init(agents: [.antigravity])),
+    ]
+    let before = try fixture.entries()
+    try await reviewed(model) { model.previewDraft() }
+    let add = try #require(
+      model.updateSession?.report, "\(model.updateSession?.messages.map(\.message) ?? [])")
+    #expect(add.instructions.advisories.contains { $0.contains("20,000-token") })
+    #expect(add.instructions.conflicts.isEmpty)
+    let rules = add.instructions.targets.filter { $0.afterAgents == [.antigravity] }
+    #expect(rules.count == 2)
+    #expect(Set(rules.map(\.url)).count == 2)
+    let rulesPath = fixture.home.resolvingSymlinksInPath().path + "/.gemini/config/rules"
+    #expect(rules.allSatisfy { $0.url.deletingLastPathComponent().path == rulesPath })
+    #expect(rules.allSatisfy { InstructionFileReviewRow(target: $0).action == "Add" })
+    let codex = try #require(add.instructions.targets.first { $0.afterAgents == [.codex] })
+    #expect(codex.url.lastPathComponent == "AGENTS.md")
+    let gemini = try #require(add.instructions.targets.first { $0.afterAgents == [.geminiCLI] })
+    #expect(gemini.url.lastPathComponent == "GEMINI.md")
+    let geminiText = String(decoding: try #require(gemini.after), as: UTF8.self)
+    #expect(geminiText.contains("# shared"))
+    #expect(!geminiText.contains("# antigravity-only"))
+    #expect(try fixture.entries() == before)
+    model.confirmUpdate()
+    try await idle(model)
+    #expect(model.updateRecords.last?.terminal.disposition == .committed)
+    for rule in rules {
+      #expect(try Data(contentsOf: rule.url) == rule.after)
+      let deployment = model.snapshot?.inspection.deployments.first { $0.location == rule.url }
+      #expect(deployment?.status == .current)
+    }
+    model.closeUpdateReview()
+    try await reviewed(model) { model.previewUpdate(title: "Repeat update") }
+    let repeatReport = try #require(model.updateSession?.report)
+    #expect(!repeatReport.hasChanges)
+    let verification = repeatReport.instructions.targets.filter { $0.afterAgents == [.antigravity] }
+    #expect(verification.count == 2)
+    #expect(
+      verification.allSatisfy {
+        InstructionFileReviewRow(target: $0).verification == "Matches lock"
+      })
+
+    model.closeUpdateReview()
+    model.selectedItem = try #require(model.snapshot?.instructions.first?.id)
+    model.editSelectedDeclaration()
+    model.manifestDraft?.component.instructions.sectionReferences.removeLast()
+    try await reviewed(model) { model.previewDraft() }
+    let removal = try #require(model.updateSession?.report)
+    let removed = try #require(
+      removal.instructions.targets.first { $0.after == nil && $0.beforeAgents == [.antigravity] })
+    #expect(InstructionFileReviewRow(target: removed).action == "Remove")
+    model.confirmUpdate()
+    try await idle(model)
+    #expect(model.updateRecords.last?.terminal.disposition == .committed)
+    #expect(!FileManager.default.fileExists(atPath: removed.url.path))
+    #expect(try Data(contentsOf: codex.url) == codex.after)
+    #expect(try Data(contentsOf: gemini.url) == gemini.after)
+
+    let remaining = try #require(rules.first { $0.url != removed.url })
+    let unmanaged = Data("# Handwritten instructions\n".utf8)
+    try unmanaged.write(to: remaining.url)
+    model.closeUpdateReview()
+    try await reviewed(model) { model.previewUpdate(title: "Review conflicting file") }
+    let conflicted = try #require(model.updateSession)
+    let conflict = try #require(conflicted.report)
+    #expect(conflict.instructions.conflicts.contains { $0.contains(remaining.url.path) })
+    let conflictedTarget = try #require(
+      conflict.instructions.targets.first { $0.url == remaining.url })
+    #expect(InstructionFileReviewRow(target: conflictedTarget).verification == "Conflict")
+    #expect(!conflicted.canApplyReport)
+    model.confirmUpdate()
+    #expect(model.operations.isEmpty)
+    #expect(try Data(contentsOf: remaining.url) == unmanaged)
+  }
+
+  @Test func rejectsOversizedAntigravityRuleInAppPreview() throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let source = fixture.root.appendingPathComponent("source/instructions")
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    let instruction =
+      "---\ndescription: Large fixture\n---\n# Oversized\n"
+      + String(repeating: "é", count: 12_001) + "\n"
+    try Data(instruction.utf8).write(to: source.appendingPathComponent("oversized.md"))
+    try fixture.writeManifest(
+      """
+      version: 1
+      defaultAgents: []
+      sources: {fixture: {path: "\(source.deletingLastPathComponent().path)"}}
+      components:
+        - kind: instructions
+          agents: [antigravity]
+          sections: [{name: oversized, source: fixture}]
+      """, user: true)
+    let scope = WorkspaceScope(kind: .user, root: fixture.home)
+    let before = try fixture.entries()
+    let completion = CoreActions(home: fixture.home, processEnvironment: fixture.environment)
+      .preview(.init(id: UUID(), scope: scope, title: "Review Instructions", request: .init()))
+    #expect(completion.disposition == .failed)
+    #expect(
+      completion.diagnostics.contains {
+        $0.message.contains("oversized") && $0.message.contains("UTF-8 bytes")
+          && $0.message.contains("24000")
+      })
+    #expect(try fixture.entries() == before)
+  }
+
   @Test func discoveryIsReadOnlyAndRejectsChangedSourceBeforePreview() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

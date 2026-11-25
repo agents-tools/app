@@ -116,11 +116,7 @@ struct SourceCatalogView: View {
                     isOn: Binding(
                       get: { model.catalogSession?.selected.contains(choice.id) == true },
                       set: {
-                        if $0 {
-                          model.catalogSession?.selected.insert(choice.id)
-                        } else {
-                          model.catalogSession?.selected.remove(choice.id)
-                        }
+                        model.catalogSession?.select(choice.id, included: $0)
                       })
                   )
                   .disabled(choice.unavailableReason != nil || !strategyMatches)
@@ -202,11 +198,13 @@ struct SourceCatalogView: View {
                 if session.strategy != .native {
                   AgentsEditor(
                     value: Binding(
-                      get: { session.agents }, set: { model.catalogSession?.agents = $0 }))
+                      get: { session.agents }, set: { model.catalogSession?.agents = $0 }),
+                    allowsAntigravity: session.allowsAntigravity)
                 }
                 ConditionEditor(
                   value: Binding(
-                    get: { session.condition }, set: { model.catalogSession?.condition = $0 }))
+                    get: { session.condition }, set: { model.catalogSession?.condition = $0 }),
+                  allowsAntigravity: session.allowsAntigravity)
                 if catalog.availableChoices.contains(where: {
                   if case .skill = $0.unit { true } else { false }
                 }) {

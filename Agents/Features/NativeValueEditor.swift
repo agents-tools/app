@@ -139,7 +139,9 @@ struct NativeConfigurationEditor: View {
       }
     }
     Picker("Client", selection: $client) {
-      ForEach(AgentID.allCases, id: \.self) { Text($0.displayName).tag($0) }
+      ForEach(AgentsEditor.choices(allowsAntigravity: false), id: \.self) {
+        Text($0.displayName).tag($0)
+      }
     }
     Button("Add Client Options") { values[client.rawValue] = [:] }.disabled(
       values[client.rawValue] != nil)

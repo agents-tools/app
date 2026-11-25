@@ -3,8 +3,12 @@ import SwiftUI
 
 struct ComponentDraftEditor: View {
   @Binding var value: ComponentDraft
+  let scope: InstallScope
+
+  private var allowsAntigravity: Bool { scope == .user && value.kind == .instructions }
+
   var body: some View {
-    Picker("Component", selection: $value.kind) {
+    Picker("Component", selection: Binding(get: { value.kind }, set: selectKind)) {
       ForEach(DeclaredComponentKind.allCases, id: \.self) {
         Text(DeclarationLabels.kind($0.rawValue)).tag($0)
       }
@@ -14,7 +18,15 @@ struct ComponentDraftEditor: View {
     case .skills:
       TextField("Source alias", text: $value.source)
       SkillDraftEditor(value: $value.skills)
-    case .instructions: InstructionDraftEditor(value: $value.instructions)
+    case .instructions:
+      if allowsAntigravity {
+        Section("Installation Targets") {
+          AgentsEditor(
+            value: $value.agents, title: "Specify targets", allowsAntigravity: true)
+        }
+      }
+      InstructionDraftEditor(
+        value: $value.instructions, allowsAntigravity: allowsAntigravity)
     case .mcpServer: TransportEditor(value: $value.transport)
     case .hook:
       HookEventEditor(value: $value.event)
@@ -84,11 +96,19 @@ struct ComponentDraftEditor: View {
       }
       ComponentReferencesEditor(values: $value.pluginExclusions)
     }
-    DisclosureGroup("Agents and Conditions") {
-      AgentsEditor(value: $value.agents)
-      ConditionEditor(value: $value.condition)
+    DisclosureGroup(allowsAntigravity ? "Installation Conditions" : "Agents and Conditions") {
+      if !allowsAntigravity { AgentsEditor(value: $value.agents) }
+      ConditionEditor(value: $value.condition, allowsAntigravity: allowsAntigravity)
     }
     DisclosureGroup("Client Options") { NativeConfigurationEditor(values: $value.native) }
+  }
+
+  private func selectKind(_ kind: DeclaredComponentKind) {
+    value.kind = kind
+    if kind != .instructions {
+      value.agents?.removeAll { $0 == .antigravity }
+      value.condition?.agents?.removeAll { $0 == .antigravity }
+    }
   }
 }
 

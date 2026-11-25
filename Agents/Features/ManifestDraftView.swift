@@ -60,7 +60,7 @@ struct ManifestDraftView: View {
                   model.manifestDraft?.sourcePath = $0.path
                 }))
           case .component:
-            ComponentDraftEditor(value: binding(\.component))
+            ComponentDraftEditor(value: binding(\.component), scope: draft.scope.installScope)
             if draft.replacingNode == nil, let document = draft.document {
               Picker("Container", selection: binding(\.destinationGroup)) {
                 Text("Scope").tag(nil as NodeID?)
@@ -76,12 +76,13 @@ struct ManifestDraftView: View {
               DraftRows(values: binding(\.groupComponents)) { row, actions in
                 ComponentDraftEditor(
                   value: Binding(
-                    get: { ComponentDraft(row.wrappedValue) }, set: { row.wrappedValue = $0.value })
+                    get: { ComponentDraft(row.wrappedValue) }, set: { row.wrappedValue = $0.value }),
+                  scope: draft.scope.installScope
                 )
                 DraftRowButtons(actions: actions)
               }
               DisclosureGroup("Add Component") {
-                ComponentDraftEditor(value: $groupChild)
+                ComponentDraftEditor(value: $groupChild, scope: draft.scope.installScope)
                 Button("Add to Group") {
                   model.manifestDraft?.groupComponents.append(groupChild.value)
                 }

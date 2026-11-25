@@ -58,6 +58,10 @@ struct UpdateSession: Identifiable {
     }
   }
   var bindingsReady: Bool { requiredBindings.allSatisfy { bindingInputs[$0] != nil } }
+  var canApplyReport: Bool {
+    guard let report else { return false }
+    return report.hasChanges && report.instructions.conflicts.isEmpty
+  }
 }
 
 struct UpdateRecord: Identifiable {

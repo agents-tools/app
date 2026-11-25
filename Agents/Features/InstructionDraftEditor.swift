@@ -3,12 +3,17 @@ import SwiftUI
 
 struct SectionsEditor: View {
   @Binding var values: [SectionDeclaration]
+  var allowsAntigravity = false
+
   var body: some View {
     DraftRows(values: $values) { row, actions in
       DisclosureGroup(row.wrappedValue.name.isEmpty ? "New Section" : row.wrappedValue.reference) {
         TextField("Name", text: row.name)
         OptionalText(title: "source", value: row.source)
-        ConditionEditor(value: row.condition)
+        ConditionEditor(
+          value: row.condition,
+          agentTitle: allowsAntigravity ? "Restrict recipients" : "Specify agents",
+          allowsAntigravity: allowsAntigravity)
         DraftRowButtons(actions: actions)
       }
     }
@@ -18,8 +23,16 @@ struct SectionsEditor: View {
 
 struct InstructionDraftEditor: View {
   @Binding var value: InstructionsDeclaration
+  let allowsAntigravity: Bool
+
   var body: some View {
-    DisclosureGroup("Ordered Sections") { SectionsEditor(values: $value.sectionReferences) }
+    DisclosureGroup("Ordered Sections") {
+      if allowsAntigravity {
+        Text("Use a section’s conditions to restrict which installation targets receive it.")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      SectionsEditor(values: $value.sectionReferences, allowsAntigravity: allowsAntigravity)
+    }
     DisclosureGroup("Named Prompts") {
       DraftRows(values: $value.prompts) { row, actions in
         DisclosureGroup(row.wrappedValue.name.isEmpty ? "New Prompt" : row.wrappedValue.name) {

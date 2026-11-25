@@ -41,6 +41,30 @@ struct CatalogSession: Identifiable, Sendable {
     selected = []
     inputs = [:]
     strategy = nil
+    removeUnavailableAntigravity()
+  }
+
+  var allowsAntigravity: Bool {
+    guard scope.kind == .user, !importing, !selected.isEmpty, let catalog else { return false }
+    return catalog.availableChoices.filter { selected.contains($0.id) }.allSatisfy {
+      if case .instruction = $0.unit { return true }
+      return false
+    }
+  }
+
+  mutating func select(_ id: SourceCatalogChoiceID, included: Bool) {
+    if included {
+      selected.insert(id)
+    } else {
+      selected.remove(id)
+    }
+    removeUnavailableAntigravity()
+  }
+
+  private mutating func removeUnavailableAntigravity() {
+    guard !allowsAntigravity else { return }
+    agents?.removeAll { $0 == .antigravity }
+    condition?.agents?.removeAll { $0 == .antigravity }
   }
 
   mutating func capture(_ value: SourceCatalogInspection) {

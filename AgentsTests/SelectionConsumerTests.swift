@@ -9,6 +9,50 @@ import Testing
 @MainActor
 struct SelectionConsumerTests {
   @Test(arguments: [false, true])
+  func userInstructionCatalogSelectionPreviewsAntigravityRules(expandsReference: Bool) throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let producer = fixture.root.appendingPathComponent("producer")
+    let ruleText = "Use the shared format.\n"
+    let input = expandsReference ? "@[Details](../support/details.txt)\n" : ruleText
+    try write(
+      "---\ndescription: Team style\n---\n# Team\n" + input,
+      at: producer.appendingPathComponent("instructions/style.md"))
+    if expandsReference {
+      try write(ruleText, at: producer.appendingPathComponent("support/details.txt"))
+    }
+    let scope = WorkspaceScope(kind: .user, root: fixture.home)
+    let actions = CoreActions(home: fixture.home, processEnvironment: fixture.environment)
+    var session = CatalogSession(scope: scope, alias: "team")
+    session.setSource(.init(kind: .local, location: producer.path))
+    let inspection = actions.inspectCatalog(session)
+    guard case .catalog(_, let catalog) = inspection.output else {
+      Issue.record("Source inspection failed: \(inspection.diagnostics.map(\.message))")
+      return
+    }
+    session.capture(catalog)
+    #expect(!session.allowsAntigravity)
+    let unit = try #require(
+      catalog.availableChoices.first { if case .instruction = $0.unit { true } else { false } })
+    session.select(unit.id, included: true)
+    #expect(session.allowsAntigravity)
+    session.agents = [.antigravity]
+    let selection = actions.selectCatalog(session)
+    guard case .catalogRequest(_, let request?) = selection.output else {
+      Issue.record("Source selection failed: \(selection.diagnostics.map(\.message))")
+      return
+    }
+    let review = actions.preview(
+      .init(id: UUID(), scope: scope, title: "Add rules", request: request))
+    guard case .updatePreview(_, let report) = review.output else {
+      Issue.record("Source preview failed: \(review.diagnostics.map(\.message))")
+      return
+    }
+    let rule = try #require(report.instructions.targets.first { $0.afterAgents == [.antigravity] })
+    #expect(String(decoding: try #require(rule.after), as: UTF8.self).contains(ruleText))
+  }
+
+  @Test(arguments: [false, true])
   func declaredSkillIndexExitsImportModeAndDiscardsCapturedSelection(populated: Bool) throws {
     let f = try TestFixture()
     defer { try? f.remove() }

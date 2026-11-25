@@ -1,3 +1,4 @@
+import AgentsUpdates
 import AppKit
 import SwiftUI
 
@@ -48,6 +49,22 @@ struct InstructionsView: View {
             }
           } else {
             Text("Local instructions are unavailable. See Diagnostics.").foregroundStyle(.secondary)
+          }
+        }
+      }
+      let rules = snapshot.inspection.deployments.filter { $0.recipients == [.antigravity] }
+      if !rules.isEmpty {
+        Section("Installed Antigravity Rules") {
+          ForEach(rules, id: \.identity) { rule in
+            LabeledContent {
+              Text(rule.status == .current ? "Verified" : rule.status.rawValue.capitalized)
+                .foregroundStyle(rule.status == .current ? .secondary : .primary)
+            } label: {
+              PathView(url: rule.location, scope: snapshot.scope)
+            }
+            if let diagnostic = rule.diagnostic {
+              Text(verbatim: diagnostic).foregroundStyle(.secondary)
+            }
           }
         }
       }
