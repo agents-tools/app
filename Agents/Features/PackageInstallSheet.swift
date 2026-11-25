@@ -4,6 +4,7 @@ import AppKit
 import SwiftUI
 
 struct PackageInstallSheet: View {
+  let model: AppModel
   let scope: WorkspaceScope
   let environment: RuntimeEnvironment
   let review: (UpdateProposal) -> Void
@@ -20,7 +21,7 @@ struct PackageInstallSheet: View {
   @State private var installedGraph: MarketplaceGraph?
   @State private var hasDeclaredPackages = false
   @State private var pendingDeployment: MarketplacePendingDeployment?
-  @State private var lockReview: MarketplaceLockPreview?
+  @State private var lockReview: LifecyclePackageReview<MarketplaceLockPreview, MarketplaceLockReport>?
   @State private var savingLock = false
   @State private var query = ""
   @State private var selected: MarketplaceCoordinate?
@@ -43,6 +44,10 @@ struct PackageInstallSheet: View {
   @State private var busy = false
   @State private var errorText: String?
 
+  private var replacesBundlePin: Bool {
+    verified != nil && pins.contains { $0.dependency.name == alias }
+  }
+
   var body: some View {
     VStack(alignment: .leading, spacing: 12) {
       HStack {
@@ -58,7 +63,9 @@ struct PackageInstallSheet: View {
           if hasDeclaredPackages || installedGraph != nil || pendingDeployment != nil {
             Button("Review Declared Package Lock…") {
               runWithMarketAccess { access in
-                try MarketplaceOperations.previewLockOnly(.reconcile, scope: scope.installScope, environment: environment, hostedAccess: access)
+                try MarketplaceOperations.previewLockOnlyLifecycle(
+                  .reconcile, intent: .update, scope: scope.installScope,
+                  environment: environment, hostedAccess: access)
               } receive: { preview in
                 lockReview = preview
                 savingLock = true
@@ -116,7 +123,8 @@ struct PackageInstallSheet: View {
                   review(
                     UpdateProposal(
                       id: UUID(), scope: scope, title: "Remove " + pin.dependency.name,
-                      request: MarketplaceOperations.removalRequest(for: pin.dependency.name)))
+                      request: MarketplaceOperations.removalRequest(for: pin.dependency.name),
+                      intent: .uninstall))
                 }
               }
             }
@@ -130,14 +138,15 @@ struct PackageInstallSheet: View {
           Spacer()
           Button("Review Offline Deployment…") {
             run {
-              try MarketplaceOperations.previewFrozenDeployment(scope: scope.installScope, environment: environment)
+              try MarketplaceOperations.previewFrozenLifecycle(
+                intent: .install, scope: scope.installScope, environment: environment)
             } receive: { preview in
               if let conflict = preview.ownershipConflict {
                 errorText = conflict
               } else {
                 review(UpdateProposal(
-                  id: UUID(), scope: scope, title: "Deploy Locked Packages",
-                  request: MarketplaceOperations.frozenDeploymentRequest()))
+                  scope: scope, title: "Deploy Locked Packages",
+                  packageReview: .init(preview, scope: scope, report: \.self)))
               }
             }
           }
@@ -231,7 +240,7 @@ struct PackageInstallSheet: View {
             prepareGraph(graphDraft)
           }.disabled(pendingDeployment != nil || !graphDraft.canReview(in: scope.installScope))
         } else if let bundle {
-          Button(updatingPin == nil ? "Review Installation…" : "Review Update…") { prepare() }
+          Button(replacesBundlePin ? "Review Update…" : "Review Installation…") { prepare() }
             .disabled(
               bundle.package.dependencies != nil || targets.values.allSatisfy(\.isEmpty)
                 || (verified != nil && alias.isEmpty))
@@ -280,9 +289,8 @@ struct PackageInstallSheet: View {
     }
     .sheet(isPresented: $savingLock, onDismiss: { lockReview = nil }) {
       if let lockReview {
-        MarketplaceLockReview(preview: lockReview) { saved in
+        MarketplaceLockReview(model: model, scope: scope, review: lockReview) { saved in
           pendingDeployment = saved.pendingDeployment
-          savingLock = false
           clearPackage()
         }
       }
@@ -538,16 +546,19 @@ struct PackageInstallSheet: View {
     runWithMarketAccess { access in
       try draft.preview(scope: scope.installScope, environment: environment, hostedAccess: access)
     } receive: { preview in
-      review(UpdateProposal(scope: scope, title: draft.title, marketplace: preview))
+      review(UpdateProposal(
+        scope: scope, title: draft.title, packageReview: .init(preview, scope: scope, report: \.report)))
     }
   }
 
   private func reviewRemoval(_ name: String) {
     runWithMarketAccess { access in
-      try MarketplaceOperations.previewResolution(
-        .remove(name), scope: scope.installScope, environment: environment, hostedAccess: access)
+      try MarketplaceOperations.previewResolutionLifecycle(
+        .remove(name), intent: .uninstall, scope: scope.installScope, environment: environment,
+        hostedAccess: access)
     } receive: { preview in
-      review(UpdateProposal(scope: scope, title: "Remove " + name, marketplace: preview))
+      review(UpdateProposal(
+        scope: scope, title: "Remove " + name, packageReview: .init(preview, scope: scope, report: \.report)))
     }
   }
 
@@ -555,6 +566,8 @@ struct PackageInstallSheet: View {
     guard let bundle else { return }
     let package = verified
     let name = alias
+    let replacing = replacesBundlePin
+    let intent: LifecycleOperationIntent = replacing ? .update : .install
     let selections = bundle.components.compactMap { item -> BundleImportSelection? in
       guard let choices = targets[item.id], !choices.isEmpty else { return nil }
       return BundleImportSelection(
@@ -562,16 +575,27 @@ struct PackageInstallSheet: View {
     }
     run {
       if let package {
-        return try package.previewImport(
-          as: name, selections: selections, scope: scope.installScope, environment: environment)
+        return try package.previewImportLifecycle(
+          as: name, selections: selections, intent: intent, scope: scope.installScope,
+          environment: environment)
       }
-      return try BundleOperations.previewImport(
-        bundle, selections: selections, scope: scope.installScope, environment: environment)
+      return try BundleOperations.previewImportLifecycle(
+        bundle, selections: selections, intent: intent, scope: scope.installScope,
+        environment: environment)
     } receive: { preview in
       if let conflict = preview.ownershipConflict {
         errorText = conflict
       } else {
-        review(UpdateProposal(scope: scope, bundle: preview))
+        let changes = preview.report.report.marketplaceChanges ?? []
+        let replacesInstalledPackage = changes.contains { $0.before != nil && $0.after != nil }
+        guard package == nil || replacing == replacesInstalledPackage || changes.isEmpty else {
+          errorText = "The installed package changed. Reopen Packages and review it again."
+          return
+        }
+        let title = (replacing ? "Update " : "Install ") + bundle.package.name + " "
+          + bundle.package.version
+        review(UpdateProposal(
+          scope: scope, title: title, packageReview: .init(preview, scope: scope, report: \.report)))
       }
     }
   }

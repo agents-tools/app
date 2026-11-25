@@ -77,6 +77,10 @@ enum ContentOutput: Sendable {
   case prompt(PromptRequest, String)
   case discovery(UUID, ComponentDiscovery)
   case updatePreview(UUID, CombinedUpdateReport)
+  case packageUpdatePreview(UUID, PackageUpdateReview)
+  case packageLock(MarketplaceLockReport)
+  case packageActionResults([LifecycleActionResult])
+  case packageActionSave(LifecycleSaveResult)
   case existingConfigurationAvailable
   case existingConfigurationPreview(ExistingConfigurationReview)
   case mappings(UUID, [MappingItem])

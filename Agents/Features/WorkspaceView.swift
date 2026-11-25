@@ -6,6 +6,7 @@ import SwiftUI
 struct WorkspaceView: View {
   @Bindable var model: AppModel
   @State private var pendingReview: UpdateProposal?
+  @State private var packageActionScope: WorkspaceScope?
 
   var body: some View {
     NavigationSplitView {
@@ -72,6 +73,11 @@ struct WorkspaceView: View {
                 .help("Read configuration again")
             }
             ToolbarItem {
+              Button("Package Actions…", systemImage: "play.circle") {
+                packageActionScope = model.scope
+              }.disabled(model.isTerminating || model.isApplying)
+            }
+            ToolbarItem {
               Button("Inspector", systemImage: "sidebar.right") {
                 model.preferences.inspectorVisible.toggle()
               }
@@ -100,6 +106,9 @@ struct WorkspaceView: View {
     .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
     .sheet(item: $model.importSession) { _ in ImportView(model: model) }
     .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
+    .sheet(item: $packageActionScope) { scope in
+      PackageActionsSheet(model: model, scope: scope, environment: model.actions.environment(for: scope))
+    }
     .sheet(
       item: Binding(
         get: { model.existingConfigurationSession },
@@ -132,7 +141,7 @@ struct WorkspaceView: View {
       }
     ) { scope in
       PackageInstallSheet(
-        scope: scope, environment: model.actions.environment(for: scope)
+        model: model, scope: scope, environment: model.actions.environment(for: scope)
       ) { proposal in
         pendingReview = proposal
         model.packageScope = nil

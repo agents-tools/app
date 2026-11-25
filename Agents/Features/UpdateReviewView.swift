@@ -46,6 +46,9 @@ struct UpdateReviewView: View {
                 }
               }
               UpdateReportSection(report: report, scope: session.proposal.scope)
+              if let review = session.packageReview {
+                PackageActionPreview(inspection: review.lifecycle).id(session.id)
+              }
               if model.assistanceAvailable {
                 HStack {
                   Button("Summarize Update…") {
@@ -89,6 +92,9 @@ struct UpdateReviewView: View {
             if let diagnostic = terminal.recovery.diagnostic { Text(diagnostic) }
           }
         }
+        if let terminal = session.terminal {
+          PackageActionResults(results: terminal.packageActions)
+        }
         let messages = session.messages.filter {
           $0.message != session.terminal?.message
             && $0.message != session.terminal?.recovery.diagnostic
@@ -106,7 +112,7 @@ struct UpdateReviewView: View {
           }.defaultScrollAnchor(.top).frame(maxHeight: 180)
         }
         HStack {
-          Button(model.isApplying ? "Cancel Before Apply" : session.closeTitle) {
+          Button(model.isApplying ? session.applyingCancelTitle : session.closeTitle) {
             if model.isApplying {
               model.cancelQueuedOperations()
             } else {
@@ -115,7 +121,9 @@ struct UpdateReviewView: View {
           }.keyboardShortcut(.cancelAction)
           Spacer()
           if case .review = session.stage {
-            Button("Apply Changes") { model.confirmUpdate() }
+            Button(session.report?.hasChanges == false ? "Run Package Actions" : "Apply Changes") {
+              model.confirmUpdate()
+            }
               .disabled(
                 !model.canModify || !session.bindingsReady || !session.canApplyReport
               )
@@ -320,7 +328,9 @@ struct ChangesView: View {
     Form {
       Section("Configuration") {
         Button("Edit Configuration…") { model.beginDraft(.defaults) }
-        Button("Preview Full Update…") { model.previewUpdate(title: "Update Configuration") }
+        Button("Preview Full Update…") {
+          model.previewUpdate(title: "Update Configuration", intent: .update)
+        }
         Button("Preview Restore…") {
           model.previewUpdate(title: "Restore Managed Outputs", request: .init(operation: .restore))
         }

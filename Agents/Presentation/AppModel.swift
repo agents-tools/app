@@ -31,6 +31,8 @@ final class AppModel {
     case discovery(UUID)
     case preview(UUID)
     case apply(UUID)
+    case packageActionTest
+    case packageActionWrite
     case existingConfigurationPreview(UUID)
     case existingConfigurationApply(UUID)
     case mappings(UUID)
@@ -115,7 +117,7 @@ final class AppModel {
     operations.values.contains {
       switch $0.purpose {
       case .apply, .existingConfigurationApply, .creation, .watchApply, .watchSeen,
-        .clientRestoreWrite:
+        .clientRestoreWrite, .packageActionTest, .packageActionWrite:
         return true
       default: return false
       }
@@ -213,7 +215,11 @@ final class AppModel {
     for operation in operations.values where operation.title == "Read configuration" {
       operation.admission.cancel()
     }
-    if case .review = updateSession?.stage { updateSession?.stage = .stale }
+    if case .review = updateSession?.stage {
+      updateSession?.stage = .stale
+      updateSession?.packageReview = nil
+      updateSession?.bindingInputs = [:]
+    }
     generation = UUID()
     readsStale = true
     if snapshot?.scope != scope { loadState = .loading }
@@ -234,18 +240,59 @@ final class AppModel {
     purpose: OperationPurpose = .other, admission: OperationAdmission? = nil,
     work: @escaping @Sendable () -> CoreCompletion
   ) -> UUID? {
+    guard let operation = registerOperation(
+      title: title, scope: scope, generation: generation ?? self.generation,
+      purpose: purpose, admission: admission ?? OperationAdmission())
+    else { return nil }
+    executor.submit(admission: operation.admission, work: work) { result in
+      Task { @MainActor [self] in finish(operation.id, result: result) }
+    }
+    return operation.id
+  }
+
+  @discardableResult
+  func startPackageActionEffect(
+    title: String, scope: WorkspaceScope, writes: Bool,
+    work: @escaping @Sendable () async -> CoreCompletion,
+    receive: @escaping @MainActor (CoreCompletion) -> Void
+  ) -> Bool {
+    guard !isApplying, self.scope == scope else { return false }
+    return startAsyncOperation(
+      title: title, scope: scope, purpose: writes ? .packageActionWrite : .packageActionTest,
+      work: work, receive: receive)
+  }
+
+  @discardableResult
+  private func startAsyncOperation(
+    title: String, scope: WorkspaceScope, purpose: OperationPurpose,
+    work: @escaping @Sendable () async -> CoreCompletion,
+    receive: @escaping @MainActor (CoreCompletion) -> Void = { _ in }
+  ) -> Bool {
+    guard let operation = registerOperation(
+      title: title, scope: scope, generation: generation, purpose: purpose,
+      admission: OperationAdmission())
+    else { return false }
+    executor.submitAsync(admission: operation.admission, work: work) { result in
+      Task { @MainActor [self] in
+        finish(operation.id, result: result)
+        if !isTerminating { receive(result) }
+      }
+    }
+    return true
+  }
+
+  private func registerOperation(
+    title: String, scope: WorkspaceScope, generation: UUID,
+    purpose: OperationPurpose, admission: OperationAdmission
+  ) -> ActiveOperation? {
     guard !isTerminating else { return nil }
     let id = UUID()
     operationSequence += 1
     let operation = ActiveOperation(
       id: id, scope: scope, selectionScope: self.scope, purpose: purpose,
-      generation: generation ?? self.generation, sequence: operationSequence,
-      title: title, admission: admission ?? OperationAdmission())
+      generation: generation, sequence: operationSequence, title: title, admission: admission)
     operations[id] = operation
-    executor.submit(admission: operation.admission, work: work) { result in
-      Task { @MainActor [self] in finish(id, result: result) }
-    }
-    return id
+    return operation
   }
 
   func beginCreation(_ kind: CreationRequest.Kind) {
@@ -348,9 +395,12 @@ final class AppModel {
     previewUpdate(title: "Edit Configuration", request: draft.updateRequest(home: home))
   }
 
-  func previewUpdate(title: String, request: UpdateRequest = UpdateRequest()) {
+  func previewUpdate(
+    title: String, request: UpdateRequest = UpdateRequest(), intent: LifecycleOperationIntent? = nil
+  ) {
     guard canModify else { return }
-    previewUpdate(UpdateProposal(id: UUID(), scope: scope, title: title, request: request))
+    previewUpdate(UpdateProposal(
+      id: UUID(), scope: scope, title: title, request: request, intent: intent))
   }
 
   func previewUpdate(_ proposal: UpdateProposal) {
@@ -371,9 +421,16 @@ final class AppModel {
     updateSession?.stage = .applying
     let proposal = session.proposal
     let actions = actions
-    let admission = OperationAdmission()
     let bindings = session.bindingInputs.mapValues { Data($0.utf8) }
     updateSession?.bindingInputs = [:]
+    if let review = session.packageReview {
+      updateSession?.packageReview = nil
+      startAsyncOperation(title: proposal.title, scope: proposal.scope, purpose: .apply(proposal.id)) {
+        await review.apply(proposal.title, EphemeralBindings(values: bindings))
+      }
+      return
+    }
+    let admission = OperationAdmission()
     startOperation(
       title: proposal.title, scope: proposal.scope, purpose: .apply(proposal.id),
       admission: admission
@@ -575,8 +632,12 @@ final class AppModel {
       }
     case .preview(let id) where updateSession?.id == id:
       updateSession?.messages = result.diagnostics
-      if !currentSelection {
+      if !currentSelection || updateSession?.stage == .stale {
         updateSession?.stage = .stale
+      } else if case .packageUpdatePreview(_, let review) = result.output {
+        updateSession?.report = review.report
+        updateSession?.packageReview = review
+        updateSession?.stage = .review
       } else if case .updatePreview(_, let report) = result.output {
         updateSession?.report = report
         updateSession?.stage = .review
@@ -729,6 +790,7 @@ final class AppModel {
     invalidateExistingConfigurationIfChanged()
     if let session = updateSession, session.stage == .review || session.stage == .preparing {
       updateSession?.stage = .stale
+      updateSession?.packageReview = nil
       updateSession?.bindingInputs = [:]
     }
     guard !isApplying, !refreshScheduled else { return }
@@ -830,7 +892,7 @@ final class AppModel {
     if !isTerminating && currentSelection {
       switch operation.purpose {
       case .apply, .existingConfigurationApply, .creation, .watchApply, .watchSeen,
-        .clientRestoreWrite:
+        .clientRestoreWrite, .packageActionWrite:
         refresh()
       default: break
       }

@@ -8,33 +8,56 @@ struct UpdateProposal: Sendable {
   let title: String
   enum Contents: Sendable {
     case update(UpdateRequest)
-    case bundle(BundleImportPreview)
-    case marketplace(MarketplaceResolutionPreview)
+    case packageRequest(UpdateRequest, LifecycleOperationIntent)
+    case instructionCompilation
+    case packageReview(PackageUpdateReview)
   }
   let contents: Contents
 
-  init(id: UUID, scope: WorkspaceScope, title: String, request: UpdateRequest) {
+  init(
+    id: UUID, scope: WorkspaceScope, title: String, request: UpdateRequest,
+    intent: LifecycleOperationIntent? = nil
+  ) {
     self.id = id
     self.scope = scope
     self.title = title
-    contents = .update(request)
+    contents = intent.map { .packageRequest(request, $0) } ?? .update(request)
   }
 
-  init(scope: WorkspaceScope, bundle: BundleImportPreview) {
+  init(compilingInstructionsIn scope: WorkspaceScope) {
     id = UUID()
     self.scope = scope
-    let replacing =
-      bundle.report.marketplaceChanges?.contains { $0.before != nil && $0.after != nil } == true
-    title =
-      (replacing ? "Update " : "Install ") + bundle.package.name + " " + bundle.package.version
-    contents = .bundle(bundle)
+    title = "Compile Instructions"
+    contents = .instructionCompilation
   }
 
-  init(scope: WorkspaceScope, title: String, marketplace: MarketplaceResolutionPreview) {
+  init(scope: WorkspaceScope, title: String, packageReview: PackageUpdateReview) {
     id = UUID()
     self.scope = scope
     self.title = title
-    contents = .marketplace(marketplace)
+    contents = .packageReview(packageReview)
+  }
+
+}
+
+struct PackageUpdateReview: Sendable {
+  let scope: WorkspaceScope
+  let report: CombinedUpdateReport
+  let lifecycle: LifecycleInspection
+  let ownershipConflict: String?
+  let apply: @Sendable (String, EphemeralBindings) async -> CoreCompletion
+
+  init<Report: Sendable>(
+    _ review: LifecyclePackageReview<Report, UpdateApplyResult>,
+    scope: WorkspaceScope, report: KeyPath<Report, CombinedUpdateReport>
+  ) {
+    self.scope = scope
+    self.report = review.report[keyPath: report]
+    lifecycle = review.lifecycle
+    ownershipConflict = review.ownershipConflict
+    apply = { title, bindings in
+      await CoreActions.performPackage(review, scope: scope, title: title, bindings: bindings)
+    }
   }
 }
 
@@ -44,6 +67,7 @@ struct UpdateTerminal: Sendable {
   let recovery: RecoveryInspection
   let succeeded: Bool
   let cancelledBeforeApply: Bool
+  var packageActions: [LifecycleActionResult] = []
 
   var message: String {
     if recoveredBeforePreparation {
@@ -63,7 +87,9 @@ struct UpdateTerminal: Sendable {
     case .unchanged:
       return cancelledBeforeApply
         ? "Cancelled before apply. No new changes were applied."
-        : "This operation did not commit changes."
+        : succeeded && !packageActions.isEmpty
+          ? "Finished. No package changes were needed."
+          : "This operation did not commit changes."
     }
   }
 }
@@ -74,6 +100,7 @@ struct UpdateSession: Identifiable {
   var id: UUID { proposal.id }
   var stage: Stage = .preparing
   var report: CombinedUpdateReport?
+  var packageReview: PackageUpdateReview?
   var terminal: UpdateTerminal?
   var messages: [AppDiagnostic] = []
   var bindingInputs: [String: String] = [:]
@@ -87,10 +114,21 @@ struct UpdateSession: Identifiable {
     }
   }
   var bindingsReady: Bool { requiredBindings.allSatisfy { bindingInputs[$0] != nil } }
+  var applyingCancelTitle: String {
+    switch proposal.contents {
+    case .packageRequest, .instructionCompilation, .packageReview: "Cancel Operation"
+    default: "Cancel Before Apply"
+    }
+  }
   var canApplyReport: Bool {
     guard let report else { return false }
-    return report.hasChanges && report.instructions.conflicts.isEmpty
+    return report.instructions.conflicts.isEmpty
+      && (report.hasChanges || packageReview?.lifecycle.hasRunnableActions == true)
   }
+}
+
+extension LifecycleInspection {
+  var hasRunnableActions: Bool { actions.contains { $0.withheld == nil } }
 }
 
 struct UpdateRecord: Identifiable {

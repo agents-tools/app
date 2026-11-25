@@ -31,6 +31,47 @@ private final class WorkerGate: @unchecked Sendable {
 @Suite("Application operation ownership", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct OperationLifetimeTests {
+  @Test func quitCancelsPackageWorkAndWaitsForItsAsyncCleanup() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    let gate = WorkerGate()
+    defer {
+      gate.releaseRecovery()
+      gate.releaseCleanup()
+    }
+    var phases = gate.events.makeAsyncIterator()
+    let (replies, reply) = AsyncStream.makeStream(of: Bool.self)
+    model.terminationReply = { reply.yield($0) }
+    let started = model.startPackageActionEffect(
+      title: "Test Package Actions", scope: model.scope, writes: false
+    ) {
+      gate.waitInRecovery()
+      guard Task.isCancelled else { return CoreCompletion(disposition: .failed) }
+      gate.waitInCleanup()
+      return .cancelled
+    } receive: { _ in Issue.record("An operation result was presented during termination.") }
+    #expect(started)
+    #expect(await phases.next() == "recovery")
+    #expect(model.isApplying)
+    model.startOperation(title: "Queued read", scope: model.scope) {
+      gate.recordExecution()
+      return CoreCompletion(disposition: .completed)
+    }
+    #expect(model.requestTermination() == .later)
+    gate.releaseRecovery()
+    #expect(await phases.next() == "cleanup")
+    #expect(model.isApplying)
+    #expect(gate.executions == 0)
+    gate.releaseCleanup()
+    var termination = replies.makeAsyncIterator()
+    #expect(await termination.next() == true)
+    #expect(model.operations.isEmpty)
+    #expect(gate.executions == 0)
+  }
+
   @Test func quitWaitsForPreCallbackRecoveryAndOuterCleanupAndCancelsQueuedWork() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
