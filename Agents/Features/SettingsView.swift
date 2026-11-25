@@ -40,6 +40,9 @@ struct SettingsView: View {
       ClientSettingsView(model: model)
         .tabItem { Label("Agent Clients", systemImage: "desktopcomputer") }
 
+      SourceAccessSettingsView(model: model)
+        .tabItem { Label("Source Access", systemImage: "lock.shield") }
+
       Form {
         Section("On-device Assistance") {
           Toggle(

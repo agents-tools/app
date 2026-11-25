@@ -30,6 +30,12 @@ Detection never invokes clients or version commands. Core owns command candidate
 
 Settings → Cache shows the location and size of the shared Git, HTTP and deployed-file caches. Prune selects Git groups by age. Clean selects entries in all three stores. Review the selected entries and their sizes before confirming removal. The result shows the space reclaimed and identifies entries that were skipped or failed.
 
+## Source Access settings
+
+Open **Settings → Source Access** to edit the operator’s YAML profile. The tab shows its location and the saved network mode, provider registrations, mirrors and credential references. The profile applies to both user and project operations. Credential references name environment variables supplied to the App.
+
+Use **Validate and Preview** to review the profile before saving. A malformed file in an operator-controlled location opens for repair. If the file changes while you edit, the App keeps the draft and asks you to reload. **Reset Profile** removes the saved profile after confirmation and restores direct access defaults. Saving or resetting refreshes the workspace and clears any current source validation.
+
 ## Client backups
 
 Backups is available from the sidebar regardless of the workspace’s selected scope or read status. Back Up captures the selected clients, optional registered projects and output folder. Core’s `ClientBackups.create` runs once per client on the app’s serial worker. The form reports each actual package path or individual failure. An empty project selection still includes local sessions and user configuration. Backup packages can include credentials already stored in the backed-up files.

@@ -122,6 +122,7 @@ extension SourceAccessIssue {
     case .policyUnreadable: "The effective source policy could not be read."
     case .policyDenied: "The effective source policy blocks this route."
     case .access(let error): error.errorDescription ?? "Source access could not be inspected."
+    case .settings(let error): error.localizedDescription
     case .unsupportedAlias: "Source access requires an alias without surrounding whitespace."
     case .unavailable: "Source access could not be determined. Refresh to inspect it again."
     }

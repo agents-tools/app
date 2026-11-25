@@ -25,6 +25,7 @@ final class AppModel {
     case catalogSelection(UUID)
     case sourceAccessInspection(SourceAccessSelection.ID)
     case sourceAccessValidation(SourceAccessSelection.ID)
+    case sourceAccessSettings(UUID)
     case sourceImport(UUID)
     case importRequest(UUID)
     case connectionSnapshot(UUID)
@@ -51,6 +52,7 @@ final class AppModel {
 
   let preferences: AppPreferences
   let clientSettings = ClientSettingsModel()
+  let sourceAccessSettings = SourceAccessSettingsModel()
   let home: URL
   private let executor: CoreExecutor
   private let sourceAccessValidationExecutor = CoreExecutor()
@@ -458,6 +460,13 @@ final class AppModel {
       }
     case .clients(let id):
       clientSettings.finish(id: id, result: result)
+    case .sourceAccessSettings(let id):
+      sourceAccessSettings.finish(id: id, result: result)
+      switch result.output {
+      case .sourceAccessSettings(.saved), .sourceAccessSettings(.failed(.core(.changed))):
+        inputsChanged(in: scope)
+      default: break
+      }
     case .clientBackup:
       isBackingUp = false
       if case .clientBackup(let outcomes) = result.output { backupOutcomes = outcomes }

@@ -11,7 +11,10 @@ extension SourceAccessSelection {
       let policy = try readPolicy(environment: environment)
       dependencies = policy.readDependencies
       let report = try report(environment: environment, policy: policy.effective)
-      result = .success(.init(report: report, policy: policy.effective))
+      result = .success(
+        .init(
+          report: report, policy: policy.effective,
+          settingsFingerprint: environment.sourceAccess.settingsFingerprint))
     } catch {
       result = .failure(issue(for: error))
     }
@@ -26,6 +29,9 @@ extension SourceAccessSelection {
   ) -> CoreCompletion {
     let result: Result<SourceCredentialReport.Validation, SourceAccessIssue>
     do {
+      guard inspection.settingsFingerprint == environment.sourceAccess.settingsFingerprint else {
+        throw SourceAccessIssue.inputsChanged
+      }
       try ProjectRootAccess.requireAvailable(id.scope)
       let store = StateStore(scope: id.scope.installScope, environment: environment)
       guard try store.loadManifest()?.digest == documentDigest else {
@@ -63,6 +69,8 @@ extension SourceAccessSelection {
     do {
       return try SourcePolicyOperations.inspect(
         scope: id.scope.installScope, environment: environment)
+    } catch let error as SourceAccessSettingsError {
+      throw error
     } catch {
       throw SourceAccessIssue.policyUnreadable
     }
@@ -70,6 +78,10 @@ extension SourceAccessSelection {
 
   private func issue(for error: any Error) -> SourceAccessIssue {
     if let issue = error as? SourceAccessIssue { return issue }
+    if let error = error as? SourceAccessSettingsError {
+      if case .changed = error { return .inputsChanged }
+      return .settings(error)
+    }
     if error is SourcePolicyFailure { return .policyDenied }
     if let error = error as? SourceAccessError { return .access(error) }
     return .unavailable

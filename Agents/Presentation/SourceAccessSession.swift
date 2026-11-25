@@ -31,6 +31,7 @@ struct SourceAccessSelection: Sendable {
 struct SourceAccessInspection: Sendable {
   let report: SourceCredentialReport
   let policy: EffectiveSourcePolicy
+  let settingsFingerprint: String?
 
   var mayValidate: Bool {
     report.transport == .https && report.provider != nil && report.availability == .available
@@ -42,6 +43,7 @@ enum SourceAccessIssue: Error, Sendable, Equatable {
   case policyUnreadable
   case policyDenied
   case access(SourceAccessError)
+  case settings(SourceAccessSettingsError)
   case unsupportedAlias
   case unavailable
 }

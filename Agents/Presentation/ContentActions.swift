@@ -70,6 +70,7 @@ enum ContentOutput: Sendable {
   case catalogRequest(UUID, UpdateRequest?)
   case sourceAccessInspection(Result<SourceAccessInspection, SourceAccessIssue>)
   case sourceAccessValidation(Result<SourceCredentialReport.Validation, SourceAccessIssue>)
+  case sourceAccessSettings(SourceAccessSettingsResult)
   case sourceImport(UUID, SourceImportInspection)
   case importRequest(UUID, UpdateRequest)
   case connectionSnapshot(UUID, MCPConnectionSnapshot, MCPConnectionDescription)

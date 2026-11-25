@@ -86,6 +86,7 @@ struct CoreReader: Sendable {
         }
       }
       var readDependencies = inspection.readLocations.map(ReadDependency.subtree)
+      readDependencies.append(.entry(SourceAccessSettingsEditor.settingsURL(environment: runtime)))
       let ownInstructions: [OwnInstructionItem]? =
         scope.kind == .project
         ? optionalRead("Local instructions") {
@@ -173,6 +174,8 @@ struct CoreReader: Sendable {
   static func stateDependencies(store: StateStore) -> [ReadDependency] {
     var dependencies = [store.declarationURL, store.resolvedURL, store.watchURL]
       .map(ReadDependency.subtree)
+    dependencies.append(
+      .entry(SourceAccessSettingsEditor.settingsURL(environment: store.environment)))
     var selections = [store.environment.userOrganizationPolicy]
     if store.scope == .project { selections.append(store.environment.projectOrganizationPolicy) }
     for selection in selections {
