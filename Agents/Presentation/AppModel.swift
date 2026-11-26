@@ -224,6 +224,7 @@ final class AppModel {
     cancelAssistance()
     cancelConnection()
     cancelExistingConfiguration()
+    promptSession?.stage = .outdated
     didApplyExistingConfiguration = false
     self.scope = scope
     preferences.selectedScopeID = scope.id
@@ -378,12 +379,34 @@ final class AppModel {
     }
   }
 
-  func previewPrompt(name: String, in scope: WorkspaceScope) {
+  func previewPrompt(name: String, in scope: WorkspaceScope, title: String? = nil) {
+    readInstructionText(
+      .named(name), in: scope, title: title ?? name, operation: "Generate prompt “\(name)”")
+  }
+
+  func copyMappedInstructions(
+    _ target: MappingTarget, in scope: WorkspaceScope, copy: @escaping (String) -> Bool
+  ) {
+    readInstructionText(
+      .mapped(target), in: scope, title: target.id, operation: "Copy Full Text", copy: copy)
+  }
+
+  func copyInstructionPreview(copy: (String) -> Bool) {
+    guard !isTerminating, let session = promptSession, case .ready(let text) = session.stage
+    else { return }
+    promptSession?.clipboardResult = copy(text)
+  }
+
+  private func readInstructionText(
+    _ content: PromptRequest.Content, in scope: WorkspaceScope, title: String, operation: String,
+    copy: ((String) -> Bool)? = nil
+  ) {
     guard !isTerminating else { return }
-    let request = PromptRequest(id: UUID(), scope: scope, name: name)
-    promptSession = PromptSession(id: request.id, scope: scope, name: name)
+    let request = PromptRequest(id: UUID(), scope: scope, content: content, title: operation)
+    promptSession = PromptSession(
+      id: request.id, scope: scope, name: title, copyAfterRead: copy)
     let actions = actions
-    startOperation(title: "Generate prompt “\(name)”", scope: scope, purpose: .prompt(request.id)) {
+    startOperation(title: operation, scope: scope, purpose: .prompt(request.id)) {
       actions.render(request)
     }
   }
@@ -692,11 +715,14 @@ final class AppModel {
       connectionSession?.messages = result.diagnostics
       if case .connectionResult(_, let value) = result.output { connectionSession?.result = value }
     case .prompt(let id) where promptSession?.id == id:
+      let copy = promptSession?.copyAfterRead
+      promptSession?.copyAfterRead = nil
       promptSession?.messages = result.diagnostics
       if !currentSelection {
         promptSession?.stage = .outdated
       } else if case .prompt(_, let text) = result.output {
         promptSession?.stage = .ready(text)
+        if !isTerminating, let copy { copyInstructionPreview(copy: copy) }
       } else {
         promptSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
       }
