@@ -118,6 +118,81 @@ struct UpdateFlowTests {
     #expect(model.updateSession?.messages.isEmpty == false)
   }
 
+  @Test func skillTargetsReviewPreservesOtherTargetsAndEditsOneOverride() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    for name in ["review", "format"] {
+      let root = fixture.project.appendingPathComponent("producer/skills/\(name)")
+      try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+      try Data("---\nname: \(name)\ndescription: Fixture skill.\n---\n".utf8)
+        .write(to: root.appendingPathComponent("SKILL.md"))
+    }
+    let declarationURL = try fixture.writeManifest(
+      """
+      # Keep the declaration's author's comments.
+      version: 1
+      sources: {producer: {path: ./producer}}
+      components:
+        - kind: skills
+          source: producer
+          select: [review, format]
+          agents: [codex, claude-code]
+          overrides:
+            review:
+              mode: copy # Keep the installation mode.
+              agents: [codex, claude-code]
+            format: {agents: [cursor]}
+      """)
+    let environment = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home, environment: fixture.environment)
+    _ = try UpdateOperations.withPreparedUpdate(scope: .project, environment: environment) {
+      try $0.apply()
+    }
+    let model = await loadedModel(fixture)
+    defer { _ = model.requestTermination() }
+    let item = try #require(model.snapshot?.skillWorkspaceItems.first { $0.name == "review" })
+    #expect(item.canEditTargets)
+    #expect(item.targetOwner?.requestedRecipients == [.codex, .claudeCode])
+    let before = try fixture.entries()
+    let id = try #require(model.previewSkillTargets(
+      for: item, recipients: [.codex, .claudeCode, .geminiCLI]))
+    try await idle(model)
+    #expect(model.updateSession == nil)
+    let review = try #require(model.skillTargetsUpdateSession)
+    #expect(review.id == id)
+    #expect(review.stage == .review, "\(review.messages.map(\.message))")
+    let effect = try #require(review.report?.skills.first { $0.skill == "review" })
+    let membership = effect.membership
+    #expect(membership.filter { $0.before != $0.after }.map(\.agent) == [.geminiCLI])
+    #expect(
+      membership.first { $0.agent == .codex }?.path
+        == membership.first { $0.agent == .geminiCLI }?.path)
+    #expect(effect.changes.isEmpty)
+    #expect(try fixture.entries() == before)
+
+    model.confirmUpdate(id: id)
+    try await idle(model)
+    #expect(model.skillTargetsUpdateSession?.terminal?.disposition == .committed)
+    #expect(model.updateRecords.last?.scope == item.scope)
+    let updated = try #require(model.snapshot?.skillWorkspaceItems.first { $0.id == item.id })
+    #expect(Set(updated.recipients) == [.codex, .claudeCode, .geminiCLI])
+    let declaration = try #require(model.snapshot?.inspection.declaration)
+    guard case .skills(_, let selection) = declaration.components.first else {
+      Issue.record("Expected the original skill selector")
+      return
+    }
+    #expect(selection.select == .names(["review", "format"]))
+    #expect(selection.agents == [.codex, .claudeCode])
+    #expect(selection.overrides?["review"]?.mode == .copy)
+    #expect(selection.overrides?["format"]?.agents == [.cursor])
+    let yaml = try String(contentsOf: declarationURL, encoding: .utf8)
+    #expect(yaml.contains("# Keep the declaration's author's comments."))
+    #expect(yaml.contains("# Keep the installation mode."))
+    model.closeSkillTargetsReview(id)
+    #expect(model.skillTargetsUpdateSession == nil)
+    #expect(model.previewSkillTargets(for: item, recipients: [.codex]) == nil)
+  }
+
   @Test func preciseSelectionRemovalUsesRealRecordedState() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

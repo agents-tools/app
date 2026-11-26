@@ -62,30 +62,9 @@ struct CoreReader: Sendable {
             message: deployment.diagnostic ?? deployment.status.rawValue,
             path: deployment.location.path))
       }
-      // Frozen owners can share a skill name and carry different recipient modes.
-      let skillsByRecord = Dictionary(
-        uniqueKeysWithValues: inspection.components.lazy.filter { $0.kind == .skills }
-          .map { ($0.record, $0) })
-      let inventory = inspection.deployments.flatMap { deployment in
-        deployment.ownerRecords.compactMap { skillsByRecord[$0] }.flatMap { component in
-          let mode: InstallMode?
-          if case .object(let fields) = component.configuration,
-            case .string(let value) = fields["mode"]
-          {
-            mode = InstallMode(rawValue: value)
-          } else {
-            mode = nil
-          }
-          return deployment.recipients.filter(component.recipients.contains).map { agent in
-            InventoryItem(
-              id: .init(
-                name: component.name, agent: agent, scope: scope.installScope,
-                path: deployment.location.path), status: deployment.status.rawValue,
-              mode: mode, source: component.source)
-          }
-        }
-      }
+      let skills = Self.skillWorkspace(inspection, scope: scope, store: store)
       var readDependencies = inspection.readLocations.map(ReadDependency.subtree)
+        + skills.dependencies
       readDependencies.append(.entry(SourceAccessSettingsEditor.settingsURL(environment: runtime)))
       let ownInstructions: [OwnInstructionItem]? =
         scope.kind == .project
@@ -109,10 +88,10 @@ struct CoreReader: Sendable {
       let snapshot = WorkspaceSnapshot(
         scope: scope, manifestURL: store.declarationURL, resolvedURL: store.resolvedURL,
         watchURL: store.watchURL, document: document, effectiveDefaultAgents: defaults,
-        items: document.map(Self.items) ?? [], inventory: inventory, inspection: inspection,
+        items: document.map(Self.items) ?? [], inventory: skills.inventory, inspection: inspection,
         watch: inspection.watch,
         mappings: mappings, ownInstructions: ownInstructions, diagnostics: diagnostics,
-        readAt: Date())
+        readAt: Date(), skillWorkspaceItems: skills.items)
       return CoreCompletion(
         disposition: .completed, snapshot: snapshot, diagnostics: [],
         readDependencies: readDependencies)

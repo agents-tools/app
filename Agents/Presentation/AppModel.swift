@@ -115,7 +115,16 @@ final class AppModel {
   var promptSession: PromptSession?
   var manifestDraft: ManifestDraft?
   var mappingSession: MappingSession?
-  var updateSession: UpdateSession?
+  private var activeUpdateSession: UpdateSession?
+  var updateSession: UpdateSession? {
+    get { activeUpdateSession?.proposal.presentation == .workspace ? activeUpdateSession : nil }
+    set {
+      if skillTargetsUpdateSession == nil { activeUpdateSession = newValue }
+    }
+  }
+  var skillTargetsUpdateSession: UpdateSession? {
+    activeUpdateSession?.proposal.presentation == .skillTargets ? activeUpdateSession : nil
+  }
   var existingConfigurationSession: ExistingConfigurationSession?
   private(set) var didApplyExistingConfiguration = false
   var registrySession: RegistrySession?
@@ -246,10 +255,10 @@ final class AppModel {
     for operation in operations.values where operation.title == "Read configuration" {
       operation.admission.cancel()
     }
-    if case .review = updateSession?.stage {
-      updateSession?.stage = .stale
-      updateSession?.packageReview = nil
-      updateSession?.bindingInputs = [:]
+    if case .review = activeUpdateSession?.stage {
+      activeUpdateSession?.stage = .stale
+      activeUpdateSession?.packageReview = nil
+      activeUpdateSession?.bindingInputs = [:]
     }
     generation = UUID()
     readsStale = true
@@ -437,8 +446,8 @@ final class AppModel {
   }
 
   func previewUpdate(_ proposal: UpdateProposal) {
-    guard canModify, proposal.scope == scope else { return }
-    updateSession = UpdateSession(proposal: proposal)
+    guard canModify, proposal.scope == scope, skillTargetsUpdateSession == nil else { return }
+    activeUpdateSession = UpdateSession(proposal: proposal)
     let actions = actions
     startOperation(title: "Prepare " + proposal.title, scope: scope, purpose: .preview(proposal.id))
     {
@@ -447,17 +456,23 @@ final class AppModel {
   }
 
   func confirmUpdate() {
-    guard canModify, let session = updateSession, case .review = session.stage,
+    guard let id = updateSession?.id else { return }
+    confirmUpdate(id: id)
+  }
+
+  func confirmUpdate(id: UUID) {
+    guard canModify, let session = activeUpdateSession, session.id == id,
+      case .review = session.stage,
       session.proposal.scope == scope, session.bindingsReady, session.canApplyReport,
       let report = session.report
     else { return }
-    updateSession?.stage = .applying
+    activeUpdateSession?.stage = .applying
     let proposal = session.proposal
     let actions = actions
     let bindings = session.bindingInputs.mapValues { Data($0.utf8) }
-    updateSession?.bindingInputs = [:]
+    activeUpdateSession?.bindingInputs = [:]
     if let review = session.packageReview {
-      updateSession?.packageReview = nil
+      activeUpdateSession?.packageReview = nil
       startAsyncOperation(title: proposal.title, scope: proposal.scope, purpose: .apply(proposal.id)) {
         await review.apply(proposal.title, EphemeralBindings(values: bindings))
       }
@@ -479,6 +494,19 @@ final class AppModel {
     let committed = updateSession?.terminal?.disposition == .committed
     updateSession = nil
     if committed { manifestDraft = nil }
+  }
+
+  func setSkillTargetsBinding(_ value: String?, key: String, review id: UUID) {
+    guard skillTargetsUpdateSession?.id == id, skillTargetsUpdateSession?.stage == .review else {
+      return
+    }
+    activeUpdateSession?.bindingInputs[key] = value
+  }
+
+  func closeSkillTargetsReview(_ id: UUID) {
+    guard skillTargetsUpdateSession?.id == id else { return }
+    // A dismissed view does not release a Core operation or its recovery ownership.
+    activeUpdateSession = nil
   }
 
   func chooseMappings() {
@@ -685,24 +713,24 @@ final class AppModel {
             scope: operation.scope, operation: "Discovery",
             message: "Selection changed. Discover again for the selected scope."))
       }
-    case .preview(let id) where updateSession?.id == id:
-      updateSession?.messages = result.diagnostics
-      if !currentSelection || updateSession?.stage == .stale {
-        updateSession?.stage = .stale
+    case .preview(let id) where activeUpdateSession?.id == id:
+      activeUpdateSession?.messages = result.diagnostics
+      if !currentSelection || activeUpdateSession?.stage == .stale {
+        activeUpdateSession?.stage = .stale
       } else if case .packageUpdatePreview(_, let review) = result.output {
-        updateSession?.report = review.report
-        updateSession?.packageReview = review
-        updateSession?.stage = .review
+        activeUpdateSession?.report = review.report
+        activeUpdateSession?.packageReview = review
+        activeUpdateSession?.stage = .review
       } else if case .updatePreview(_, let report) = result.output {
-        updateSession?.report = report
-        updateSession?.stage = .review
+        activeUpdateSession?.report = report
+        activeUpdateSession?.stage = .review
       } else {
-        updateSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
+        activeUpdateSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
       }
-    case .apply(let id) where updateSession?.id == id:
-      updateSession?.messages = result.diagnostics
-      updateSession?.terminal = result.updateTerminal
-      updateSession?.stage = result.disposition == .cancelled ? .cancelled : .finished
+    case .apply(let id) where activeUpdateSession?.id == id:
+      activeUpdateSession?.messages = result.diagnostics
+      activeUpdateSession?.terminal = result.updateTerminal
+      activeUpdateSession?.stage = result.disposition == .cancelled ? .cancelled : .finished
     case .existingConfigurationPreview(let id) where existingConfigurationSession?.id == id:
       existingConfigurationSession?.messages = result.diagnostics
       if case .existingConfigurationPreview(let review) = result.output {
@@ -727,6 +755,7 @@ final class AppModel {
 
   func recoverScope(in confirmedScope: WorkspaceScope) {
     guard confirmedScope == scope, !isTerminating, !isApplying,
+      skillTargetsUpdateSession == nil,
       snapshot?.inspection.recovery.pending == true
     else { return }
     let proposal = UpdateProposal(
@@ -844,10 +873,10 @@ final class AppModel {
     connectionSession?.stale = true
     connectionSession?.inputs = [:]
     invalidateExistingConfigurationIfChanged()
-    if let session = updateSession, session.stage == .review || session.stage == .preparing {
-      updateSession?.stage = .stale
-      updateSession?.packageReview = nil
-      updateSession?.bindingInputs = [:]
+    if let session = activeUpdateSession, session.stage == .review || session.stage == .preparing {
+      activeUpdateSession?.stage = .stale
+      activeUpdateSession?.packageReview = nil
+      activeUpdateSession?.bindingInputs = [:]
     }
     guard !isApplying, !refreshScheduled else { return }
     refreshScheduled = true

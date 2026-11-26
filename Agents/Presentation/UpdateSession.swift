@@ -3,9 +3,12 @@ import AgentsUpdates
 import Foundation
 
 struct UpdateProposal: Sendable {
+  enum Presentation: Sendable { case workspace, skillTargets }
+
   let id: UUID
   let scope: WorkspaceScope
   let title: String
+  var presentation: Presentation = .workspace
   enum Contents: Sendable {
     case update(UpdateRequest)
     case packageRequest(UpdateRequest, LifecycleOperationIntent)
