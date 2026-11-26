@@ -8,6 +8,7 @@ struct ManifestDraft: Identifiable {
     var id: Self { self }
   }
   enum StructuralAction: String, CaseIterable { case move, remove }
+  var yaml: String?
   var isStale = false
   var insertBefore: NodeID?
   var destinationNode: NodeID?

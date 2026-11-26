@@ -401,6 +401,12 @@ final class AppModel {
     manifestDraft = draft
   }
 
+  func editConfigurationYAML() {
+    guard canModify else { return }
+    beginDraft(.defaults)
+    manifestDraft?.yaml = snapshot?.document.map { String(decoding: $0.bytes, as: UTF8.self) } ?? "version: 1\n"
+  }
+
   func editSelectedDeclaration() {
     guard canModify, let item = selectedDeclaration,
       let declaration = snapshot?.inspection.declaration
@@ -958,13 +964,20 @@ final class AppModel {
     }
     if currentSelection {
       if let snapshot = result.snapshot, snapshot.scope == scope {
+        let previousSkill = self.snapshot?.skillWorkspaceItems.first { $0.id == selectedSkillID }
         loadState = .loaded(snapshot)
         readsStale = false
         if let selectedItem, !snapshot.items.contains(where: { $0.id == selectedItem }) {
           self.selectedItem = nil
         }
         if let selectedSkillID, !snapshot.skillWorkspaceItems.contains(where: { $0.id == selectedSkillID }) {
-          self.selectedSkillID = nil
+          let matches = snapshot.skillWorkspaceItems.filter { item in
+            guard let previousSkill, !previousSkill.isResolved, item.isResolved,
+              let owner = previousSkill.targetOwner else { return false }
+            return item.scope == previousSkill.scope && item.source == previousSkill.source
+              && item.name == previousSkill.name && item.targetOwner?.declarationPointer == owner.declarationPointer
+          }
+          self.selectedSkillID = matches.count == 1 ? matches[0].id : nil
         }
         monitor(snapshot.inspection.readLocations.map(ReadDependency.subtree), since: readBoundary)
         if case .workspace = operation.purpose, scope.kind == .project, !isTerminating {

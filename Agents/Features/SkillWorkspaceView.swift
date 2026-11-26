@@ -30,7 +30,7 @@ struct SkillWorkspaceView: View {
 
   private var visibleSkills: [SkillWorkspaceItem] {
     guard let client = model.clientFilter else { return snapshot.skillWorkspaceItems }
-    return snapshot.skillWorkspaceItems.filter { $0.scope == snapshot.scope && $0.recipients.contains(client) }
+    return snapshot.skillWorkspaceItems.filter { $0.isUsed(by: client, in: snapshot.scope) }
   }
 }
 
@@ -43,14 +43,23 @@ struct SkillWorkspaceInspector: View {
     Group {
       if let id = model.selectedSkillID,
         let item = snapshot.skillWorkspaceItems.first(where: { $0.id == id }),
-        model.clientFilter.map({ item.recipients.contains($0) }) ?? true
+        model.clientFilter.map({ item.isUsed(by: $0, in: snapshot.scope) }) ?? true
       {
+        let component = snapshot.inspection.components.first {
+          item.componentRecords.contains($0.record)
+        }
         SkillDetails(
           item: item,
           openClient: { client in
             if item.scope != snapshot.scope { model.select(item.scope) }
             model.showClientOverview(client)
           },
+          assistance: model.assistanceAvailable && item.scope == snapshot.scope && component != nil
+            ? { action in
+              if let component, let input = AssistanceInput.skill(component, action: action) {
+                model.reviewAssistance(input)
+              }
+            } : nil,
           editTargets: item.scope == snapshot.scope && item.canEditTargets && model.canModify
             ? { editingItem = item } : nil,
           openOwner: item.scope != snapshot.scope

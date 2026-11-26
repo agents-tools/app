@@ -87,6 +87,13 @@ struct SkillTargetsSheet: View {
       if let report = review.report {
         Form {
           SkillTargetEffectsView(report: report, scope: item.scope)
+          if report.components.contains(where: \.changed)
+            || report.instructions.targets.contains(where: \.changed)
+            || report.marketplaceChanges?.isEmpty == false
+            || !report.instructions.changedPrompts.isEmpty
+          {
+            UpdateReportSection(report: report, scope: item.scope)
+          }
           bindingFields(review)
         }.formStyle(.grouped)
       }

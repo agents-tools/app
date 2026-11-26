@@ -27,130 +27,138 @@ struct ManifestDraftView: View {
           )
           .foregroundStyle(.secondary)
         }
-        Text(
-          "Review your changes before applying them."
-        )
-        .foregroundStyle(.secondary)
-        Form {
-          Picker("Change", selection: binding(\.kind)) {
-            Text("Default Agents").tag(ManifestDraft.Kind.defaults)
-            Text("Source").tag(ManifestDraft.Kind.source)
-            Text("Component").tag(ManifestDraft.Kind.component)
-            Text("Group").tag(ManifestDraft.Kind.group)
-            Text("Group Reference").tag(ManifestDraft.Kind.reference)
-            Text("Exports").tag(ManifestDraft.Kind.exports)
-            Text("Move or Remove Declaration").tag(ManifestDraft.Kind.structure)
-          }
-          switch draft.kind {
-          case .defaults: AgentsEditor(value: binding(\.defaultAgents), allowsAntigravity: true)
-          case .source:
-            TextField("Alias", text: binding(\.sourceAlias))
-            SourceDeclarationEditor(
-              value: Binding(
-                get: {
-                  let current = model.manifestDraft ?? draft
-                  return .init(
-                    kind: current.sourceKind, location: current.sourceLocation,
-                    requirement: current.requirement, path: current.sourcePath)
-                },
-                set: {
-                  model.manifestDraft?.sourceKind = $0.kind
-                  model.manifestDraft?.sourceLocation = $0.location
-                  model.manifestDraft?.requirement = $0.requirement
-                  model.manifestDraft?.sourcePath = $0.path
-                }))
-          case .component:
-            ComponentDraftEditor(value: binding(\.component), scope: draft.scope.installScope)
-            if draft.replacingNode == nil, let document = draft.document {
-              Picker("Container", selection: binding(\.destinationGroup)) {
-                Text("Scope").tag(nil as NodeID?)
-                ForEach(CoreReader.items(document).filter { $0.category == "Group" }) {
-                  Text($0.title).tag(Optional($0.id))
-                }
-              }
+        if let yaml = draft.yaml {
+          ConfigurationYAMLEditor(
+            text: Binding(
+              get: { model.manifestDraft?.yaml ?? yaml },
+              set: { model.manifestDraft?.yaml = $0 }
+            ), path: model.snapshot?.manifestURL.path ?? "agents.yaml"
+          )
+          .disabled(model.isApplying)
+        } else {
+          Form {
+            Picker("Change", selection: binding(\.kind)) {
+              Text("Default Agents").tag(ManifestDraft.Kind.defaults)
+              Text("Source").tag(ManifestDraft.Kind.source)
+              Text("Component").tag(ManifestDraft.Kind.component)
+              Text("Group").tag(ManifestDraft.Kind.group)
+              Text("Group Reference").tag(ManifestDraft.Kind.reference)
+              Text("Exports").tag(ManifestDraft.Kind.exports)
+              Text("Move or Remove Declaration").tag(ManifestDraft.Kind.structure)
             }
-          case .group:
-            TextField("Name", text: binding(\.groupName))
-            ConditionEditor(value: binding(\.groupCondition), allowsAntigravity: true)
-            DisclosureGroup("Components") {
-              DraftRows(values: binding(\.groupComponents)) { row, actions in
-                ComponentDraftEditor(
-                  value: Binding(
-                    get: { ComponentDraft(row.wrappedValue) }, set: { row.wrappedValue = $0.value }),
-                  scope: draft.scope.installScope
-                )
-                DraftRowButtons(actions: actions)
-              }
-              DisclosureGroup("Add Component") {
-                ComponentDraftEditor(value: $groupChild, scope: draft.scope.installScope)
-                Button("Add to Group") {
-                  model.manifestDraft?.groupComponents.append(groupChild.value)
-                }
-              }
-            }
-            GroupUsesEditor(values: binding(\.groupUses))
-          case .reference:
-            TextField("Group", text: binding(\.referenceName))
-            OptionalText(title: "source", value: binding(\.referenceSource))
-            ConditionEditor(value: binding(\.referenceCondition), allowsAntigravity: true)
-            if let document = draft.document {
-              Picker("Container", selection: binding(\.destinationGroup)) {
-                Text("Scope").tag(nil as NodeID?)
-                ForEach(CoreReader.items(document).filter { $0.category == "Group" }) {
-                  Text($0.title).tag(Optional($0.id))
-                }
-              }
-            }
-          case .exports:
-            DraftRows(values: binding(\.exports)) { row, actions in
-              TextField("Exported group", text: row)
-              DraftRowButtons(actions: actions)
-            }
-            Button("Add Export") { model.manifestDraft?.exports.append("") }
-          case .structure:
-            if draft.document != nil {
-              let items = draft.structuralItems
-              Picker("Declaration", selection: binding(\.structuralNode)) {
-                Text("Choose a declaration").tag(nil as NodeID?)
-                ForEach(items) { item in
-                  Text(item.category + " · " + item.container + " · " + item.title).tag(
-                    Optional(item.id))
-                }
-              }
-              Picker("Action", selection: binding(\.structuralAction)) {
-                Text("Move").tag(ManifestDraft.StructuralAction.move).disabled(
-                  !draft.structuralCanMove)
-                Text("Remove").tag(ManifestDraft.StructuralAction.remove)
-              }
-              if let item = items.first(where: { $0.id == draft.structuralNode }),
-                ["Source", "Group"].contains(item.category)
-              {
-                Text("This declaration supports removal. Edit its contents using its native form.")
-                Button("Choose Removal") { model.manifestDraft?.structuralAction = .remove }
-              }
-              if draft.structuralAction == .move && draft.structuralCanMove {
-                Picker("Destination", selection: binding(\.destinationGroup)) {
+            switch draft.kind {
+            case .defaults: AgentsEditor(value: binding(\.defaultAgents), allowsAntigravity: true)
+            case .source:
+              TextField("Alias", text: binding(\.sourceAlias))
+              SourceDeclarationEditor(
+                value: Binding(
+                  get: {
+                    let current = model.manifestDraft ?? draft
+                    return .init(
+                      kind: current.sourceKind, location: current.sourceLocation,
+                      requirement: current.requirement, path: current.sourcePath)
+                  },
+                  set: {
+                    model.manifestDraft?.sourceKind = $0.kind
+                    model.manifestDraft?.sourceLocation = $0.location
+                    model.manifestDraft?.requirement = $0.requirement
+                    model.manifestDraft?.sourcePath = $0.path
+                  }))
+            case .component:
+              ComponentDraftEditor(value: binding(\.component), scope: draft.scope.installScope)
+              if draft.replacingNode == nil, let document = draft.document {
+                Picker("Container", selection: binding(\.destinationGroup)) {
                   Text("Scope").tag(nil as NodeID?)
-                  ForEach(items.filter { $0.category == "Group" }) {
+                  ForEach(CoreReader.items(document).filter { $0.category == "Group" }) {
                     Text($0.title).tag(Optional($0.id))
                   }
                 }
-                Picker("Relative to", selection: binding(\.destinationNode)) {
-                  Text("Container boundary").tag(nil as NodeID?)
-                  ForEach(draft.positionItems) {
-                    Text($0.container + " · " + $0.title).tag(Optional($0.id))
+              }
+            case .group:
+              TextField("Name", text: binding(\.groupName))
+              ConditionEditor(value: binding(\.groupCondition), allowsAntigravity: true)
+              DisclosureGroup("Components") {
+                DraftRows(values: binding(\.groupComponents)) { row, actions in
+                  ComponentDraftEditor(
+                    value: Binding(
+                      get: { ComponentDraft(row.wrappedValue) },
+                      set: { row.wrappedValue = $0.value }),
+                    scope: draft.scope.installScope
+                  )
+                  DraftRowButtons(actions: actions)
+                }
+                DisclosureGroup("Add Component") {
+                  ComponentDraftEditor(value: $groupChild, scope: draft.scope.installScope)
+                  Button("Add to Group") {
+                    model.manifestDraft?.groupComponents.append(groupChild.value)
                   }
                 }
-                Picker("Position", selection: binding(\.insertFirst)) {
-                  Text(draft.destinationNode == nil ? "First" : "Before").tag(true)
-                  Text(draft.destinationNode == nil ? "Last" : "After").tag(false)
+              }
+              GroupUsesEditor(values: binding(\.groupUses))
+            case .reference:
+              TextField("Group", text: binding(\.referenceName))
+              OptionalText(title: "source", value: binding(\.referenceSource))
+              ConditionEditor(value: binding(\.referenceCondition), allowsAntigravity: true)
+              if let document = draft.document {
+                Picker("Container", selection: binding(\.destinationGroup)) {
+                  Text("Scope").tag(nil as NodeID?)
+                  ForEach(CoreReader.items(document).filter { $0.category == "Group" }) {
+                    Text($0.title).tag(Optional($0.id))
+                  }
+                }
+              }
+            case .exports:
+              DraftRows(values: binding(\.exports)) { row, actions in
+                TextField("Exported group", text: row)
+                DraftRowButtons(actions: actions)
+              }
+              Button("Add Export") { model.manifestDraft?.exports.append("") }
+            case .structure:
+              if draft.document != nil {
+                let items = draft.structuralItems
+                Picker("Declaration", selection: binding(\.structuralNode)) {
+                  Text("Choose a declaration").tag(nil as NodeID?)
+                  ForEach(items) { item in
+                    Text(item.category + " · " + item.container + " · " + item.title).tag(
+                      Optional(item.id))
+                  }
+                }
+                Picker("Action", selection: binding(\.structuralAction)) {
+                  Text("Move").tag(ManifestDraft.StructuralAction.move).disabled(
+                    !draft.structuralCanMove)
+                  Text("Remove").tag(ManifestDraft.StructuralAction.remove)
+                }
+                if let item = items.first(where: { $0.id == draft.structuralNode }),
+                  ["Source", "Group"].contains(item.category)
+                {
+                  Text(
+                    "This declaration supports removal. Edit its contents using its native form.")
+                  Button("Choose Removal") { model.manifestDraft?.structuralAction = .remove }
+                }
+                if draft.structuralAction == .move && draft.structuralCanMove {
+                  Picker("Destination", selection: binding(\.destinationGroup)) {
+                    Text("Scope").tag(nil as NodeID?)
+                    ForEach(items.filter { $0.category == "Group" }) {
+                      Text($0.title).tag(Optional($0.id))
+                    }
+                  }
+                  Picker("Relative to", selection: binding(\.destinationNode)) {
+                    Text("Container boundary").tag(nil as NodeID?)
+                    ForEach(draft.positionItems) {
+                      Text($0.container + " · " + $0.title).tag(Optional($0.id))
+                    }
+                  }
+                  Picker("Position", selection: binding(\.insertFirst)) {
+                    Text(draft.destinationNode == nil ? "First" : "Before").tag(true)
+                    Text(draft.destinationNode == nil ? "Last" : "After").tag(false)
+                  }
                 }
               }
             }
           }
+          .formStyle(.grouped)
+          .disabled(model.isApplying)
         }
-        .formStyle(.grouped)
-        .disabled(model.isApplying)
         HStack {
           Button("Cancel") { model.manifestDraft = nil }.keyboardShortcut(.cancelAction)
           Spacer()
@@ -190,5 +198,35 @@ struct GroupUsesEditor: View {
       }
       Button("Add Reference") { values.append(.init(name: "")) }
     }
+  }
+}
+
+private struct ConfigurationYAMLEditor: View {
+  @Binding var text: String
+  let path: String
+  @State private var validation: String?
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      TextEditor(text: $text)
+        .font(.system(.body, design: .monospaced))
+        .autocorrectionDisabled()
+        .accessibilityLabel("Configuration YAML")
+        .accessibilityIdentifier("configuration.yaml")
+      HStack {
+        Button("Check YAML") {
+          do {
+            _ = try DeclarationDocument(bytes: Array(text.utf8), identity: DocumentIdentity(path))
+            validation = "Valid YAML configuration."
+          } catch let error as ManifestFailure {
+            validation = error.diagnostics.map {
+              "Line \($0.span.line), column \($0.span.column): \($0.message)"
+            }.joined(separator: "\n")
+          } catch { validation = error.localizedDescription }
+        }
+        if let validation { Text(validation).foregroundStyle(.secondary).textSelection(.enabled) }
+      }
+    }
+    .onChange(of: text) { validation = nil }
   }
 }

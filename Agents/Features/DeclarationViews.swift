@@ -56,7 +56,7 @@ struct DeclarationListView: View {
         }
       }
       ToolbarItem {
-        Button("Edit Configuration…") { model.beginDraft(.defaults) }
+        Button("Edit Configuration…") { model.editConfigurationYAML() }
           .disabled(!model.canModify)
       }
     }

@@ -5,6 +5,9 @@ import Foundation
 
 extension ManifestDraft {
   func updateRequest(home: URL) -> UpdateRequest {
+    if let yaml {
+      return UpdateRequest(declarationYAML: Data(yaml.utf8), expectedDeclarationDigest: document?.digest ?? "absent")
+    }
     if let document {
       return UpdateRequest(
         operation: .edit(edits(home: home)), expectedDeclarationDigest: document.digest)

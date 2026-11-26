@@ -16,8 +16,13 @@ struct SkillWorkspaceItem: Identifiable, Sendable {
   let recipients: [AgentID]
   let installations: [InventoryItem]
   let occurrences: [OccurrenceInspection]
+  var componentRecords: Set<String> = []
   let isResolved: Bool
   let targetOwner: SkillTargetOwner?
+
+  func isUsed(by client: AgentID, in visibleScope: WorkspaceScope) -> Bool {
+    isResolved && scope == visibleScope && recipients.contains(client)
+  }
 
   var canEditTargets: Bool { targetOwner != nil }
 }

@@ -39,6 +39,7 @@ struct SkillGallery: View {
 struct SkillDetails: View {
   let item: SkillWorkspaceItem
   let openClient: (AgentID) -> Void
+  var assistance: ((AssistanceInput.Action) -> Void)? = nil
   var editTargets: (() -> Void)? = nil
   var openOwner: (() -> Void)? = nil
 
@@ -46,6 +47,7 @@ struct SkillDetails: View {
     SkillDetailsContent(
       item: item,
       openClient: openClient,
+      assistance: assistance,
       editTargets: editTargets,
       openOwner: openOwner
     )
@@ -310,7 +312,7 @@ private struct SkillGalleryContent: View {
                   SkillCardView(
                     item: item,
                     isSelected: selection == item.id,
-                    clientsSummary: formattedClients(for: item.recipients)
+                    clientsSummary: item.isResolved ? formattedClients(for: item.recipients) : "Pending installation"
                   ) {
                     selection = item.id
                     focusedCardID = item.id
@@ -628,6 +630,7 @@ private struct SkillDetailsContent: View {
 
   let item: SkillWorkspaceItem
   let openClient: (AgentID) -> Void
+  var assistance: ((AssistanceInput.Action) -> Void)? = nil
   let editTargets: (() -> Void)?
   let openOwner: (() -> Void)?
 
@@ -677,6 +680,25 @@ private struct SkillDetailsContent: View {
       summarySection
       usedBySection
       originSection
+      if !item.occurrences.isEmpty {
+        Section("Declarations") {
+          ForEach(Array(item.occurrences.enumerated()), id: \.offset) { _, occurrence in
+            DetailsGroup(occurrence.manifestPath) {
+              LabeledContent("Source") { CompactText(text: occurrence.declaringSource) }
+              LabeledContent("Owner", value: occurrence.consumerEditable ? "Scope" : "Source")
+              if let agents = occurrence.condition.agents { LabeledContent("Clients", value: agents.map(\.displayName).joined(separator: ", ")) }
+              if let scopes = occurrence.condition.scopes { LabeledContent("Scopes", value: scopes.map(\.rawValue).joined(separator: ", ")) }
+              if let platforms = occurrence.condition.platforms { LabeledContent("Platforms", value: platforms.map(\.rawValue).joined(separator: ", ")) }
+            }
+          }
+        }
+      }
+      if let assistance {
+        Section("Assistance") {
+          Button("Explain Skill…") { assistance(.explainSkill) }
+          Button("Translate Description…") { assistance(.translateDescription) }
+        }
+      }
       if !installationRows.isEmpty {
         installationsSection
       }
@@ -723,10 +745,13 @@ private struct SkillDetailsContent: View {
   }
 
   private var usedBySection: some View {
-    Section("Used By") {
+    Section(item.isResolved ? "Used By" : "Requested Targets") {
       if uniqueRecipients.isEmpty {
         Text("No clients")
           .foregroundStyle(.secondary)
+      } else if !item.isResolved {
+        Text(uniqueRecipients.map(\.displayName).joined(separator: ", "))
+        Text("Pending installation").foregroundStyle(.secondary)
       } else {
         ForEach(uniqueRecipients, id: \.self) { agent in
           Button {
@@ -766,6 +791,10 @@ private struct SkillDetailsContent: View {
           .truncationMode(.tail)
       }
 
+      if !item.canEditTargets {
+        Text(item.occurrences.contains(where: { !$0.consumerEditable }) ? "Targets are defined by the source." : "Targets are defined across declarations.")
+          .font(.callout).foregroundStyle(.secondary)
+      }
       if let openOwner {
         Button("Open \(ownerScopeLabel)", action: openOwner)
           .accessibilityIdentifier("skill.openOwner")
@@ -836,6 +865,8 @@ private struct SkillDetailsContent: View {
         }
       }
 
+      if let version = row.item.version { LabeledContent("Version", value: version) }
+      if let revision = row.item.revision { LabeledContent("Revision") { CompactText(text: revision) } }
       if !entryPath.isEmpty {
         HStack(spacing: 6) {
           Text(entryPath)
@@ -865,6 +896,8 @@ private struct SkillDetailsContent: View {
     }
     .padding(.vertical, 2)
     .contextMenu {
+      if let version = row.item.version { LabeledContent("Version", value: version) }
+      if let revision = row.item.revision { LabeledContent("Revision") { CompactText(text: revision) } }
       if !entryPath.isEmpty {
         Button("Copy Path") {
           copyPath(entryPath, rowID: row.id)

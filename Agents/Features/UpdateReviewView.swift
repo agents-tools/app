@@ -193,7 +193,7 @@ private struct TargetAssignmentChanges: View {
   }
 }
 
-private struct UpdateReportSection: View {
+struct UpdateReportSection: View {
   let report: CombinedUpdateReport
   let scope: WorkspaceScope
   var body: some View {
@@ -229,7 +229,7 @@ private struct UpdateReportSection: View {
         }
       }
       ForEach(report.instructions.changedPrompts, id: \.self) { Text("Named prompt · " + $0) }
-      ForEach(Array(report.components.enumerated()), id: \.offset) { _, change in
+      ForEach(Array(report.components.filter(\.changed).enumerated()), id: \.offset) { _, change in
         DetailsGroup(DeclarationLabels.kind(change.kind) + " · " + change.name) {
           LabeledContent("Status", value: change.changed ? "Changed" : "Unchanged")
           LabeledContent("Target") {
@@ -398,7 +398,7 @@ struct ChangesView: View {
         Spacer()
         if !showingHistory {
           Menu("Configuration") {
-            Button("Edit Configuration…") { model.beginDraft(.defaults) }
+            Button("Edit Configuration…") { model.editConfigurationYAML() }
             Button("Preview Full Update…") {
               model.previewUpdate(title: "Update Configuration", intent: .update)
             }

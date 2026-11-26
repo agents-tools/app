@@ -178,7 +178,7 @@ struct WorkspaceView: View {
         .safeAreaInset(edge: .bottom) {
           if let client = model.clientFilter,
             !snapshot.skillWorkspaceItems.isEmpty,
-            !snapshot.skillWorkspaceItems.contains(where: { $0.scope == snapshot.scope && $0.recipients.contains(client) })
+            !snapshot.skillWorkspaceItems.contains(where: { $0.isUsed(by: client, in: snapshot.scope) })
           {
             HStack {
               Text("No skills match \(client.displayName).")
@@ -234,7 +234,7 @@ struct WorkspaceView: View {
           Button("Remove from Project List") { model.removeProject(model.scope.root) }
         }
         Divider()
-        Button("Edit Configuration…") { model.beginDraft(.defaults) }.disabled(!model.canModify)
+        Button("Edit Configuration…") { model.editConfigurationYAML() }.disabled(!model.canModify)
         Button("Show Declaration") { model.page = .components }
           .disabled(model.snapshot == nil)
           .accessibilityIdentifier("workspace.declaration")
@@ -319,7 +319,7 @@ struct OverviewView: View {
         snapshot.inspection.components.isEmpty
       {
         Section("Get Started") {
-          Button("Edit Configuration…") { model.beginDraft(.defaults) }
+          Button("Edit Configuration…") { model.editConfigurationYAML() }
             .disabled(!model.canModify)
           Button("Create a Local Skill…") { model.beginCreation(.skill) }
             .disabled(!model.canModify)
@@ -461,7 +461,7 @@ private struct OverviewCounts {
 
   init(snapshot: WorkspaceSnapshot, client: AgentID?) {
     let skills = snapshot.skillWorkspaceItems.filter { item in
-      client.map { item.scope == snapshot.scope && item.recipients.contains($0) } ?? true
+      client.map { item.isUsed(by: $0, in: snapshot.scope) } ?? true
     }
     self.skills = skills.count
     userSkills = skills.count { $0.scope.kind == .user }
