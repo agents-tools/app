@@ -11,7 +11,9 @@ struct SourceAccessSettingsReview: Identifiable {
 final class SourceAccessSettingsModel {
   private(set) var location: URL?
   private(set) var document: SourceAccessSettingsDocument?
-  private(set) var draft = ""
+  private(set) var form: SourceAccessProfileDraft?
+  private var initialForm: SourceAccessProfileDraft?
+  private(set) var repairDraft: String?
   private(set) var review: SourceAccessSettingsReview?
   private(set) var requestID: UUID?
   private(set) var issue: SourceAccessSettingsIssue?
@@ -19,15 +21,41 @@ final class SourceAccessSettingsModel {
   private(set) var requiresReload = false
 
   var isBusy: Bool { requestID != nil }
+  var canActOnDocument: Bool { document != nil && !isBusy && !requiresReload }
   var hasDraftChanges: Bool {
-    document.map { !draft.utf8.elementsEqual($0.initialDraft.utf8) } ?? false
+    if let form { return form != initialForm }
+    if let repairDraft, let original = document?.originalText {
+      return !repairDraft.utf8.elementsEqual(original.utf8)
+    }
+    return false
   }
-  var canPreview: Bool { document != nil && !isBusy && !requiresReload }
-  var canReset: Bool { canPreview && document?.isPresent == true }
+  var canPreview: Bool { canActOnDocument && (form != nil || repairDraft != nil) }
+  var canReset: Bool { canActOnDocument && document?.isPresent == true }
 
-  func setDraft(_ value: String) {
-    guard !isBusy, !draft.utf8.elementsEqual(value.utf8) else { return }
-    draft = value
+  func setForm(_ value: SourceAccessProfileDraft) {
+    guard !isBusy, form?.id == value.id, form != value else { return }
+    form = value
+    draftDidChange()
+  }
+
+  func setRepairDraft(_ value: String) {
+    guard !isBusy, let repairDraft, !repairDraft.utf8.elementsEqual(value.utf8) else { return }
+    self.repairDraft = value
+    draftDidChange()
+  }
+
+  func bytesForPreview() -> Data? {
+    if !hasDraftChanges, let original = document?.editor.original { return original }
+    if let repairDraft { return Data(repairDraft.utf8) }
+    do {
+      return try form?.encoded()
+    } catch {
+      issue = .draftUnavailable
+      return nil
+    }
+  }
+
+  private func draftDidChange() {
     review = nil
     message = nil
     if !requiresReload { issue = nil }
@@ -75,8 +103,18 @@ final class SourceAccessSettingsModel {
     switch read.document {
     case .success(let document):
       self.document = document
-      draft = document.initialDraft
       requiresReload = false
+      form = nil
+      repairDraft = nil
+      if document.issue != nil {
+        repairDraft = document.originalText
+      } else if let profile = document.profile, let text = document.originalText {
+        form = SourceAccessProfileDraft(yaml: text, profile: profile)
+        if form == nil { issue = .draftUnavailable }
+      } else {
+        form = SourceAccessProfileDraft()
+      }
+      initialForm = form
     case .failure(let error):
       issue = error
       requiresReload = true
