@@ -20,9 +20,9 @@ Refresh retains a selected NodeID only if it still exists in the new immutable d
 
 Paths use compact scope-relative presentation where possible. Full paths remain available through help, accessibility and explicit copy actions. The inspector omits synthetic defaulted fields using Core’s source-map evidence, while retaining authored empty collections and explicit native null values. Technical declaration coordinates and document digests are contextual copy actions.
 
-## Agent Clients settings
+## Clients on this Mac
 
-ClientSettingsModel holds passive AgentClientOperations inspection results in memory. Detect Clients and Detect Again explicitly run on the existing serial executor and application operation registry. The result shows the captured user context and observation interval, command roles and selected/resolved paths, application observations, raw versions and builds with provenance or typed unknown reasons, supplied PATH coverage and exclusions, configuration locations and frozen schema evidence. Historical evidence revisions remain distinct from observed versions; configuration preview owns admission.
+Choose **Detect Clients** on Overview to inspect this Mac. ClientSettingsModel holds passive AgentClientOperations inspection results in memory. Detect Clients and Detect Again explicitly run on the existing serial executor and application operation registry. The result shows the captured user context and observation interval, command roles and selected/resolved paths, application observations, raw versions and builds with provenance or typed unknown reasons, supplied PATH coverage and exclusions, configuration locations and frozen schema evidence. Historical evidence revisions remain distinct from observed versions; configuration preview owns admission.
 
 Detection never invokes clients or version commands. Core owns command candidates, path resolution, metadata recipes and evidence. Settings provenance paths do not enter workspace monitoring, freshness, recovery or editing availability. Superseded requests cannot replace the latest Settings result. Queued cancellation still delivers a terminal; running synchronous inspection stays owned through return, including on quit. Workspace selection does not change the captured user context shown in Settings. Native passive-observation acceptance remains with the delivery owner.
 
@@ -41,6 +41,14 @@ Use **Validate and Preview** to review the profile before saving. A malformed fi
 Backups is available from the sidebar regardless of the workspace’s selected scope or read status. Back Up captures the selected clients, optional registered projects and output folder. Core’s `ClientBackups.create` runs once per client on the app’s serial worker. The form reports each actual package path or individual failure. An empty project selection still includes local sessions and user configuration. Backup packages can include credentials already stored in the backed-up files.
 
 Restore Package opens one archive and asks Core to inspect it. Original project roots are shown beside editable local destinations. An original directory that still exists is suggested as its destination. Review Restore passes the displayed mapping to Core and shows its file paths and change kinds, with replacements first. Changing a destination clears the review. The table displays paths and change kinds only. Before restoring file changes, quit the client named in the review. Restore submits the exact reviewed Core preview on the serial worker. The app waits for the operation to finish before releasing it and then refreshes the configuration view. Core owns package validation, destination checks and file writes.
+
+## Instructions for web clients
+
+In **Instructions & Rules → Web Instructions**, configure ChatGPT Web and Gemini Web independently. Choose instruction units, preview their combined text and copy it. The App remembers each selection on this Mac for the current user or project scope. **Client Output → Copy Full Text** copies a verified local output. For a managed Claude forwarding file, it copies the referenced instruction text.
+
+## Skill sources
+
+Select a skill and open **Source → Change Install Mode** to choose how its installations use a local source. Live Edit makes all selected clients use the same authored skill. **Open Source SKILL.md** opens that file after the mode change is applied. Editing the mode preserves the skill’s target selections.
 
 ## Explicit content actions
 
