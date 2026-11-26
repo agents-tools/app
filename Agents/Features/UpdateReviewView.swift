@@ -6,10 +6,6 @@ import SwiftUI
 struct UpdateReviewView: View {
   @Bindable var model: AppModel
 
-  private var isInstructionDraft: Bool {
-    model.manifestDraft?.kind == .component && model.manifestDraft?.component.kind == .instructions
-  }
-
   var body: some View {
     if let session = model.updateSession {
       VStack(alignment: .leading, spacing: 12) {
@@ -25,8 +21,10 @@ struct UpdateReviewView: View {
             .foregroundStyle(.secondary)
         case .review:
           if let report = session.report {
+            let showsInstructionOutputs = session.showsInstructionOutputs(
+              whileEditing: model.manifestDraft)
             Form {
-              if session.isInstructionBuild || isInstructionDraft {
+              if showsInstructionOutputs {
                 Section("Built Outputs") {
                   InstructionBuildBrowser(
                     outputs: report.instructions.outputs, scope: session.proposal.scope
@@ -66,7 +64,7 @@ struct UpdateReviewView: View {
                     Text(verbatim: advisory).foregroundStyle(.secondary)
                   }
                   if !report.instructions.targets.isEmpty {
-                    if session.isInstructionBuild || isInstructionDraft {
+                    if showsInstructionOutputs {
                       DetailsGroup("Review Local Files") {
                         InstructionFileReview(targets: report.instructions.targets)
                       }
@@ -153,7 +151,7 @@ struct UpdateReviewView: View {
           }.keyboardShortcut(.cancelAction)
           Spacer()
           if session.stage == .review, session.offersApply {
-            Button(applyTitle(session)) {
+            Button(session.applyTitle(whileEditing: model.manifestDraft)) {
               model.confirmUpdate()
             }
             .disabled(!model.canModify || !session.bindingsReady || !session.canApplyReport)
@@ -165,17 +163,6 @@ struct UpdateReviewView: View {
         .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
         .interactiveDismissDisabled(model.isApplying)
     }
-  }
-
-  private func applyTitle(_ session: UpdateSession) -> String {
-    if session.report?.hasChanges == false { return "Run Package Actions" }
-    if isInstructionDraft {
-      let changesLocalFiles = session.report?.instructions.targets.contains {
-        $0.changed || $0.agentsChanged
-      }
-      return changesLocalFiles == true ? "Save and Apply Local Changes" : "Save Declaration"
-    }
-    return session.isInstructionBuild ? "Apply Local Changes" : "Apply Changes"
   }
 }
 

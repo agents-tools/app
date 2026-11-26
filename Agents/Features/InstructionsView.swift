@@ -17,6 +17,11 @@ struct InstructionsView: View {
       ?? snapshot.mappings.first { $0.scope == snapshot.scope }
   }
 
+  private var displayedScope: WorkspaceScope {
+    if presentation == .output, let mapping { return mapping.scope }
+    return snapshot.scope
+  }
+
   private var units: [ComponentInspection] {
     snapshot.resolvedComponents(of: .instructions, for: model.clientFilter).filter {
       if case .object(let fields) = $0.configuration, fields["prompt"] != nil { return false }
@@ -51,9 +56,9 @@ struct InstructionsView: View {
     .toolbar {
       ToolbarItem {
         Button("Build Instructions…") {
-          model.previewUpdate(UpdateProposal(compilingInstructionsIn: snapshot.scope))
+          model.previewUpdate(UpdateProposal(compilingInstructionsIn: displayedScope))
         }
-        .disabled(!model.canModify)
+        .disabled(!model.canModify || displayedScope != model.scope)
         .accessibilityIdentifier("instructions.build")
       }
       ToolbarItem {
@@ -93,10 +98,17 @@ struct InstructionsView: View {
             LabeledContent("Revision") { CompactText(text: revision) }
           }
           LabeledContent("Configured Recipients") {
-            ClientFilterButtons(recipients: unit.recipients) { client in
-              model.clientFilter = client
-              mappingID = nil
-              presentation = .output
+            VStack(alignment: .trailing, spacing: 4) {
+              if !unit.recipients.isEmpty || unit.copyRecipients.isEmpty {
+                ClientFilterButtons(recipients: unit.recipients) { client in
+                  model.clientFilter = client
+                  mappingID = nil
+                  presentation = .output
+                }
+              }
+              ForEach(unit.copyRecipients, id: \.self) { recipient in
+                Text(recipient.displayName)
+              }
             }
           }
           let resources = snapshot.inspection.resources.filter {

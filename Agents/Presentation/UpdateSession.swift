@@ -138,6 +138,23 @@ struct UpdateSession: Identifiable {
   var offersApply: Bool {
     !isInstructionBuild || report?.instructions.targets.isEmpty == false
   }
+
+  func showsInstructionOutputs(whileEditing draft: ManifestDraft?) -> Bool {
+    isInstructionBuild || (draft != nil && report?.instructions.outputs.isEmpty == false)
+  }
+
+  func applyTitle(whileEditing draft: ManifestDraft?) -> String {
+    guard let report else { return "Apply Changes" }
+    if !report.hasChanges { return "Run Package Actions" }
+    if isInstructionBuild { return "Apply Local Changes" }
+    guard draft?.kind == .component, draft?.component.kind == .instructions,
+      !report.skills.contains(where: \.changed), !report.components.contains(where: \.changed),
+      report.marketplaceGraphChange == nil, report.marketplaceChanges?.isEmpty != false
+    else { return "Apply Changes" }
+
+    let changesLocalFiles = report.instructions.targets.contains { $0.changed || $0.agentsChanged }
+    return changesLocalFiles ? "Save and Apply Local Changes" : "Save Declaration"
+  }
 }
 
 extension LifecycleInspection {

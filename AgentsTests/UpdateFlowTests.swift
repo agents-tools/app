@@ -1,4 +1,5 @@
 import AgentsCore
+import AgentsInstructions
 import AgentsManifest
 import AgentsUpdates
 import Foundation
@@ -10,6 +11,89 @@ import Testing
 @Suite("Native configuration lifecycle", .serialized, .timeLimit(.minutes(2)))
 @MainActor
 struct UpdateFlowTests {
+  @Test func copyOnlyInstructionDraftUsesApplyChangesWhenADeclaredSkillIsMissing() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    _ = try InstructionOperations.initializeInstructions(named: "rules", environment: runtime)
+    let source = fixture.project.appendingPathComponent("producer/skills/helper")
+    try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+    try Data("---\nname: helper\ndescription: Fixture skill.\n---\n".utf8)
+      .write(to: source.appendingPathComponent("SKILL.md"))
+    try fixture.writeManifest(
+      """
+      version: 1
+      defaultAgents: [codex]
+      sources: {producer: {path: ./producer}}
+      components:
+        - kind: skills
+          source: producer
+          select: [helper]
+        - kind: instructions
+          sections: [{name: rules, recipients: [chatgpt-app]}]
+      """)
+    let model = await loadedModel(fixture)
+    model.selectedItem = try #require(model.snapshot?.instructions.first?.id)
+    model.editSelectedDeclaration()
+    model.manifestDraft?.component.instructions.sectionReferences[0].recipients = [.geminiApp]
+
+    let before = try fixture.entries()
+    try await reviewed(model) { model.previewDraft() }
+    let session = try #require(model.updateSession)
+    let report = try #require(session.report)
+    #expect(report.instructions.targets.isEmpty)
+    #expect(report.skills.contains { $0.skill == "helper" && $0.changed })
+    #expect(session.applyTitle(whileEditing: model.manifestDraft) == "Apply Changes")
+    #expect(try fixture.entries() == before)
+  }
+
+  @Test(arguments: [false, true])
+  func declarationReviewShowsCandidateInstructionOutputs(editYAML: Bool) async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    _ = try InstructionOperations.initializeInstructions(named: "rules", environment: runtime)
+    let declaration = """
+      version: 1
+      groups:
+        shared:
+          components:
+            - kind: instructions
+              sections: [{name: rules, recipients: [chatgpt-app]}]
+      uses: [{group: shared}]
+      """
+    try fixture.writeManifest(declaration)
+    let model = await loadedModel(fixture)
+    if editYAML {
+      model.editConfigurationYAML()
+      model.manifestDraft?.yaml = declaration.replacingOccurrences(
+        of: "chatgpt-app", with: "gemini-app")
+    } else {
+      model.selectedItem = try #require(model.snapshot?.items.first { $0.category == "Group" }?.id)
+      model.editSelectedDeclaration()
+      let draft = try #require(model.manifestDraft)
+      guard case .instructions(var instructions) = draft.groupComponents[0] else {
+        Issue.record("Expected the instruction component in the group draft")
+        return
+      }
+      instructions.sectionReferences[0].recipients = [.geminiApp]
+      model.manifestDraft?.groupComponents[0] = .instructions(instructions)
+    }
+
+    let before = try fixture.entries()
+    try await reviewed(model) { model.previewDraft() }
+    let session = try #require(model.updateSession)
+    #expect(session.showsInstructionOutputs(whileEditing: model.manifestDraft))
+    let outputs = try #require(session.report?.instructions.outputs)
+    #expect(outputs.map(\.recipient) == [.geminiApp])
+    #expect(outputs.first?.fullText?.contains("# rules") == true)
+    #expect(try fixture.entries() == before)
+  }
+
   @Test func firstConfigurationRequiresReviewAndPublishesThroughCore() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

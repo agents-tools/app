@@ -233,6 +233,13 @@ struct ContentActionTests {
     let saved = try #require(model.snapshot?.inspection.declaration)
     #expect(try saved.instructions?.sectionReferences == sections)
     #expect(try Data(contentsOf: localFile) == local.content)
+    let resolved = try #require(model.snapshot?.inspection.components)
+    let resolvedAppOnly = try #require(
+      resolved.first { $0.name == "shared" && $0.recipients.isEmpty })
+    #expect(Set(resolvedAppOnly.copyRecipients) == [.chatGPTApp, .geminiApp])
+    let resolvedMixed = try #require(resolved.first { $0.name == "both" })
+    #expect(resolvedMixed.recipients == [.codex])
+    #expect(resolvedMixed.copyRecipients == [.chatGPTApp])
     model.closeUpdateReview()
 
     try FileManager.default.removeItem(at: localFile)
@@ -269,6 +276,9 @@ struct ContentActionTests {
     model.select(scope)
     try await idle(model)
     let before = try fixture.entries()
+    let otherScope = WorkspaceScope(kind: .user, root: fixture.home)
+    model.previewUpdate(UpdateProposal(compilingInstructionsIn: otherScope))
+    #expect(model.updateSession == nil)
     model.previewUpdate(UpdateProposal(compilingInstructionsIn: scope))
     try await idle(model)
     let session = try #require(model.updateSession)
