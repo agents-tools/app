@@ -87,6 +87,8 @@ struct InventoryItem: Identifiable, Sendable {
   let status: String
   let mode: InstallMode?
   let source: String?
+  var revision: String? = nil
+  var version: String? = nil
 }
 
 struct MappingItem: Identifiable, Sendable {
@@ -135,6 +137,7 @@ struct WorkspaceSnapshot: Sendable {
   let ownInstructions: [OwnInstructionItem]?
   let diagnostics: [AppDiagnostic]
   let readAt: Date
+  var skillWorkspaceItems: [SkillWorkspaceItem] = []
 
   var isEmpty: Bool { document == nil && !inspection.recovery.pending }
   var components: [DeclarationItem] { items.filter { $0.category == "Component" } }
