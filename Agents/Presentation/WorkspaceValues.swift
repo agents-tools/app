@@ -101,9 +101,11 @@ struct MappingItem: Identifiable, Sendable {
 
 struct MappingTarget: Identifiable, Sendable {
   let id: String
-  let agents: String
+  let recipients: [AgentID]
   let sections: [LockedSection]
   let importedFile: String?
+
+  var agents: String { recipients.map(\.displayName).joined(separator: ", ") }
 }
 
 struct OwnInstructionItem: Identifiable, Sendable {

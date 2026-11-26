@@ -4,135 +4,50 @@ import AppKit
 import SwiftUI
 
 struct InstructionsView: View {
+  private enum Presentation: Hashable { case units, output }
+
   @Bindable var model: AppModel
   let snapshot: WorkspaceSnapshot
 
+  @State private var presentation: Presentation = .units
   @State private var mappingID: String?
-  @State private var targetID: String?
+
+  private var mapping: MappingItem? {
+    snapshot.mappings.first { $0.id == mappingID }
+      ?? snapshot.mappings.first { $0.scope == snapshot.scope }
+  }
+
+  private var units: [ComponentInspection] {
+    snapshot.resolvedComponents(of: .instructions, for: model.clientFilter).filter {
+      if case .object(let fields) = $0.configuration, fields["prompt"] != nil { return false }
+      return !$0.chatGPT
+    }
+  }
 
   var body: some View {
     Form {
-      Section("Instruction Sources") {
-        if snapshot.instructions.isEmpty {
-          Text("No instruction components are declared.").foregroundStyle(.secondary)
-        }
-        ForEach(snapshot.instructions) { item in
-          DisclosureGroup {
-            RecordFields(
-              record: item.record, pointer: item.pointer,
-              authored: snapshot.document.map { AuthoredFields(sourceMap: $0.sourceMap) })
-            Button("Edit Instructions…") {
-              model.selectedItem = item.id
-              model.editSelectedDeclaration()
-            }.disabled(!model.canModify)
-            ForEach(
-              item.record["chatGPT"]?.elements?.compactMap(\.record).compactMap {
-                $0["name"]?.string
-              } ?? [], id: \.self
-            ) { name in
-              Button("Generate “\(name)”…") { model.previewPrompt(name: name, in: snapshot.scope) }
-            }
-          } label: {
-            Label(item.title, systemImage: "doc.text")
-          }
-        }
+      Picker("Instructions", selection: $presentation) {
+        Text("Instruction Units").tag(Presentation.units)
+        Text("Client Output").tag(Presentation.output)
       }
-      if model.scope.kind == .project {
-        Section("Local Instructions") {
-          if let own = snapshot.ownInstructions {
-            if own.isEmpty {
-              Text("No local instructions found.").foregroundStyle(.secondary)
-            }
-            ForEach(own) { item in
-              DisclosureGroup(item.heading) {
-                Text(item.description)
-                LabeledContent("Location") { PathView(url: item.authorFile, scope: model.scope) }
-                LabeledContent("Paths", value: item.paths.joined(separator: ", "))
-                Button("Open Author File") { NSWorkspace.shared.open(item.authorFile) }
-              }
-            }
-          } else {
-            Text("Local instructions are unavailable. See Diagnostics.").foregroundStyle(.secondary)
-          }
-        }
-      }
-      let rules = snapshot.inspection.deployments.filter {
-        $0.format == "agents/antigravity-rule@1"
-      }
-      if !rules.isEmpty {
-        Section("Installed Antigravity Rules") {
-          ForEach(rules, id: \.identity) { rule in
-            LabeledContent {
-              Text(rule.status == .current ? "Verified" : rule.status.rawValue.capitalized)
-                .foregroundStyle(rule.status == .current ? .secondary : .primary)
-            } label: {
-              PathView(url: rule.location, scope: snapshot.scope)
-            }
-            if let diagnostic = rule.diagnostic {
-              Text(verbatim: diagnostic).foregroundStyle(.secondary)
-            }
-          }
-        }
-      }
-      if let mapping = snapshot.mappings.first(where: { $0.id == mappingID })
-        ?? snapshot.mappings.first(where: { $0.scope == snapshot.scope }) ?? snapshot.mappings.first
-      {
-        Section("Instruction Output") {
-          if snapshot.mappings.count > 1 {
-            Picker(
-              "Configuration",
-              selection: Binding(
-                get: { mapping.id },
-                set: {
-                  mappingID = $0
-                  targetID = nil
-                })
-            ) {
-              ForEach(snapshot.mappings) { item in Text(item.title).tag(item.id) }
-            }
-          }
-          Text(mapping.status).foregroundStyle(.secondary)
-          if let target = mapping.targets.first(where: { $0.id == targetID })
-            ?? mapping.targets.first
-          {
-            Picker("Output file", selection: Binding(get: { target.id }, set: { targetID = $0 })) {
-              ForEach(mapping.targets) { item in Text(item.id).tag(item.id) }
-            }
-            LabeledContent("Used by", value: target.agents)
-            if let imported = target.importedFile {
-              LabeledContent("Imports", value: imported)
-            }
-          }
-          Button("Copy Mapping") { copyText(mapping.copyText) }
-        }
-        if let target = mapping.targets.first(where: { $0.id == targetID })
-          ?? mapping.targets.first,
-          !target.sections.isEmpty
-        {
-          Section("Sections in File Order") { orderedSections(target.sections) }
-        }
-        if !mapping.unplaced.isEmpty {
-          Section("Unassigned Sections") { orderedSections(mapping.unplaced) }
-        }
-        if !mapping.prompts.isEmpty {
-          Section("Named Prompts") {
-            ForEach(mapping.prompts.keys.sorted(), id: \.self) { name in
-              HStack {
-                Text(name)
-                Spacer()
-                Button("Preview…") { model.previewPrompt(name: name, in: mapping.scope) }
-                  .accessibilityLabel("Preview " + name)
-              }
-              if let sections = mapping.prompts[name], !sections.isEmpty {
-                Text(sections.map(\.name).joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
-              }
-            }
-          }
+      .pickerStyle(.segmented)
+      .accessibilityIdentifier("instructions.presentation")
+
+      switch presentation {
+      case .units:
+        unitList
+        authoredInstructions
+        localInstructions
+      case .output:
+        if let mapping {
+          clientOutput(mapping)
+          if !mapping.prompts.isEmpty { namedPrompts(mapping) }
         }
       }
     }
     .formStyle(.grouped)
     .textSelection(.enabled)
+    .onChange(of: snapshot.scope) { mappingID = nil }
     .toolbar {
       ToolbarItem {
         Button("Preview Instruction Changes…") {
@@ -141,37 +56,275 @@ struct InstructionsView: View {
         .disabled(!model.canModify)
       }
       ToolbarItem {
-        if model.scope.kind == .project {
-          Button("New Local Instructions…", systemImage: "plus") {
-            model.beginCreation(.instructions)
+        Menu("Instruction Actions", systemImage: "ellipsis.circle") {
+          Button("Add Instructions…") {
+            model.beginDraft(.component)
+            model.manifestDraft?.component.kind = .instructions
+          }.disabled(!model.canModify)
+          if snapshot.scope.kind == .project {
+            Button("New Local Instructions…") { model.beginCreation(.instructions) }
           }
+          Button("Choose Mapping Projects…") { model.chooseMappings() }
+          Button("Copy All Mappings") {
+            copyText(snapshot.mappings.map(\.copyText).joined(separator: "\n\n"))
+          }.disabled(snapshot.mappings.isEmpty)
         }
+        .accessibilityIdentifier("instructions.actions")
       }
-      ToolbarItem {
-        Button("Choose Mapping Projects…") { model.chooseMappings() }
-      }
-      ToolbarItem {
-        Button("Copy All Mappings") {
-          copyText(snapshot.mappings.map(\.copyText).joined(separator: "\n\n"))
-        }
-      }
-      ToolbarItem {
-        Button("Add Instructions…") {
-          model.beginDraft(.component)
-          model.manifestDraft?.component.kind = .instructions
-        }
-      }
-    }
-  }
-  private func orderedSections(_ sections: [LockedSection]) -> some View {
-    ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
-      HStack(alignment: .firstTextBaseline, spacing: 12) {
-        Text(index + 1, format: .number)
-          .monospacedDigit().foregroundStyle(.secondary)
-          .frame(minWidth: 24, alignment: .trailing)
-        Text(section.name).help(section.source).accessibilityHint(section.source)
-      }.accessibilityElement(children: .combine)
     }
   }
 
+  private var unitList: some View {
+    Section("Resolved Instruction Units") {
+      if units.isEmpty {
+        if let client = model.clientFilter {
+          Text("No resolved instruction units target \(client.displayName) in this scope.")
+            .foregroundStyle(.secondary)
+          Button("Show All Clients") { model.clientFilter = nil }
+        } else {
+          Text("No resolved instruction units in this scope.").foregroundStyle(.secondary)
+        }
+      }
+      ForEach(units, id: \.record) { unit in
+        DetailsGroup(unit.name) {
+          LabeledContent("Source") { CompactText(text: unit.source) }
+          if let revision = unit.revision {
+            LabeledContent("Revision") { CompactText(text: revision) }
+          }
+          LabeledContent("Configured Recipients") {
+            ClientFilterButtons(recipients: unit.recipients) { client in
+              model.clientFilter = client
+              mappingID = nil
+              presentation = .output
+            }
+          }
+          let resources = snapshot.inspection.resources.filter {
+            unit.resources.contains($0.identity)
+          }
+          ForEach(resources, id: \.identity) { resource in
+            LabeledContent("Source File") { CompactText(text: resource.path) }
+          }
+          ForEach(unit.occurrences, id: \.selection) { occurrence in
+            ConfigurationOccurrenceDetails(occurrence: occurrence)
+          }
+          let deployments = snapshot.inspection.deployments.filter {
+            $0.ownerRecords.contains(unit.record)
+          }
+          if !deployments.isEmpty {
+            DetailsGroup("Mapped Files") {
+              ForEach(deployments, id: \.identity) { deployment in
+                LabeledContent(deployment.status.configurationLabel) {
+                  PathView(url: deployment.location, scope: snapshot.scope)
+                }
+              }
+              Button("View Client Output") {
+                mappingID = nil
+                presentation = .output
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private var authoredInstructions: some View {
+    Section("Instruction Declarations") {
+      if snapshot.instructions.isEmpty {
+        Text("No instruction components are declared here.").foregroundStyle(.secondary)
+      } else if model.clientFilter != nil {
+        Text("Edit declarations in this scope with their full target selections.")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      ForEach(snapshot.instructions) { item in
+        DetailsGroup(declarationTitle(item)) {
+          Button("Edit Instructions…") {
+            model.selectedItem = item.id
+            model.editSelectedDeclaration()
+          }.disabled(!model.canModify)
+          RecordFields(
+            record: item.record, pointer: item.pointer,
+            authored: snapshot.document.map { AuthoredFields(sourceMap: $0.sourceMap) })
+          let prompts =
+            item.record["chatGPT"]?.elements?.compactMap(\.record).compactMap {
+              $0["name"]?.string
+            } ?? []
+          ForEach(Array(prompts.enumerated()), id: \.offset) { _, name in
+            Button("Generate “\(name)”…") { model.previewPrompt(name: name, in: snapshot.scope) }
+          }
+        }
+      }
+    }
+  }
+
+  private func declarationTitle(_ item: DeclarationItem) -> String {
+    let title = item.container == "Scope" ? item.title : item.container + " · " + item.title
+    guard let section = item.record["sections"]?.elements?.first?.record,
+      let name = section["name"]?.string
+    else { return title }
+    return title + " · "
+      + SectionDeclaration(name: name, source: section["source"]?.string).reference
+  }
+
+  @ViewBuilder private var localInstructions: some View {
+    if snapshot.scope.kind == .project {
+      Section("Local Author Files") {
+        if let own = snapshot.ownInstructions {
+          if own.isEmpty {
+            Text("No local instruction files found.").foregroundStyle(.secondary)
+          }
+          ForEach(own) { item in
+            DetailsGroup(item.heading) {
+              if !item.description.isEmpty { Text(item.description) }
+              LabeledContent("Location") { PathView(url: item.authorFile, scope: snapshot.scope) }
+              if !item.paths.isEmpty {
+                LabeledContent("Paths", value: item.paths.joined(separator: ", "))
+              }
+              Button("Open Author File") { NSWorkspace.shared.open(item.authorFile) }
+            }
+          }
+        } else {
+          Text("Local instructions are unavailable. See Diagnostics.").foregroundStyle(.secondary)
+        }
+      }
+    }
+  }
+
+  private func clientOutput(_ mapping: MappingItem) -> some View {
+    Section("Output Files") {
+      if snapshot.mappings.count > 1 {
+        Picker("Configuration", selection: Binding(get: { mapping.id }, set: { mappingID = $0 })) {
+          ForEach(snapshot.mappings) { item in Text(item.title).tag(item.id) }
+        }
+        .accessibilityIdentifier("instructions.output.scope")
+      }
+      LabeledContent("Location") { PathView(url: mapping.scope.root, scope: mapping.scope) }
+      Text(mapping.status).foregroundStyle(.secondary)
+      if mapping.scope != snapshot.scope {
+        Button("Open " + mapping.scope.title) { model.select(mapping.scope) }
+          .disabled(model.isApplying || model.isTerminating)
+      }
+      if snapshot.scope.kind == .project {
+        Text("Each mapping covers one scope. Client precedence across scopes is unavailable here.")
+          .font(.caption).foregroundStyle(.secondary)
+      }
+      if let client = model.clientFilter,
+        !client.supportsInstructions(in: mapping.scope.installScope)
+      {
+        Text(
+          "\(client.displayName) does not support \(mapping.scope.installScope.rawValue) instruction output."
+        )
+        .foregroundStyle(.secondary)
+      }
+      let targets = mapping.targets(for: model.clientFilter)
+      if targets.isEmpty {
+        if let client = model.clientFilter {
+          Text("No mapped files for \(client.displayName).").foregroundStyle(.secondary)
+          Button("Show All Clients") { model.clientFilter = nil }
+        } else {
+          Text("No mapped instruction files.").foregroundStyle(.secondary)
+        }
+      }
+      ForEach(targets) { target in
+        DetailsGroup(target.id) { outputFile(target, in: mapping) }
+          .accessibilityIdentifier("instructions.output.file." + target.id)
+      }
+      if model.clientFilter == nil, !mapping.unplaced.isEmpty {
+        DetailsGroup("Unassigned Sections") { orderedSections(mapping.unplaced) }
+      }
+      Button("Copy Mapping") { copyText(mapping.copyText) }
+    }
+  }
+
+  @ViewBuilder private func outputFile(_ target: MappingTarget, in mapping: MappingItem)
+    -> some View
+  {
+    if let url = mapping.fileURL(for: target.id) {
+      LabeledContent("Path") { PathView(url: url, scope: mapping.scope) }
+    }
+    LabeledContent("Mapped Recipients") {
+      ClientFilterButtons(recipients: target.recipients) { model.clientFilter = $0 }
+    }
+    if target.recipients.count > 1 {
+      Label("Shared Output File", systemImage: "doc.on.doc")
+        .font(.caption).foregroundStyle(.secondary)
+    }
+    let deployment = mapping.deployment(for: target, in: snapshot)
+    if let deployment {
+      LabeledContent("On Disk", value: deployment.status.configurationLabel)
+      if let diagnostic = deployment.diagnostic {
+        Text(verbatim: diagnostic).foregroundStyle(.secondary)
+      }
+    }
+    let readers = deployment?.effectiveReaders
+    LabeledContent(
+      "Known File Readers",
+      value: readers?.map(\.displayName).joined(separator: ", ") ?? "Unreported")
+    if let reference = target.importedFile {
+      LabeledContent("Imports", value: reference)
+      if let imported = mapping.importedTarget(for: target) {
+        DetailsGroup("Sections in " + imported.id) { orderedSections(imported.sections) }
+      }
+    } else if !target.sections.isEmpty {
+      DetailsGroup("Sections in File Order") { orderedSections(target.sections) }
+    }
+  }
+
+  private func namedPrompts(_ mapping: MappingItem) -> some View {
+    Section("Named Prompts · " + mapping.title) {
+      ForEach(mapping.prompts.keys.sorted(), id: \.self) { name in
+        DetailsGroup(name) {
+          Button("Preview…") { model.previewPrompt(name: name, in: mapping.scope) }
+            .accessibilityLabel("Preview " + name)
+          orderedSections(mapping.prompts[name] ?? [])
+        }
+      }
+    }
+  }
+
+  private func orderedSections(_ sections: [LockedSection]) -> some View {
+    ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+      VStack(alignment: .leading, spacing: 2) {
+        Text("\(index + 1). \(section.name)")
+        Text(section.source + " · " + section.path)
+          .font(.caption).foregroundStyle(.secondary)
+      }.accessibilityElement(children: .combine)
+    }
+  }
+}
+
+extension MappingItem {
+  func targets(for recipient: AgentID?) -> [MappingTarget] {
+    guard let recipient else { return targets }
+    return targets.filter { $0.recipients.contains(recipient) }
+  }
+
+  func fileURL(for path: String) -> URL? {
+    if path.hasPrefix("/") { return URL(fileURLWithPath: path).standardizedFileURL }
+    if path.hasPrefix("~/") {
+      guard scope.kind == .user else { return nil }
+      return scope.root.appendingPathComponent(String(path.dropFirst(2))).standardizedFileURL
+    }
+    return scope.root.appendingPathComponent(path).standardizedFileURL
+  }
+
+  func importedTarget(for target: MappingTarget) -> MappingTarget? {
+    guard let reference = target.importedFile, let file = fileURL(for: target.id) else {
+      return nil
+    }
+    let imported = file.deletingLastPathComponent().appendingPathComponent(reference)
+      .standardizedFileURL
+    return targets.first { $0.id != target.id && fileURL(for: $0.id) == imported }
+  }
+
+  func deployment(for target: MappingTarget, in snapshot: WorkspaceSnapshot)
+    -> DeploymentInspection?
+  {
+    guard snapshot.scope == scope, let url = fileURL(for: target.id) else { return nil }
+    return snapshot.inspection.deployments.first {
+      $0.location.standardizedFileURL == url
+        && ["agents/instructions@1", "agents/claude-import@1", "agents/antigravity-rule@1"]
+          .contains($0.format)
+    }
+  }
 }

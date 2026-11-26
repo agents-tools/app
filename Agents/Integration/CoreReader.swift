@@ -266,7 +266,7 @@ struct CoreReader: Sendable {
       status: status,
       targets: value.targets.map {
         MappingTarget(
-          id: $0.target, agents: $0.agents.map(\.displayName).joined(separator: ", "),
+          id: $0.target, recipients: $0.agents,
           sections: $0.sections, importedFile: $0.import)
       }, unplaced: value.unplaced,
       prompts: value.prompts)

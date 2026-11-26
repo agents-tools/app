@@ -1,4 +1,5 @@
 import AgentsCore
+import AgentsInstructions
 import AgentsManifest
 import AgentsUpdates
 import Foundation
@@ -98,6 +99,112 @@ struct CoreReaderTests {
     #expect(instruction.heading == "Project Style")
     #expect(instruction.description == "Style rules.")
     #expect(instruction.authorFile == author)
+    #expect(try fixture.entries() == before)
+  }
+
+  @Test func instructionOutputPreservesSharedFilesImportsAndIndependentSectionTargets() throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    for name in ["first", "second", "gemini"] {
+      _ = try InstructionOperations.initializeInstructions(named: name, environment: runtime)
+    }
+    let claudeFile = fixture.project.appendingPathComponent(".claude/CLAUDE.md")
+    try FileManager.default.createDirectory(
+      at: claudeFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data("# Claude project notes\n".utf8).write(to: claudeFile)
+    try fixture.writeManifest(
+      """
+      version: 1
+      components:
+        - kind: instructions
+          agents: [claude-code, codex, gemini-cli]
+          sections:
+            - {name: second, condition: {agents: [claude-code, codex]}}
+            - {name: first, condition: {agents: [claude-code, codex]}}
+            - {name: gemini, condition: {agents: [gemini-cli], scopes: [project]}}
+          chatgpt:
+            daily:
+              sections: [{name: first}, {name: second}]
+      """)
+    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
+    let reader = CoreReader(home: fixture.home, processEnvironment: fixture.environment)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    let before = try fixture.entries()
+    let snapshot = try #require(reader.read(scope: scope).snapshot)
+    let mapping = try #require(snapshot.mappings.first { $0.scope == scope })
+
+    let shared = try #require(mapping.targets(for: .codex).first)
+    #expect(shared.id == "AGENTS.md")
+    #expect(Set(shared.recipients) == [.claudeCode, .codex])
+    #expect(shared.sections.map(\.name) == ["second", "first"])
+    #expect(mapping.deployment(for: shared, in: snapshot)?.status == .current)
+    #expect(mapping.deployment(for: shared, in: snapshot)?.effectiveReaders == nil)
+
+    let forwarding = try #require(
+      mapping.targets(for: .claudeCode).first { $0.importedFile != nil })
+    #expect(forwarding.id == ".claude/CLAUDE.md")
+    #expect(forwarding.importedFile == "../AGENTS.md")
+    #expect(forwarding.sections.isEmpty)
+    #expect(mapping.importedTarget(for: forwarding)?.sections == shared.sections)
+    #expect(mapping.targets(for: .geminiCLI).map(\.id) == ["GEMINI.md"])
+    #expect(mapping.targets(for: .geminiCLI).first?.sections.map(\.name) == ["gemini"])
+    #expect(mapping.targets(for: .cursor).isEmpty)
+    #expect(mapping.prompts["daily"]?.map(\.name) == ["first", "second"])
+    #expect(snapshot.mappings.first { $0.scope.kind == .user }?.targets.isEmpty == true)
+    #expect(try fixture.entries() == before)
+
+    let declaration = try #require(snapshot.inspection.declaration)
+    let item = try #require(snapshot.instructions.first)
+    var draft = ManifestDraft(scope: scope, document: snapshot.document)
+    draft.load(item, from: declaration)
+    let gemini = try #require(
+      draft.component.instructions.sectionReferences.firstIndex { $0.name == "gemini" })
+    draft.component.instructions.sectionReferences[gemini].condition?.agents = []
+    let preview = try UpdateOperations.preview(
+      draft.updateRequest(home: fixture.home), scope: .project, environment: runtime)
+    let changed = preview.instructions.targets.filter { $0.changed || $0.agentsChanged }
+    #expect(changed.map(\.target) == ["GEMINI.md"])
+    #expect(changed.first?.after == nil)
+    #expect(changed.first?.beforeAgents == [.geminiCLI])
+    #expect(preview.instructions.changedPrompts.isEmpty)
+    #expect(try fixture.entries() == before)
+  }
+
+  @Test func capabilityFilterUsesResolvedRecipientsAndKeepsUnresolvedDeclarations() throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    let manifest = """
+      version: 1
+      defaultAgents: [cursor]
+      components:
+        - kind: mcpServer
+          name: gemini-cli-helper
+          agents: [codex]
+          transport: {kind: stdio, executable: fixture-command}
+      """
+    try fixture.writeManifest(manifest)
+    let reader = CoreReader(home: fixture.home, processEnvironment: fixture.environment)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    let unresolved = try #require(reader.read(scope: scope).snapshot)
+    #expect(unresolved.components.map(\.title) == ["gemini-cli-helper"])
+    #expect(unresolved.resolvedComponents(of: .mcpServer, for: nil).isEmpty)
+
+    _ = try UpdateOperations.withPreparedUpdate(scope: .project, environment: runtime) {
+      try $0.apply()
+    }
+    let before = try fixture.entries()
+    let resolved = try #require(reader.read(scope: scope).snapshot)
+    let server = try #require(resolved.resolvedComponents(of: .mcpServer, for: .codex).first)
+    #expect(server.name == "gemini-cli-helper")
+    #expect(resolved.resolvedComponents(of: .mcpServer, for: .geminiCLI).isEmpty)
+    #expect(resolved.resolvedComponents(of: .mcpServer, for: .cursor).isEmpty)
+    #expect(resolved.inspection.deployments.contains { $0.ownerRecords.contains(server.record) })
     #expect(try fixture.entries() == before)
   }
 

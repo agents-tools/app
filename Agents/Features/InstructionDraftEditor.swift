@@ -4,6 +4,7 @@ import SwiftUI
 struct SectionsEditor: View {
   @Binding var values: [SectionDeclaration]
   var allowsAntigravity = false
+  var recipientTitle = "Specify agents"
 
   var body: some View {
     DraftRows(values: $values) { row, actions in
@@ -12,7 +13,7 @@ struct SectionsEditor: View {
         OptionalText(title: "source", value: row.source)
         ConditionEditor(
           value: row.condition,
-          agentTitle: allowsAntigravity ? "Restrict recipients" : "Specify agents",
+          agentTitle: recipientTitle,
           allowsAntigravity: allowsAntigravity)
         DraftRowButtons(actions: actions)
       }
@@ -25,13 +26,15 @@ struct InstructionDraftEditor: View {
   @Binding var value: InstructionsDeclaration
   let allowsAntigravity: Bool
 
+  @State private var orderedSectionsExpanded = true
+
   var body: some View {
-    DisclosureGroup("Ordered Sections") {
-      if allowsAntigravity {
-        Text("Use a section’s conditions to restrict which installation targets receive it.")
-          .font(.caption).foregroundStyle(.secondary)
-      }
-      SectionsEditor(values: $value.sectionReferences, allowsAntigravity: allowsAntigravity)
+    DisclosureGroup("Ordered Sections", isExpanded: $orderedSectionsExpanded) {
+      Text("Each section can restrict the installation targets, scopes, and platforms it uses.")
+        .font(.caption).foregroundStyle(.secondary)
+      SectionsEditor(
+        values: $value.sectionReferences, allowsAntigravity: allowsAntigravity,
+        recipientTitle: "Restrict section recipients")
     }
     DisclosureGroup("Named Prompts") {
       DraftRows(values: $value.prompts) { row, actions in
