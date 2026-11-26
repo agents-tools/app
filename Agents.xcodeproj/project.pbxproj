@@ -477,7 +477,7 @@
 			repositoryURL = "https://github.com/agents-tools/core";
 			requirement = {
 				kind = revision;
-				revision = 685bc3cbe2195f4b70eafd1a6ed747c9452187b6;
+				revision = 80c932c40d723139a5a1e77b50d3a3e792978b6b;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
