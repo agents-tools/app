@@ -321,6 +321,7 @@ struct OverviewView: View {
         }
       }
       .listStyle(.inset)
+      .buttonStyle(.borderless)
       .confirmationDialog(
         "Recover this configuration?", isPresented: $confirmsRecovery, titleVisibility: .visible
       ) {
