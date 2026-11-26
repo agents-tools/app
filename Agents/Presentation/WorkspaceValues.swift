@@ -13,28 +13,52 @@ struct WorkspaceScope: Hashable, Codable, Sendable, Identifiable {
 }
 
 enum WorkspacePage: String, CaseIterable, Identifiable {
-  case overview, components, instructions, sources, changes, diagnostics, backups
+  case overview, skills, instructions, mcp, other, packages, sources, changes, backups, diagnostics
+  case components
+
   var id: Self { self }
   var title: String {
     switch self {
     case .overview: "Overview"
-    case .components: "Components"
-    case .instructions: "Instructions / Rules"
+    case .skills: "Skills"
+    case .instructions: "Instructions & Rules"
+    case .mcp: "MCP Servers"
+    case .other: "Other Configuration"
+    case .packages: "Packages"
     case .sources: "Sources"
     case .changes: "Changes"
     case .diagnostics: "Diagnostics"
     case .backups: "Backups"
+    case .components: "Declaration"
     }
   }
   var symbol: String {
     switch self {
     case .overview: "square.grid.2x2"
-    case .components: "puzzlepiece.extension"
+    case .skills: "sparkles"
     case .instructions: "doc.text"
+    case .mcp: "point.3.connected.trianglepath.dotted"
+    case .other: "slider.horizontal.3"
+    case .packages: "shippingbox"
     case .sources: "externaldrive"
     case .changes: "arrow.triangle.2.circlepath"
     case .diagnostics: "stethoscope"
     case .backups: "archivebox"
+    case .components: "doc.text.magnifyingglass"
+    }
+  }
+
+  var showsClientFilter: Bool {
+    switch self {
+    case .overview, .skills, .instructions, .mcp, .other: true
+    default: false
+    }
+  }
+
+  var hasInspector: Bool {
+    switch self {
+    case .skills, .components, .sources: true
+    default: false
     }
   }
 }

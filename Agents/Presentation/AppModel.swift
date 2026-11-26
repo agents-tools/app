@@ -94,8 +94,17 @@ final class AppModel {
   private var recoverySequence: [WorkspaceScope: Int] = [:]
   private var unresolvedCoreRecovery: Set<WorkspaceScope> = []
   var page: WorkspacePage = .overview {
-    didSet { if page != oldValue { discardSourceAccess() } }
+    didSet {
+      guard page != oldValue else { return }
+      if selectedItem != nil {
+        selectedItem = nil
+      } else {
+        discardSourceAccess()
+      }
+    }
   }
+  var clientFilter: AgentID?
+  var selectedSkillID: String?
   var selectedItem: NodeID? {
     didSet { if selectedItem != oldValue { discardSourceAccess() } }
   }
@@ -168,11 +177,15 @@ final class AppModel {
       + preferences.projects.map { .init(kind: .project, root: $0) }
   }
   var snapshot: WorkspaceSnapshot? {
-    if case .loaded(let value) = loadState { return value }
+    if case .loaded(let value) = loadState, value.scope == scope { return value }
     return nil
   }
   var selectedDeclaration: DeclarationItem? { snapshot?.items.first { $0.id == selectedItem } }
   var currentDiagnostics: [AppDiagnostic] { diagnostics.filter { $0.scope == scope } }
+  var currentScopeProblems: [AppDiagnostic] {
+    if case .failed(let diagnostics) = loadState { return diagnostics }
+    return snapshot?.diagnostics.filter { $0.severity != .information } ?? []
+  }
   var filteredItems: [DeclarationItem] {
     guard let snapshot else { return [] }
     let items: [DeclarationItem]
@@ -190,6 +203,11 @@ final class AppModel {
     }
   }
 
+  func showClientOverview(_ agent: AgentID) {
+    clientFilter = agent
+    page = .overview
+  }
+
   func select(_ scope: WorkspaceScope) {
     guard self.scope != scope, !isTerminating, !isApplying else { return }
     stopMonitoring()
@@ -201,6 +219,7 @@ final class AppModel {
     self.scope = scope
     preferences.selectedScopeID = scope.id
     selectedItem = nil
+    selectedSkillID = nil
     search = ""
     refresh()
   }
@@ -909,11 +928,14 @@ final class AppModel {
         since: readBoundary)
     }
     if currentSelection {
-      if let snapshot = result.snapshot {
+      if let snapshot = result.snapshot, snapshot.scope == scope {
         loadState = .loaded(snapshot)
         readsStale = false
         if let selectedItem, !snapshot.items.contains(where: { $0.id == selectedItem }) {
           self.selectedItem = nil
+        }
+        if let selectedSkillID, !snapshot.skillWorkspaceItems.contains(where: { $0.id == selectedSkillID }) {
+          self.selectedSkillID = nil
         }
         monitor(snapshot.inspection.readLocations.map(ReadDependency.subtree), since: readBoundary)
       } else if case .workspace = operation.purpose,
@@ -921,8 +943,10 @@ final class AppModel {
       {
         loadState = .existingConfigurationAvailable
         readsStale = false
+        selectedSkillID = nil
       } else if case .workspace = operation.purpose, case .failed = result.disposition {
         loadState = .failed(result.diagnostics)
+        selectedSkillID = nil
       } else if case .workspace = operation.purpose, case .cancelled = result.disposition {
         loadState = .idle
       }
