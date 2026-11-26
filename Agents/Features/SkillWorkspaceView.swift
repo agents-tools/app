@@ -1,4 +1,5 @@
 import AgentsCore
+import AppKit
 import SwiftUI
 
 struct SkillWorkspaceView: View {
@@ -35,9 +36,17 @@ struct SkillWorkspaceView: View {
 }
 
 struct SkillWorkspaceInspector: View {
+  private struct Edit: Identifiable {
+    let item: SkillWorkspaceItem
+    let field: SkillTargetsSheet.Field
+
+    var id: String { item.id }
+  }
+
   let model: AppModel
   let snapshot: WorkspaceSnapshot
-  @State private var editingItem: SkillWorkspaceItem?
+  @State private var edit: Edit?
+  @State private var sourceOpenFailed = false
 
   var body: some View {
     Group {
@@ -62,7 +71,12 @@ struct SkillWorkspaceInspector: View {
               }
             } : nil,
           editTargets: item.scope == snapshot.scope && item.canEditTargets && model.canModify
-            ? { editingItem = item } : nil,
+            ? { edit = Edit(item: item, field: .targets) } : nil,
+          changeInstallMode: item.scope == snapshot.scope && item.canEditInstallMode
+            && model.canPreviewSkillChanges
+            ? { edit = Edit(item: item, field: .mode) } : nil,
+          openSource: item.scope == snapshot.scope && item.liveSource != nil && !model.readsStale
+            ? { openSource(for: item) } : nil,
           openOwner: item.scope != snapshot.scope
             ? {
               model.select(item.scope)
@@ -73,8 +87,18 @@ struct SkillWorkspaceInspector: View {
         ContentUnavailableView("Select a Skill", systemImage: "square.stack.3d.up")
       }
     }
-    .sheet(item: $editingItem) { item in
-      SkillTargetsSheet(model: model, item: item)
+    .sheet(item: $edit) { edit in
+      SkillTargetsSheet(model: model, item: edit.item, field: edit.field)
+    }
+    .alert("Couldn’t Open Source SKILL.md", isPresented: $sourceOpenFailed) {
+      Button("OK", role: .cancel) {}
+    }
+  }
+
+  private func openSource(for item: SkillWorkspaceItem) {
+    guard let url = model.currentSkillSourceURL(for: item), NSWorkspace.shared.open(url) else {
+      sourceOpenFailed = true
+      return
     }
   }
 }

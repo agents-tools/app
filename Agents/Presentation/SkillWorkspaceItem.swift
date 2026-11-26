@@ -19,12 +19,15 @@ struct SkillWorkspaceItem: Identifiable, Sendable {
   var componentRecords: Set<String> = []
   let isResolved: Bool
   let targetOwner: SkillTargetOwner?
+  var resolvedModes: Set<InstallMode> = []
+  var liveSource: SkillSourceFile? = nil
 
   func isUsed(by client: AgentID, in visibleScope: WorkspaceScope) -> Bool {
     isResolved && scope == visibleScope && recipients.contains(client)
   }
 
   var canEditTargets: Bool { targetOwner != nil }
+  var canEditInstallMode: Bool { targetOwner?.canEditInstallMode == true }
 }
 
 struct SkillTargetOwner: Equatable, Sendable {
@@ -33,17 +36,29 @@ struct SkillTargetOwner: Equatable, Sendable {
   let name: String
   let declarationPointer: String
   let requestedRecipients: Set<AgentID>
-  let mode: InstallMode?
+  let skillOverride: SkillOverride
+  let inheritedMode: InstallMode
+  let canEditInstallMode: Bool
+
+  var effectiveMode: InstallMode { skillOverride.mode ?? inheritedMode }
 
   func request(recipients: Set<AgentID>) -> UpdateRequest {
-    UpdateRequest(
-      operation: .edit([
-        .upsertSkillOverride(
-          node,
-          .init(
-            name: name,
-            override: .init(agents: AgentID.allCases.filter(recipients.contains), mode: mode)))
-      ]),
+    request(
+      override: .init(
+        agents: AgentID.allCases.filter(recipients.contains), mode: skillOverride.mode))
+  }
+
+  func request(mode: InstallMode?) -> UpdateRequest {
+    request(override: .init(agents: skillOverride.agents, mode: mode))
+  }
+
+  private func request(override: SkillOverride) -> UpdateRequest {
+    let edit: ManifestEdit =
+      override.agents == nil && override.mode == nil
+      ? .removeSkillOverride(node, name: name)
+      : .upsertSkillOverride(node, .init(name: name, override: override))
+    return UpdateRequest(
+      operation: .edit([edit]),
       expectedDeclarationDigest: documentDigest)
   }
 }

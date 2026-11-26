@@ -3,22 +3,45 @@ import AgentsUpdates
 import SwiftUI
 
 struct SkillTargetsSheet: View {
+  enum Field {
+    case targets
+    case mode
+
+    var title: LocalizedStringKey {
+      switch self {
+      case .targets: "Edit Skill Targets"
+      case .mode: "Change Install Mode"
+      }
+    }
+
+    var reviewTitle: LocalizedStringKey {
+      switch self {
+      case .targets: "Preview Skill Target Changes"
+      case .mode: "Preview Install Mode Change"
+      }
+    }
+  }
+
   let model: AppModel
   let item: SkillWorkspaceItem
+  let field: Field
   @Environment(\.dismiss) private var dismiss
   @State private var recipients: Set<AgentID>
+  @State private var mode: InstallMode?
   @State private var reviewID: UUID?
 
-  init(model: AppModel, item: SkillWorkspaceItem) {
+  init(model: AppModel, item: SkillWorkspaceItem, field: Field) {
     self.model = model
     self.item = item
+    self.field = field
     _recipients = State(initialValue: item.targetOwner?.requestedRecipients ?? Set(item.recipients))
+    _mode = State(initialValue: item.targetOwner?.skillOverride.mode)
   }
 
   var body: some View {
     let review = model.skillTargetsUpdateSession.flatMap { $0.id == reviewID ? $0 : nil }
     VStack(alignment: .leading, spacing: 12) {
-      Text(review == nil ? "Edit Skill Targets" : "Preview Skill Target Changes")
+      Text(review == nil ? field.title : field.reviewTitle)
         .font(.headline)
       LabeledContent("Skill") { Text(verbatim: item.title) }
       LabeledContent("Scope") { PathView(url: item.scope.root, scope: item.scope) }
@@ -29,39 +52,32 @@ struct SkillTargetsSheet: View {
       }
     }
     .padding(24)
-    .frame(width: review == nil ? 475 : 680, height: review == nil ? 370 : 595)
+    .frame(width: review == nil ? 475 : 680, height: review == nil ? editorHeight : 595)
     .interactiveDismissDisabled(model.isApplying)
     .onDisappear { closeReview() }
   }
+
+  private var editorHeight: CGFloat { field == .targets ? 370 : 250 }
 
   private var editor: some View {
     let owner = model.currentSkillTargetOwner(for: item)
     return VStack(alignment: .leading, spacing: 12) {
       Form {
-        Section("Clients") {
-          ForEach(AgentID.allCases, id: \.self) { agent in
-            Toggle(
-              agent.displayName,
-              isOn: Binding(
-                get: { recipients.contains(agent) },
-                set: { enabled in
-                  if enabled { recipients.insert(agent) } else { recipients.remove(agent) }
-                })
-            )
-            .toggleStyle(.checkbox)
-          }
+        switch field {
+        case .targets: targetFields.disabled(owner == nil)
+        case .mode:
+          modeFields.disabled(owner?.canEditInstallMode != true)
         }
-        .disabled(owner == nil)
         if !item.canEditTargets {
           Text("This skill has no single editable declaration in this scope.")
             .foregroundStyle(.secondary)
         } else if item.scope != model.scope {
-          Text("Open the skill in its owning scope to edit its targets.")
+          Text("Open the skill in its owning scope to make changes.")
             .foregroundStyle(.secondary)
         } else if owner == nil && !model.readsStale {
-          Text("The declaration changed. Reopen this skill to edit its current targets.")
+          Text("The declaration changed. Reopen this skill to edit its current settings.")
             .foregroundStyle(.secondary)
-        } else if let owner, Set(item.recipients) != owner.requestedRecipients {
+        } else if field == .targets, let owner, Set(item.recipients) != owner.requestedRecipients {
           Text("The preview resolves these selections with the skill’s conditions.")
             .foregroundStyle(.secondary)
         }
@@ -71,12 +87,58 @@ struct SkillTargetsSheet: View {
         Button("Cancel") { dismiss() }.keyboardShortcut(.cancelAction)
         Spacer()
         Button("Preview Changes") {
-          reviewID = model.previewSkillTargets(for: item, recipients: recipients)
+          switch field {
+          case .targets: reviewID = model.previewSkillTargets(for: item, recipients: recipients)
+          case .mode: reviewID = model.previewSkillInstallMode(for: item, mode: mode)
+          }
         }
         .keyboardShortcut(.defaultAction)
-        .disabled(!model.canModify || owner == nil || owner?.requestedRecipients == recipients)
+        .disabled(!model.canPreviewSkillChanges || !hasChange(owner))
       }
     }
+  }
+
+  private func hasChange(_ owner: SkillTargetOwner?) -> Bool {
+    guard let owner else { return false }
+    switch field {
+    case .targets: return recipients != owner.requestedRecipients
+    case .mode: return owner.canEditInstallMode && mode != owner.skillOverride.mode
+    }
+  }
+
+  private var targetFields: some View {
+    Section("Clients") {
+      ForEach(AgentID.allCases, id: \.self) { agent in
+        Toggle(
+          agent.displayName,
+          isOn: Binding(
+            get: { recipients.contains(agent) },
+            set: { enabled in
+              if enabled { recipients.insert(agent) } else { recipients.remove(agent) }
+            })
+        )
+        .toggleStyle(.checkbox)
+      }
+    }
+  }
+
+  private var modeFields: some View {
+    Section {
+      Picker("Install Mode", selection: $mode) {
+        Text(modeLabel(nil)).tag(InstallMode?.none)
+        Text(InstallMode.link.skillLabel).tag(Optional(InstallMode.link))
+        Text(InstallMode.copy.skillLabel).tag(Optional(InstallMode.copy))
+        Text(InstallMode.edit.skillLabel).tag(Optional(InstallMode.edit))
+      }
+      .accessibilityIdentifier("skill.installMode")
+    } footer: {
+      Text("Applies to every target. Live Edit links each installation to the local source.")
+    }
+  }
+
+  private func modeLabel(_ mode: InstallMode?) -> String {
+    if let mode { return mode.skillLabel }
+    return "Inherit (\(item.targetOwner?.inheritedMode.skillLabel ?? InstallMode.link.skillLabel))"
   }
 
   @ViewBuilder private func reviewContent(_ review: UpdateSession) -> some View {
@@ -86,6 +148,9 @@ struct SkillTargetsSheet: View {
     case .review:
       if let report = review.report {
         Form {
+          if field == .mode {
+            LabeledContent("Install Mode", value: modeLabel(mode))
+          }
           SkillTargetEffectsView(report: report, scope: item.scope)
           let changedFiles = report.instructions.targets.filter(\.changed)
           if !changedFiles.isEmpty {
