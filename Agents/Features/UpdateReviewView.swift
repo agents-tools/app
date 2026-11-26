@@ -27,7 +27,9 @@ struct UpdateReviewView: View {
               if showsInstructionOutputs {
                 Section("Built Outputs") {
                   InstructionBuildBrowser(
-                    outputs: report.instructions.outputs, scope: session.proposal.scope
+                    outputs: session.instructionOutputs, scope: session.proposal.scope,
+                    emptyMessage: session.instructionOutputFocus?.emptyMessage
+                      ?? "No instructions were built."
                   ).id(session.id)
                 }
               }
@@ -107,10 +109,10 @@ struct UpdateReviewView: View {
                   }
                 }
               }
-              Text(
-                "Changes to the inputs require another review before applying."
-              )
-              .font(.caption).foregroundStyle(.secondary)
+              if session.instructionOutputFocus == nil {
+                Text("Changes to the inputs require another review before applying.")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
             }.formStyle(.grouped)
           }
         case .stale: Text("Configuration or scope changed. Prepare a new preview before applying.")

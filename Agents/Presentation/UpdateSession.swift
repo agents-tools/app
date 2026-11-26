@@ -1,6 +1,40 @@
 import AgentsCore
+import AgentsInstructions
 import AgentsUpdates
 import Foundation
+
+enum InstructionOutputFocus: Sendable {
+  case app(InstructionRecipient)
+  case local(file: URL? = nil, recipient: AgentID? = nil)
+
+  var title: String {
+    switch self {
+    case .app(let recipient): "Preview " + recipient.displayName
+    case .local: "Preview Local Instructions"
+    }
+  }
+
+  var emptyMessage: String {
+    switch self {
+    case .app(let recipient):
+      "No instruction units build for \(recipient.displayName). Choose it under Recipients in an instruction declaration."
+    case .local:
+      "No instructions were built for this local output. Review the recipients in your instruction declarations."
+    }
+  }
+
+  func includes(_ output: InstructionBuildOutput) -> Bool {
+    switch self {
+    case .app(let recipient):
+      return output.fileURL == nil && output.recipient == recipient
+    case .local(let file, let recipient):
+      guard let outputFile = output.fileURL else { return false }
+      return
+        (file.map { $0.standardizedFileURL.path == outputFile.standardizedFileURL.path } ?? true)
+        && (recipient.map { output.recipient == .local($0) } ?? true)
+    }
+  }
+}
 
 struct UpdateProposal: Sendable {
   enum Presentation: Sendable { case workspace, skillTargets }
@@ -12,7 +46,7 @@ struct UpdateProposal: Sendable {
   enum Contents: Sendable {
     case update(UpdateRequest)
     case packageRequest(UpdateRequest, LifecycleOperationIntent)
-    case instructionCompilation
+    case instructionCompilation(InstructionOutputFocus?)
     case packageReview(PackageUpdateReview)
   }
   let contents: Contents
@@ -27,11 +61,11 @@ struct UpdateProposal: Sendable {
     contents = intent.map { .packageRequest(request, $0) } ?? .update(request)
   }
 
-  init(compilingInstructionsIn scope: WorkspaceScope) {
+  init(compilingInstructionsIn scope: WorkspaceScope, focus: InstructionOutputFocus? = nil) {
     id = UUID()
     self.scope = scope
-    title = "Build Instructions"
-    contents = .instructionCompilation
+    title = focus?.title ?? "Build Instructions"
+    contents = .instructionCompilation(focus)
   }
 
   init(scope: WorkspaceScope, title: String, packageReview: PackageUpdateReview) {
@@ -136,7 +170,19 @@ struct UpdateSession: Identifiable {
   }
 
   var offersApply: Bool {
-    !isInstructionBuild || report?.instructions.targets.isEmpty == false
+    !isInstructionBuild
+      || (instructionOutputFocus == nil && report?.instructions.targets.isEmpty == false)
+  }
+
+  var instructionOutputFocus: InstructionOutputFocus? {
+    if case .instructionCompilation(let focus) = proposal.contents { return focus }
+    return nil
+  }
+
+  var instructionOutputs: [InstructionBuildOutput] {
+    let outputs = report?.instructions.outputs ?? []
+    guard let focus = instructionOutputFocus else { return outputs }
+    return outputs.filter(focus.includes)
   }
 
   func showsInstructionOutputs(whileEditing draft: ManifestDraft?) -> Bool {

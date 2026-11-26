@@ -22,6 +22,10 @@ struct InstructionsView: View {
     return snapshot.scope
   }
 
+  private var canBuildDisplayedScope: Bool {
+    model.canModify && displayedScope == model.scope
+  }
+
   private var units: [ComponentInspection] {
     snapshot.resolvedComponents(of: .instructions, for: model.clientFilter).filter {
       if case .object(let fields) = $0.configuration, fields["prompt"] != nil { return false }
@@ -44,6 +48,8 @@ struct InstructionsView: View {
         authoredInstructions
         localInstructions
       case .output:
+        if let mapping { outputConfiguration(mapping) }
+        appOutputs(in: displayedScope)
         if let mapping {
           clientOutput(mapping)
           if !mapping.prompts.isEmpty { namedPrompts(mapping) }
@@ -58,15 +64,12 @@ struct InstructionsView: View {
         Button("Build Instructions…") {
           model.previewUpdate(UpdateProposal(compilingInstructionsIn: displayedScope))
         }
-        .disabled(!model.canModify || displayedScope != model.scope)
+        .disabled(!canBuildDisplayedScope)
         .accessibilityIdentifier("instructions.build")
       }
       ToolbarItem {
         Menu("Instruction Actions", systemImage: "ellipsis.circle") {
-          Button("Add Instructions…") {
-            model.beginDraft(.component)
-            model.manifestDraft?.component.kind = .instructions
-          }.disabled(!model.canModify)
+          Button("Add Instructions…", action: addInstructions).disabled(!model.canModify)
           if snapshot.scope.kind == .project {
             Button("New Local Instructions…") { model.beginCreation(.instructions) }
           }
@@ -151,10 +154,7 @@ struct InstructionsView: View {
       }
       ForEach(snapshot.instructions) { item in
         DetailsGroup(declarationTitle(item)) {
-          Button("Edit Instructions…") {
-            model.selectedItem = item.id
-            model.editSelectedDeclaration()
-          }.disabled(!model.canModify)
+          Button("Edit Instructions…") { editInstructions(item) }.disabled(!model.canModify)
           RecordFields(
             record: item.record, pointer: item.pointer,
             authored: snapshot.document.map { AuthoredFields(sourceMap: $0.sourceMap) })
@@ -168,6 +168,16 @@ struct InstructionsView: View {
         }
       }
     }
+  }
+
+  private func addInstructions() {
+    model.beginDraft(.component)
+    model.manifestDraft?.component.kind = .instructions
+  }
+
+  private func editInstructions(_ item: DeclarationItem) {
+    model.selectedItem = item.id
+    model.editSelectedDeclaration()
   }
 
   private func declarationTitle(_ item: DeclarationItem) -> String {
@@ -203,8 +213,8 @@ struct InstructionsView: View {
     }
   }
 
-  private func clientOutput(_ mapping: MappingItem) -> some View {
-    Section("Output Files") {
+  private func outputConfiguration(_ mapping: MappingItem) -> some View {
+    Section {
       if snapshot.mappings.count > 1 {
         Picker("Configuration", selection: Binding(get: { mapping.id }, set: { mappingID = $0 })) {
           ForEach(snapshot.mappings) { item in Text(item.title).tag(item.id) }
@@ -221,6 +231,52 @@ struct InstructionsView: View {
         Text("Each mapping covers one scope. Client precedence across scopes is unavailable here.")
           .font(.caption).foregroundStyle(.secondary)
       }
+    }
+  }
+
+  private func appOutputs(in scope: WorkspaceScope) -> some View {
+    Section("App Destinations") {
+      ForEach(InstructionAppDestination.inScope(scope, snapshot: snapshot)) { destination in
+        LabeledContent {
+          Button("Preview Output…") {
+            previewOutput(.app(destination.recipient), in: scope)
+          }
+          .disabled(!canBuildDisplayedScope)
+          .accessibilityLabel("Preview " + destination.recipient.displayName + " output")
+          .accessibilityIdentifier("instructions.output.preview." + destination.recipient.rawValue)
+        } label: {
+          Text(destination.recipient.displayName)
+          Text(destination.status)
+        }
+        .accessibilityIdentifier("instructions.output.app." + destination.recipient.rawValue)
+      }
+      if scope == model.scope && scope == snapshot.scope {
+        Text("Choose app recipients for each section in your instruction declarations.")
+          .font(.caption).foregroundStyle(.secondary)
+        editAppRecipients.disabled(!canBuildDisplayedScope)
+      }
+    }
+  }
+
+  @ViewBuilder private var editAppRecipients: some View {
+    if snapshot.instructions.isEmpty {
+      Button("Add Instruction Declaration…", action: addInstructions)
+        .accessibilityIdentifier("instructions.output.add")
+    } else if let item = snapshot.instructions.first, snapshot.instructions.count == 1 {
+      Button("Edit Instruction Units…") { editInstructions(item) }
+        .accessibilityIdentifier("instructions.output.edit")
+    } else {
+      Menu("Edit Instruction Units…") {
+        ForEach(snapshot.instructions) { item in
+          Button(declarationTitle(item)) { editInstructions(item) }
+        }
+      }
+      .accessibilityIdentifier("instructions.output.edit")
+    }
+  }
+
+  private func clientOutput(_ mapping: MappingItem) -> some View {
+    Section("Local Output Files") {
       if let client = model.clientFilter,
         !client.supportsInstructions(in: mapping.scope.installScope)
       {
@@ -236,6 +292,13 @@ struct InstructionsView: View {
           Button("Show All Clients") { model.clientFilter = nil }
         } else {
           Text("No mapped instruction files.").foregroundStyle(.secondary)
+        }
+        if model.clientFilter?.supportsInstructions(in: mapping.scope.installScope) != false {
+          Button("Preview Local Outputs…") {
+            previewOutput(.local(recipient: model.clientFilter), in: mapping.scope)
+          }
+          .disabled(!canBuildDisplayedScope)
+          .accessibilityIdentifier("instructions.output.preview.local")
         }
       }
       ForEach(targets) { target in
@@ -254,6 +317,11 @@ struct InstructionsView: View {
   {
     if let url = mapping.fileURL(for: target.id) {
       LabeledContent("Path") { PathView(url: url, scope: mapping.scope) }
+      Button("Preview Output…") {
+        previewOutput(.local(file: url, recipient: model.clientFilter), in: mapping.scope)
+      }
+      .disabled(!canBuildDisplayedScope)
+      .accessibilityIdentifier("instructions.output.preview." + target.id)
     }
     LabeledContent("Mapped Recipients") {
       ClientFilterButtons(recipients: target.recipients) { model.clientFilter = $0 }
@@ -283,6 +351,10 @@ struct InstructionsView: View {
     }
   }
 
+  private func previewOutput(_ focus: InstructionOutputFocus, in scope: WorkspaceScope) {
+    model.previewUpdate(UpdateProposal(compilingInstructionsIn: scope, focus: focus))
+  }
+
   private func namedPrompts(_ mapping: MappingItem) -> some View {
     Section("Named Prompts · " + mapping.title) {
       ForEach(mapping.prompts.keys.sorted(), id: \.self) { name in
@@ -302,6 +374,30 @@ struct InstructionsView: View {
         Text(section.source + " · " + section.path)
           .font(.caption).foregroundStyle(.secondary)
       }.accessibilityElement(children: .combine)
+    }
+  }
+}
+
+struct InstructionAppDestination: Identifiable {
+  let recipient: InstructionRecipient
+  let hasResolvedUnits: Bool?
+  var id: InstructionRecipient { recipient }
+
+  var status: String {
+    switch hasResolvedUnits {
+    case .some(true): "Resolved instruction units available"
+    case .some(false): "No resolved instruction units"
+    case nil: "Open this configuration to see its instruction units"
+    }
+  }
+
+  static func inScope(_ scope: WorkspaceScope, snapshot: WorkspaceSnapshot) -> [Self] {
+    [InstructionRecipient.chatGPTApp, .geminiApp].map { recipient in
+      let hasResolvedUnits =
+        scope == snapshot.scope
+        ? snapshot.inspection.components.contains { $0.copyRecipients.contains(recipient) }
+        : nil
+      return Self(recipient: recipient, hasResolvedUnits: hasResolvedUnits)
     }
   }
 }

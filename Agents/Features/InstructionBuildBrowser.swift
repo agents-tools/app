@@ -5,6 +5,7 @@ import SwiftUI
 struct InstructionBuildBrowser: View {
   let outputs: [InstructionBuildOutput]
   let scope: WorkspaceScope
+  var emptyMessage = "No instructions were built."
 
   @State private var selection: String?
   @State private var copied: Bool?
@@ -44,7 +45,7 @@ struct InstructionBuildBrowser: View {
       }
       .onChange(of: selection) { copied = nil }
     } else {
-      Text("No instructions were built.").foregroundStyle(.secondary)
+      Text(emptyMessage).foregroundStyle(.secondary)
     }
   }
 
