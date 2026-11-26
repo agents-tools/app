@@ -1,7 +1,10 @@
 import Foundation
 
 extension AppModel {
-  func reloadSourceAccessSettings() {
+  func reloadSourceAccessSettings(discardDraft: Bool = false) {
+    guard
+      discardDraft || (!sourceAccessSettings.hasDraftChanges && sourceAccessSettings.review == nil)
+    else { return }
     let actions = actions
     startSourceAccessSettingsOperation(title: "Read source access settings") {
       actions.readSourceAccessSettings()
@@ -10,10 +13,10 @@ extension AppModel {
 
   func previewSourceAccessSettings(reset: Bool = false) {
     let settings = sourceAccessSettings
-    guard settings.canPreview, let editor = settings.document?.editor,
-      !reset || settings.canReset
+    guard reset ? settings.canReset : settings.canPreview, let editor = settings.document?.editor
     else { return }
-    let bytes = reset ? nil : Data(settings.draft.utf8)
+    let bytes = reset ? nil : settings.bytesForPreview()
+    guard reset || bytes != nil else { return }
     let actions = actions
     startSourceAccessSettingsOperation(title: "Preview source access settings") {
       actions.previewSourceAccessSettings(bytes, using: editor)
@@ -22,7 +25,7 @@ extension AppModel {
 
   func saveSourceAccessSettings(reviewID: UUID) {
     let settings = sourceAccessSettings
-    guard settings.canPreview, let editor = settings.document?.editor,
+    guard settings.canActOnDocument, let editor = settings.document?.editor,
       let review = settings.review, review.id == reviewID
     else { return }
     let preview = review.preview

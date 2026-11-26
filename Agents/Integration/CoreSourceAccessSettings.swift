@@ -19,15 +19,13 @@ struct SourceAccessSettingsDocument: Sendable {
 
   var isPresent: Bool { editor.original != nil || issue != nil }
 
-  var initialDraft: String {
-    if !isPresent { return "version: 1\negress: directAllowed\n" }
-    return editor.original.flatMap { String(data: $0, encoding: .utf8) } ?? ""
-  }
+  var originalText: String? { editor.original.flatMap { String(data: $0, encoding: .utf8) } }
 }
 
 enum SourceAccessSettingsIssue: Error, Sendable {
   case core(SourceAccessSettingsError)
   case unavailable
+  case draftUnavailable
 
   init(_ error: any Error) {
     self = (error as? SourceAccessSettingsError).map(Self.core) ?? .unavailable
@@ -37,6 +35,7 @@ enum SourceAccessSettingsIssue: Error, Sendable {
     switch self {
     case .core(let error): error.localizedDescription
     case .unavailable: "Source access settings could not be read or saved."
+    case .draftUnavailable: "The source access profile could not be prepared for editing."
     }
   }
 

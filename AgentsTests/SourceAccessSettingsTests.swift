@@ -49,10 +49,12 @@ struct SourceAccessSettingsTests {
       #expect(reader.read(scope: scope).readDependencies.contains(.entry(location)))
     }
     #expect(settings.document?.isPresent == false)
-    #expect(settings.draft == direct)
+    #expect(settings.form?.egress == .directAllowed)
     #expect(!settings.canReset)
 
-    settings.setDraft(proxy)
+    var draft = try #require(settings.form)
+    draft.egress = .proxyOnly
+    settings.setForm(draft)
     model.previewSourceAccessSettings()
     try await settle(model)
     let review = try #require(settings.review)
@@ -108,14 +110,15 @@ struct SourceAccessSettingsTests {
       environment: model.actions.environment(for: model.scope))
     try FileManager.default.createDirectory(
       at: location.deletingLastPathComponent(), withIntermediateDirectories: true)
-    let malformed = "version: 1\negress: wrong\n"
+    let malformed = "version: 1\negress: proxyOnly\nfutureOption: {retain: true}\n"
     try Data(malformed.utf8).write(to: location)
     model.reloadSourceAccessSettings()
     try await settle(model)
     let settings = model.sourceAccessSettings
     #expect(settings.document?.issue != nil)
     #expect(settings.document?.isPresent == true)
-    #expect(settings.draft == malformed)
+    #expect(settings.form == nil)
+    #expect(settings.repairDraft == malformed)
     #expect(settings.canReset)
 
     model.previewSourceAccessSettings()
@@ -124,11 +127,11 @@ struct SourceAccessSettingsTests {
     #expect(settings.issue != nil)
     #expect(try Data(contentsOf: location) == Data(malformed.utf8))
 
-    settings.setDraft(proxy)
+    settings.setRepairDraft(proxy)
     model.previewSourceAccessSettings()
     try await settle(model)
     let superseded = try #require(settings.review)
-    settings.setDraft(direct)
+    settings.setRepairDraft(direct)
     model.previewSourceAccessSettings()
     try await settle(model)
     let current = try #require(settings.review)
@@ -140,6 +143,8 @@ struct SourceAccessSettingsTests {
     #expect(try Data(contentsOf: location) == Data(direct.utf8))
     #expect(settings.document?.issue == nil)
     #expect(settings.document?.profile?.egress == .directAllowed)
+    #expect(settings.repairDraft == nil)
+    #expect(settings.form?.egress == .directAllowed)
   }
 
   @Test func aConflictPreservesTheDraftAndRequiresReload() async throws {
@@ -150,7 +155,9 @@ struct SourceAccessSettingsTests {
     model.reloadSourceAccessSettings()
     try await settle(model)
     let settings = model.sourceAccessSettings
-    settings.setDraft(proxy)
+    var draft = try #require(settings.form)
+    draft.egress = .proxyOnly
+    settings.setForm(draft)
     model.previewSourceAccessSettings()
     try await settle(model)
     let review = try #require(settings.review)
@@ -162,7 +169,7 @@ struct SourceAccessSettingsTests {
     try await settle(model)
     #expect(try Data(contentsOf: other.url) == Data(direct.utf8))
     #expect(settings.review == nil)
-    #expect(settings.draft == proxy)
+    #expect(settings.form?.egress == .proxyOnly)
     #expect(settings.requiresReload)
     #expect(!settings.canPreview)
     guard case .core(.changed(let location)) = settings.issue else {
@@ -172,10 +179,112 @@ struct SourceAccessSettingsTests {
     #expect(location == other.url)
 
     model.reloadSourceAccessSettings()
+    #expect(!settings.isBusy)
+    #expect(settings.form?.egress == .proxyOnly)
+
+    model.reloadSourceAccessSettings(discardDraft: true)
     try await settle(model)
-    #expect(settings.draft == direct)
+    #expect(settings.form?.egress == .directAllowed)
     #expect(settings.document?.profile?.egress == .directAllowed)
     #expect(settings.canPreview)
+    settings.setForm(draft)
+    #expect(settings.form?.egress == .directAllowed)
+  }
+
+  @Test func structuredDraftPreservesFieldsAndPreviewsTheOriginalWhenUnedited() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let model = makeModel(fixture)
+    defer { _ = model.requestTermination() }
+    let location = SourceAccessSettingsEditor.settingsURL(
+      environment: model.actions.environment(for: model.scope))
+    try FileManager.default.createDirectory(
+      at: location.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let original = """
+      # Operator note
+      version: !!int "1"
+      egress: directAllowed
+      providers: [{host: code.example.test, port: !!int "08443", provider: gitlab}]
+      mirrors:
+        - source: {host: gitlab.com}
+          base: https://archives.example.test/gitlab
+          flavor: gitlab
+          supportsQualifiedGitLabRefs: true
+          requiresExactArchiveBytes: false
+      credentials:
+        - route: direct
+          host: code.example.test
+          port: 8443
+          path: /team/package
+          environmentVariable: !!str NO
+          exportable: false
+          validationEndpoint: https://code.example.test:8443/api/v4/user
+        - route: mirror
+          host: archives.example.test
+          environmentVariable: ARCHIVE_TOKEN
+      """
+    let originalBytes = Data(original.utf8)
+    try originalBytes.write(to: location)
+    model.reloadSourceAccessSettings()
+    try await settle(model)
+    let settings = model.sourceAccessSettings
+    let profile = try #require(settings.document?.profile)
+    var draft = try #require(settings.form)
+    #expect(draft.providers.first?.authority.port == "08443")
+    #expect(draft.mirrors.first?.source.port == "")
+    #expect(draft.mirrors.first?.requiresExactArchiveBytes == false)
+    #expect(draft.credentials.first?.exportable == false)
+    #expect(draft.credentials.last?.exportable == nil)
+    #expect(draft.credentials.last?.path == "")
+    #expect(draft.credentials.last?.validationEndpoint == "")
+    #expect(!settings.hasDraftChanges)
+    #expect(settings.bytesForPreview() == originalBytes)
+
+    draft.egress = .proxyOnly
+    settings.setForm(draft)
+    model.reloadSourceAccessSettings()
+    #expect(!settings.isBusy)
+    #expect(settings.form == draft)
+
+    model.previewSourceAccessSettings()
+    try await settle(model)
+    let review = try #require(settings.review)
+    #expect(review.preview.profile?.egress == .proxyOnly)
+    #expect(review.preview.profile?.providers == profile.providers)
+    #expect(review.preview.profile?.mirrors == profile.mirrors)
+    #expect(review.preview.profile?.credentials == profile.credentials)
+    #expect(try Data(contentsOf: location) == originalBytes)
+    model.saveSourceAccessSettings(reviewID: review.id)
+    try await settle(model)
+    #expect(settings.document?.profile == review.preview.profile)
+    #expect(settings.form?.credentials.first?.exportable == false)
+    #expect(settings.form?.credentials.last?.exportable == nil)
+    #expect(!settings.hasDraftChanges)
+  }
+
+  @Test func nonUTF8ProfileCanOnlyBeResetExplicitly() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let model = makeModel(fixture)
+    defer { _ = model.requestTermination() }
+    let location = SourceAccessSettingsEditor.settingsURL(
+      environment: model.actions.environment(for: model.scope))
+    try FileManager.default.createDirectory(
+      at: location.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let original = Data([0xFF, 0xFE, 0xFF])
+    try original.write(to: location)
+    model.reloadSourceAccessSettings()
+    try await settle(model)
+    let settings = model.sourceAccessSettings
+    #expect(settings.document?.issue != nil)
+    #expect(settings.form == nil)
+    #expect(settings.repairDraft == nil)
+    #expect(!settings.canPreview)
+    #expect(settings.canReset)
+    model.previewSourceAccessSettings(reset: true)
+    try await settle(model)
+    #expect(settings.review != nil)
+    #expect(try Data(contentsOf: location) == original)
   }
 
   @Test func externalProfileReplacementRefreshesAnUnchangedRoute() async throws {

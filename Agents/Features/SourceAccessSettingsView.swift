@@ -14,16 +14,14 @@ struct SourceAccessSettingsView: View {
         if let location = settings.location {
           LabeledContent("Location") { profileValue(location.path) }
         }
+        Text("Applies to all workspaces.").foregroundStyle(.secondary)
         if let document = settings.document {
           if let issue = document.issue {
             Label(issue.message, systemImage: "exclamationmark.circle")
               .foregroundStyle(.secondary)
-          } else {
-            if !document.isPresent {
-              Text("No profile is saved. The editor shows a starting example.")
-                .foregroundStyle(.secondary)
-            }
-            SourceAccessProfileRows(profile: document.profile)
+          } else if !document.isPresent {
+            Text("No profile is saved. Direct network access is allowed by default.")
+              .foregroundStyle(.secondary)
           }
         }
         Button("Reload from Disk") {
@@ -36,17 +34,40 @@ struct SourceAccessSettingsView: View {
         .disabled(!canAct)
       }
 
+      if let form = settings.form {
+        SourceAccessProfileFields(
+          draft: Binding(get: { settings.form ?? form }, set: settings.setForm)
+        )
+        .id(form.id)
+        .disabled(!canAct)
+      } else if let repairDraft = settings.repairDraft {
+        Section("Repair Profile YAML") {
+          Text("Correct the saved YAML, then validate and preview your changes.")
+            .foregroundStyle(.secondary)
+          TextEditor(
+            text: Binding(
+              get: { settings.repairDraft ?? repairDraft }, set: settings.setRepairDraft)
+          )
+          .font(.system(.body, design: .monospaced))
+          .autocorrectionDisabled()
+          .frame(minHeight: 150)
+          .accessibilityLabel("Source access profile YAML")
+          .disabled(!canAct)
+        }
+      } else if settings.document?.issue != nil {
+        Section("Repair Profile") {
+          Text("Repair this file outside the app, or reset the saved profile.")
+            .foregroundStyle(.secondary)
+        }
+      }
+
       if settings.document != nil {
-        Section("Profile YAML") {
-          TextEditor(text: Binding(get: { settings.draft }, set: settings.setDraft))
-            .font(.system(.body, design: .monospaced))
-            .autocorrectionDisabled()
-            .frame(minHeight: 150)
-            .accessibilityLabel("Source access profile YAML")
-            .disabled(!canAct)
+        Section {
           HStack {
-            Button("Validate and Preview…") { model.previewSourceAccessSettings() }
-              .disabled(!canAct || !settings.canPreview)
+            if settings.form != nil || settings.repairDraft != nil {
+              Button("Validate and Preview…") { model.previewSourceAccessSettings() }
+                .disabled(!canAct || !settings.canPreview)
+            }
             Spacer()
             if settings.document?.isPresent == true {
               Button("Reset Profile…") { model.previewSourceAccessSettings(reset: true) }
@@ -68,14 +89,12 @@ struct SourceAccessSettingsView: View {
       }
     }
     .formStyle(.grouped)
-    .task {
-      if !settings.hasDraftChanges, settings.review == nil {
-        model.reloadSourceAccessSettings()
-      }
-    }
-    .alert("Discard YAML Edits?", isPresented: $confirmingReload) {
+    .task { model.reloadSourceAccessSettings() }
+    .alert("Discard Profile Edits?", isPresented: $confirmingReload) {
       Button("Cancel", role: .cancel) {}
-      Button("Discard and Reload", role: .destructive) { model.reloadSourceAccessSettings() }
+      Button("Discard and Reload", role: .destructive) {
+        model.reloadSourceAccessSettings(discardDraft: true)
+      }
     } message: {
       Text("Reload replaces the draft with the latest saved profile.")
     }
@@ -85,7 +104,9 @@ struct SourceAccessSettingsView: View {
         set: { if $0 == nil { settings.dismissReview() } })
     ) { review in
       SourceAccessSettingsPreviewView(
-        preview: review.preview, canSave: canAct, onCancel: settings.dismissReview,
+        preview: review.preview,
+        rewritesFormatting: settings.document?.isPresent == true && settings.form != nil,
+        canSave: canAct, onCancel: settings.dismissReview,
         onSave: { model.saveSourceAccessSettings(reviewID: review.id) })
     }
   }
@@ -93,6 +114,7 @@ struct SourceAccessSettingsView: View {
 
 private struct SourceAccessSettingsPreviewView: View {
   let preview: SourceAccessSettingsPreview
+  let rewritesFormatting: Bool
   let canSave: Bool
   let onCancel: () -> Void
   let onSave: () -> Void
@@ -106,6 +128,9 @@ private struct SourceAccessSettingsPreviewView: View {
           LabeledContent("Location") { profileValue(preview.url.path) }
           if isReset {
             Text("Reset removes the saved profile and discards the draft.")
+              .foregroundStyle(.secondary)
+          } else if rewritesFormatting {
+            Text("Saving field edits rewrites the YAML formatting and removes comments.")
               .foregroundStyle(.secondary)
           }
           SourceAccessProfileRows(profile: preview.profile)
