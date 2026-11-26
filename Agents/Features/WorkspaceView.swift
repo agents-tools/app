@@ -6,6 +6,19 @@ import SwiftUI
 
 struct WorkspaceView: View {
   @Bindable var model: AppModel
+  private enum Panel: String, Identifiable {
+    case clients, access, cache
+    var id: Self { self }
+    var title: String {
+      switch self {
+      case .clients: "Clients on This Mac"
+      case .access: "User Source Access"
+      case .cache: "Source Cache"
+      }
+    }
+  }
+
+  @State private var panel: Panel?
   @State private var pendingReview: UpdateProposal?
 
   var body: some View {
@@ -23,13 +36,9 @@ struct WorkspaceView: View {
         }
         Section("Distribution & Maintenance") {
           ForEach(
-            [WorkspacePage.packages, .sources, .changes, .backups, .diagnostics]
+            [WorkspacePage.packages, .sources, .changes, .backups]
           ) { page in pageRow(page) }
-          SettingsLink {
-            Label("Settings…", systemImage: "gearshape")
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("workspace.settings")
+          if model.page == .diagnostics { pageRow(.diagnostics) }
         }
         if model.page == .components {
           Section("Advanced") { pageRow(.components) }
@@ -47,6 +56,24 @@ struct WorkspaceView: View {
             ToolbarItem {
               ClientFilterPicker(selection: $model.clientFilter)
                 .accessibilityIdentifier("workspace.clientFilter")
+            }
+          }
+          if model.page == .overview {
+            ToolbarItem {
+              Button("Detect Clients…", systemImage: "desktopcomputer") {
+                model.redetectClients()
+                panel = .clients
+              }
+              .accessibilityIdentifier("overview.detectClients")
+            }
+          }
+          if model.page == .sources {
+            ToolbarItem {
+              Menu("Source Options", systemImage: "slider.horizontal.3") {
+                Button("User Source Access…") { panel = .access }
+                Button("Source Cache…") { panel = .cache }
+              }
+              .accessibilityIdentifier("sources.options")
             }
           }
           if model.page != .backups {
@@ -81,6 +108,23 @@ struct WorkspaceView: View {
         get: { model.manifestDraft == nil ? model.updateSession : nil },
         set: { model.updateSession = $0 })
     ) { _ in UpdateReviewView(model: model) }
+    .sheet(item: $panel) { selection in
+      VStack(spacing: 0) {
+        HStack {
+          Text(selection.title).font(.headline)
+          Spacer()
+          Button("Done") { panel = nil }.keyboardShortcut(.cancelAction)
+        }
+        .padding()
+        Divider()
+        switch selection {
+        case .clients: ClientSettingsView(model: model)
+        case .access: SourceAccessSettingsView(model: model)
+        case .cache: AcquisitionCacheSettingsView(environment: model.actions.environment(for: model.scope))
+        }
+      }
+      .frame(minWidth: 540, idealWidth: 620, minHeight: 440, idealHeight: 550)
+    }
     .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
     .sheet(item: $model.watchStatusSession) { _ in WatchStatusView(model: model) }
     .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
@@ -234,7 +278,7 @@ struct WorkspaceView: View {
           Button("Remove from Project List") { model.removeProject(model.scope.root) }
         }
         Divider()
-        Button("Edit Configuration…") { model.editConfigurationYAML() }.disabled(!model.canModify)
+        Button("Configure Default Clients…") { model.beginDraft(.defaults) }.disabled(!model.canModify)
         Button("Show Declaration") { model.page = .components }
           .disabled(model.snapshot == nil)
           .accessibilityIdentifier("workspace.declaration")
@@ -319,7 +363,7 @@ struct OverviewView: View {
         snapshot.inspection.components.isEmpty
       {
         Section("Get Started") {
-          Button("Edit Configuration…") { model.editConfigurationYAML() }
+          Button("Configure Default Clients…") { model.beginDraft(.defaults) }
             .disabled(!model.canModify)
           Button("Create a Local Skill…") { model.beginCreation(.skill) }
             .disabled(!model.canModify)
@@ -363,16 +407,26 @@ struct OverviewView: View {
       Section("Scope Issues") {
         let problems = model.currentScopeProblems
         Button {
+          model.refresh()
           model.page = .diagnostics
         } label: {
           linkLabel(
-            problems.isEmpty ? "No problems reported" : "Review Configuration Problems",
+            problems.isEmpty ? "Check Configuration…" : "Review Configuration Problems",
             symbol: problems.isEmpty ? "checkmark.circle" : "exclamationmark.triangle",
             count: problems.isEmpty ? nil : problems.count)
         }
         .accessibilityIdentifier("overview.diagnostics")
       }
 
+      Section("On This Mac") {
+        Toggle("On-Device Assistance", isOn: Binding(
+          get: { model.preferences.assistanceEnabled },
+          set: { model.setAssistanceEnabled($0) }))
+          .help("Explain skills and configuration changes with an on-device model.")
+        if model.preferences.assistanceEnabled {
+          Text(AssistanceAvailability.status).font(.caption).foregroundStyle(.secondary)
+        }
+      }
       Section("Scope Details") {
         DetailsGroup("Configuration Files and Defaults") {
           LabeledContent("Location") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }

@@ -5,6 +5,7 @@ import SwiftUI
 @main
 struct AgentsApp: App {
   @NSApplicationDelegateAdaptor(ApplicationDelegate.self) private var delegate
+  @Environment(\.openWindow) private var openWindow
   @State private var model: AppModel
 
   init() {
@@ -39,6 +40,14 @@ struct AgentsApp: App {
     }
     .defaultSize(width: 1160, height: 760)
     .commands {
+      CommandGroup(replacing: .appSettings) {
+        Button("Configuration…") {
+          model.page = .overview
+          openWindow(id: "workspace")
+        }
+        .keyboardShortcut(",")
+        .disabled(model.isTerminating || model.isApplying)
+      }
       CommandGroup(after: .newItem) {
         Button("Add Project…") { chooseProject(for: model) }
           .keyboardShortcut("o", modifiers: [.command, .shift])
@@ -55,9 +64,6 @@ struct AgentsApp: App {
         )
         .keyboardShortcut("i", modifiers: [.command, .option])
       }
-    }
-    Settings {
-      SettingsView(model: model).frame(width: 580, height: 420)
     }
   }
 }

@@ -1,10 +1,10 @@
 # Application behavior
 
-Agents App has one main window and a Settings window. Its navigator selects a user or project scope and a configuration page; the inspector shows the current selection. It uses Core’s public manifest, skill, instruction and combined update APIs directly.
+Agents App uses one configuration workspace. Its navigator selects a user or project scope and a configuration page; the inspector shows the current selection. It uses Core’s public manifest, skill, instruction and combined update APIs directly.
 
 ## Prompt audit
 
-Open **Diagnostics → Audit Prompts** to scan the selected project or user scope. **Choose File** inspects one prompt in that scope. Findings show their location, severity and reason. Export the same report as Markdown, JSON or SARIF.
+Open **Overview → Check Configuration → Prompt Audit** to scan the selected project or user scope. **Choose File** inspects one prompt in that scope. Findings show their location, severity and reason. Export the same report as Markdown, JSON or SARIF.
 
 For a text prompt with removable characters, choose **Review Character Removal** to inspect the code points and their positions. **Apply** removes the displayed characters if the file still matches the preview, then scans the file again.
 
@@ -28,11 +28,11 @@ Detection never invokes clients or version commands. Core owns command candidate
 
 ## Cache settings
 
-Settings → Cache shows the location and size of the shared Git, HTTP and deployed-file caches. Prune selects Git groups by age. Clean selects entries in all three stores. Review the selected entries and their sizes before confirming removal. The result shows the space reclaimed and identifies entries that were skipped or failed.
+Sources → Source Options → Source Cache shows the location and size of the shared Git, HTTP and deployed-file caches. Prune selects Git groups by age. Clean selects entries in all three stores. Review the selected entries and their sizes before confirming removal. The result shows the space reclaimed and identifies entries that were skipped or failed.
 
 ## Source Access settings
 
-Open **Settings → Source Access** to edit the operator’s YAML profile. The tab shows its location and the saved network mode, provider registrations, mirrors and credential references. The profile applies to both user and project operations. Credential references name environment variables supplied to the App.
+Open **Sources → Source Options → User Source Access** to configure source access on this Mac. The form shows its location and the saved network mode, provider registrations, mirrors and credential references. The profile applies to both user and project operations. Credential references name environment variables supplied to the App.
 
 Use **Validate and Preview** to review the profile before saving. A malformed file in an operator-controlled location opens for repair. If the file changes while you edit, the App keeps the draft and asks you to reload. **Reset Profile** removes the saved profile after confirmation and restores direct access defaults. Saving or resetting refreshes the workspace and clears any current source validation.
 
@@ -117,7 +117,7 @@ Select a declared source in either scope to see **Source Access** in the inspect
 
 ## On-device assistance
 
-Settings offers an opt-out preference and displays actual SystemLanguageModel availability on macOS 26 or later. Actions are hidden when disabled or unavailable. A selected managed skill’s public name and description can be explained or translated. A reviewed Core update can be summarized or its configuration changes explained. The change projection includes structural facts only: counts, kinds, missing-state reconstruction and access-change/binding-slot counts. It excludes native values, file contents, paths, source URLs, prompt bodies, binding names and runtime inputs.
+Overview offers an on-device assistance preference and displays actual SystemLanguageModel availability on macOS 26 or later. Actions are hidden when disabled or unavailable. A selected managed skill’s public name and description can be explained or translated. A reviewed Core update can be summarized or its configuration changes explained. The change projection includes structural facts only: counts, kinds, missing-state reconstruction and access-change/binding-slot counts. It excludes native values, file contents, paths, source URLs, prompt bodies, binding names and runtime inputs.
 
 Each action first displays its complete selected input for review. Translation accepts an explicit target language. Oversized input is refused before generation. Generate creates one independent on-device LanguageModelSession, with no tools, transcript persistence, chat or cloud fallback. Output is auxiliary selectable/copyable text and never feeds an edit or apply API. Model errors use a fixed safe diagnostic because provider errors may quote input. Cancellation, opt-out, scope changes and quit request Task cancellation but keep ownership until the actual generation returns. Obsolete output is withheld while its safe original-scope failure remains recorded.
 

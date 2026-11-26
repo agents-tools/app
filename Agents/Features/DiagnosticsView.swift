@@ -3,30 +3,33 @@ import SwiftUI
 struct DiagnosticsView: View {
   let model: AppModel
   @State private var auditScope: WorkspaceScope?
-  @State private var policyScope: WorkspaceScope?
   @State private var recoveryScope: WorkspaceScope?
 
   var body: some View {
-    List {
-      Section("Configuration Problems") {
-        currentProblems
+    Form {
+      if model.currentScopeProblems.isEmpty {
+        Section {
+          currentProblems
+        }
+      } else {
+        Section("Issues") {
+          currentProblems
+        }
       }
+
       Section("Checks") {
-        Button("Organization Policy…") { policyScope = model.scope }
-          .accessibilityIdentifier("diagnostics.policy")
-        Button("Audit Prompts…") { auditScope = model.scope }
-          .accessibilityIdentifier("diagnostics.audit")
+        LabeledContent("Prompt Audit") {
+          Button("Audit…") { auditScope = model.scope }
+            .accessibilityIdentifier("diagnostics.audit")
+        }
       }
-      Section("Session History") {
-        history
+
+      if !model.diagnostics.isEmpty {
+        Section("Reports") { history }
       }
     }
-    .listStyle(.inset)
-    .buttonStyle(.borderless)
+    .formStyle(.grouped)
     .textSelection(.enabled)
-    .sheet(item: $policyScope) { scope in
-      OrganizationPolicySheet(model: model, scope: scope)
-    }
     .sheet(item: $auditScope) { scope in
       PromptAuditSheet(scope: scope, environment: model.actions.environment(for: scope))
     }
@@ -44,64 +47,102 @@ struct DiagnosticsView: View {
 
   @ViewBuilder private var currentProblems: some View {
     let problems = model.currentScopeProblems
-    if model.snapshot?.inspection.recovery.pending == true {
-      Button("Recover and Recheck…") { recoveryScope = model.scope }
-        .disabled(model.isApplying || model.isTerminating)
-        .accessibilityIdentifier("diagnostics.recover")
+    let needsRecovery = model.snapshot?.inspection.recovery.pending == true
+    if needsRecovery {
+      HStack(spacing: 10) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+        VStack(alignment: .leading, spacing: 2) {
+          Text("Incomplete Operation")
+            .font(.headline)
+          Text("Recover and recheck this configuration.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button("Recover…") { recoveryScope = model.scope }
+          .buttonStyle(.borderedProminent)
+          .disabled(model.isApplying || model.isTerminating)
+          .accessibilityIdentifier("diagnostics.recover")
+      }
+      .padding(.vertical, 2)
     }
     if problems.isEmpty {
-      switch model.loadState {
-      case .loaded:
-        Label("No problems reported in this configuration", systemImage: "checkmark.circle")
-          .foregroundStyle(.secondary)
-      case .loading:
-        ProgressView("Reading configuration…")
-      case .existingConfigurationAvailable:
-        Button("Review Existing Configuration Import…") { model.previewExistingConfiguration() }
-          .disabled(!model.canPreviewExistingConfiguration)
-      case .idle, .failed:
-        Button("Read Configuration") { model.refresh() }
+      if !needsRecovery {
+        switch model.loadState {
+        case .loaded:
+          HStack(spacing: 10) {
+            Image(systemName: "checkmark.circle.fill")
+              .font(.title3)
+              .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 2) {
+              Text("No Problems Found")
+                .font(.headline)
+            }
+          }
+          .padding(.vertical, 2)
+        case .loading:
+          HStack(spacing: 10) {
+            ProgressView()
+              .controlSize(.small)
+            Text("Reading configuration…")
+              .foregroundStyle(.secondary)
+          }
+        case .existingConfigurationAvailable:
+          HStack(spacing: 10) {
+            Image(systemName: "doc.badge.plus")
+              .foregroundStyle(.secondary)
+            Text("Existing configuration available")
+            Spacer()
+            Button("Review Import…") { model.previewExistingConfiguration() }
+              .disabled(!model.canPreviewExistingConfiguration)
+          }
+        case .idle, .failed:
+          HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.circle")
+              .foregroundStyle(.secondary)
+            Text("Configuration not loaded")
+            Spacer()
+            Button("Read Configuration") { model.refresh() }
+          }
+        }
       }
     } else {
       ForEach(problems) { diagnostic in DiagnosticRow(diagnostic: diagnostic) }
       if let snapshot = model.snapshot {
-        if snapshot.inspection.marketplaceIssue != nil
+        let hasPackages =
+          snapshot.inspection.marketplaceIssue != nil
           || snapshot.inspection.pendingMarketplaceDeployment != nil
-        {
-          Button("Open Packages") { model.page = .packages }
-        }
-        if snapshot.inspection.deployments.contains(where: { $0.status != .current }) {
-          Button("Review Changes") { model.page = .changes }
-        }
-        if snapshot.document?.diagnostics.isEmpty == false {
-          Button("Show Declaration") { model.page = .components }
+        let hasChanges = snapshot.inspection.deployments.contains(where: { $0.status != .current })
+        let hasDeclaration = snapshot.document?.diagnostics.isEmpty == false
+        if hasPackages || hasChanges || hasDeclaration {
+          HStack(spacing: 8) {
+            if hasPackages {
+              Button("Open Packages") { model.page = .packages }
+            }
+            if hasChanges {
+              Button("Review Changes") { model.page = .changes }
+            }
+            if hasDeclaration {
+              Button("Show Declaration") { model.page = .components }
+            }
+          }
         }
       }
     }
   }
 
   @ViewBuilder private var history: some View {
-    let records = model.updateRecords.filter { $0.scope == model.scope }
     let reports = model.currentDiagnostics
     let otherScopes = model.diagnostics.filter { $0.scope != model.scope }
-    if records.isEmpty, reports.isEmpty, otherScopes.isEmpty {
-      Text("No operations or reports in this session.").foregroundStyle(.secondary)
-    }
-    if !records.isEmpty {
-      DetailsGroup("Operations in This Scope") {
-        ForEach(records.reversed()) { record in
-          LabeledContent(record.title, value: record.terminal.message)
-        }
-      }
-    }
     if !reports.isEmpty {
-      DetailsGroup("All Reports for This Scope") {
-        ForEach(reports) { diagnostic in DiagnosticRow(diagnostic: diagnostic) }
+      DetailsGroup("This Scope") {
+        ForEach(reports) { DiagnosticRow(diagnostic: $0) }
       }
     }
     if !otherScopes.isEmpty {
-      DetailsGroup("Reports from Other Scopes") {
-        ForEach(otherScopes) { diagnostic in DiagnosticRow(diagnostic: diagnostic) }
+      DetailsGroup("Other Scopes") {
+        ForEach(otherScopes) { DiagnosticRow(diagnostic: $0, showScope: true) }
       }
     }
   }
@@ -109,22 +150,45 @@ struct DiagnosticsView: View {
 
 private struct DiagnosticRow: View {
   let diagnostic: AppDiagnostic
+  var showScope = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Label(
-        diagnostic.operation,
-        systemImage: diagnostic.severity == .information ? "info.circle" : "exclamationmark.triangle"
-      )
-      .font(.headline)
-      Text(diagnostic.message)
-      Text(diagnostic.scope.title + " · " + diagnostic.scope.root.path)
-        .font(.caption).foregroundStyle(.secondary)
-      if let path = diagnostic.path { Text(path).font(.caption).foregroundStyle(.secondary) }
-      if diagnostic.blocksTermination {
-        Text("This operation reported a cleanup failure.").foregroundStyle(.red)
+    HStack(alignment: .top, spacing: 10) {
+      Image(systemName: iconName)
+        .foregroundStyle(iconColor)
+        .padding(.top, 2)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(diagnostic.operation)
+          .font(.headline)
+        Text(diagnostic.message)
+          .font(.callout)
+        if let path = diagnostic.path {
+          Text(path)
+            .font(.caption.monospaced())
+            .foregroundStyle(.secondary)
+        }
+        if showScope {
+          Text(diagnostic.scope.title + " · " + diagnostic.scope.root.path)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        if diagnostic.blocksTermination {
+          Text("This operation reported a cleanup failure.")
+            .font(.caption)
+            .foregroundStyle(.red)
+        }
       }
     }
-    .padding(.vertical, 4)
+    .padding(.vertical, 2)
+  }
+
+  private var iconName: String {
+    if diagnostic.blocksTermination { return "xmark.octagon.fill" }
+    return diagnostic.severity == .information ? "info.circle.fill" : "exclamationmark.triangle.fill"
+  }
+
+  private var iconColor: Color {
+    if diagnostic.blocksTermination { return .red }
+    return diagnostic.severity == .information ? .secondary : .orange
   }
 }

@@ -14,50 +14,56 @@ struct PackagesView: View {
   }
 
   var body: some View {
-    List {
-      Section("Discovery") {
-        Button("Browse Marketplaces and Bundles…") { model.packageScope = model.scope }
-          .disabled(!model.canModify)
-          .accessibilityIdentifier("packages.browse")
-      }
-
-      Section("Installed Packages") {
-        if let snapshot = model.snapshot {
-          installedPackages(snapshot)
-        } else if case .loading = model.loadState {
-          ProgressView("Reading installed packages…")
+    Group {
+      if let snapshot = model.snapshot {
+        if isEmpty(snapshot) {
+          emptyState
         } else {
+          Form {
+            if hasStatusItems(snapshot) {
+              Section("Status") {
+                statusItems(snapshot)
+              }
+            }
+            if hasInstalledPackages(snapshot) {
+              Section("Installed Packages") {
+                installedPackages(snapshot)
+              }
+            }
+          }
+          .formStyle(.grouped)
+        }
+      } else if case .loading = model.loadState {
+        ProgressView("Reading installed packages…")
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        ContentUnavailableView {
+          Label("Packages Unavailable", systemImage: "shippingbox")
+        } description: {
+          Text("Open diagnostics to inspect this scope.")
+        } actions: {
           Button("See Configuration Diagnostics") { model.page = .diagnostics }
         }
-        Button("Manage Packages…") { model.packageScope = model.scope }
-          .disabled(!model.canModify)
-          .accessibilityIdentifier("packages.manage")
-      }
-
-      Section("Share and Import") {
-        if model.scope.kind == .project {
-          Button("Package Project…") { sheet = .project }
-            .disabled(!model.canModify)
-            .accessibilityIdentifier("packages.shareProject")
-        }
-        Button("Create or Publish Bundle…") { sheet = .bundle }
-          .disabled(!model.canModify || model.availableComponentSelection.isEmpty)
-          .accessibilityIdentifier("packages.authorBundle")
-        Button("Import Configuration…") { model.beginImport() }
-          .disabled(!model.canModify)
-          .accessibilityIdentifier("packages.import")
-        Button("Export Patches…") { sheet = .patches }
-          .accessibilityIdentifier("packages.exportPatches")
-      }
-
-      Section("Package Maintenance") {
-        Button("Package Actions…") { sheet = .actions }
-          .disabled(model.isTerminating || model.isApplying)
-          .accessibilityIdentifier("packages.actions")
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
-    .listStyle(.inset)
-    .buttonStyle(.borderless)
+    .toolbar {
+      if let snapshot = model.snapshot {
+        ToolbarItemGroup(placement: .primaryAction) {
+          if !isEmpty(snapshot) {
+            Button {
+              model.packageScope = model.scope
+            } label: {
+              Label("Browse Packages…", systemImage: "plus")
+            }
+            .help("Browse marketplaces and bundles")
+            .disabled(!model.canModify)
+            .accessibilityIdentifier("packages.browse")
+          }
+          packageActionsMenu(includeImport: !isEmpty(snapshot))
+        }
+      }
+    }
     .sheet(item: $sheet) { sheet in
       let scope = model.scope
       let environment = model.actions.environment(for: scope)
@@ -78,14 +84,81 @@ struct PackagesView: View {
     }
   }
 
-  @ViewBuilder private func installedPackages(_ snapshot: WorkspaceSnapshot) -> some View {
+  private var emptyState: some View {
+    ContentUnavailableView {
+      Label("No Packages Installed", systemImage: "shippingbox")
+    } description: {
+      Text("Packages share skills, instructions, and tools across projects.")
+    } actions: {
+      Button("Browse Packages…") { model.packageScope = model.scope }
+        .buttonStyle(.borderedProminent)
+        .disabled(!model.canModify)
+        .accessibilityIdentifier("packages.browse")
+      Button("Import Configuration…") { model.beginImport() }
+        .disabled(!model.canModify)
+        .accessibilityIdentifier("packages.import")
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+  }
+
+  private func packageActionsMenu(includeImport: Bool) -> some View {
+    Menu {
+      if includeImport {
+        Button("Import Configuration…") { model.beginImport() }
+          .disabled(!model.canModify)
+          .accessibilityIdentifier("packages.import")
+        Divider()
+      }
+      if model.scope.kind == .project {
+        Button("Package Project…") { sheet = .project }
+          .disabled(!model.canModify)
+          .accessibilityIdentifier("packages.shareProject")
+      }
+      Button("Create or Publish Bundle…") { sheet = .bundle }
+        .disabled(!model.canModify || model.availableComponentSelection.isEmpty)
+        .accessibilityIdentifier("packages.authorBundle")
+      Button("Export Patches…") { sheet = .patches }
+        .accessibilityIdentifier("packages.exportPatches")
+      Divider()
+      Button("Package Actions…") { sheet = .actions }
+        .disabled(model.isTerminating || model.isApplying)
+        .accessibilityIdentifier("packages.actions")
+    } label: {
+      Label("More", systemImage: "ellipsis.circle")
+    }
+    .help("Share, import, and package maintenance")
+  }
+
+  @ViewBuilder private func statusItems(_ snapshot: WorkspaceSnapshot) -> some View {
+    if snapshot.inspection.recovery.pending {
+      HStack(spacing: 10) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+        Text("Pending recovery")
+        Spacer()
+        Button("Review Pending Recovery") { model.page = .diagnostics }
+      }
+    }
     if snapshot.inspection.pendingMarketplaceDeployment != nil {
-      Label("Package lock awaiting deployment", systemImage: "clock")
+      HStack(spacing: 10) {
+        Image(systemName: "clock")
+          .foregroundStyle(.secondary)
+        Text("Package lock awaiting deployment")
+      }
     }
     if let issue = snapshot.inspection.marketplaceIssue {
-      Label(issue.description, systemImage: "exclamationmark.triangle")
-      Button("Show Diagnostics") { model.page = .diagnostics }
+      HStack(alignment: .top, spacing: 10) {
+        Image(systemName: "exclamationmark.triangle.fill")
+          .foregroundStyle(.orange)
+          .padding(.top, 2)
+        Text(issue.description)
+        Spacer()
+        Button("Show Diagnostics") { model.page = .diagnostics }
+      }
     }
+  }
+
+  @ViewBuilder private func installedPackages(_ snapshot: WorkspaceSnapshot) -> some View {
     if let graph = snapshot.inspection.marketplaceGraph {
       ForEach(graph.roots, id: \.intent.name) { root in
         packageRoot(root, in: graph)
@@ -94,17 +167,21 @@ struct PackagesView: View {
     ForEach(snapshot.inspection.marketplacePackages, id: \.dependency.name) { pin in
       packagePin(pin, in: snapshot)
     }
-    if snapshot.inspection.marketplaceGraph?.roots.isEmpty != false,
-      snapshot.inspection.marketplacePackages.isEmpty,
-      snapshot.inspection.pendingMarketplaceDeployment == nil,
-      snapshot.inspection.marketplaceIssue == nil
-    {
-      if snapshot.inspection.recovery.pending {
-        Button("Review Pending Recovery") { model.page = .diagnostics }
-      } else {
-        Text("No packages installed in this scope.").foregroundStyle(.secondary)
-      }
-    }
+  }
+
+  private func hasInstalledPackages(_ snapshot: WorkspaceSnapshot) -> Bool {
+    snapshot.inspection.marketplaceGraph?.roots.isEmpty == false
+      || !snapshot.inspection.marketplacePackages.isEmpty
+  }
+
+  private func hasStatusItems(_ snapshot: WorkspaceSnapshot) -> Bool {
+    snapshot.inspection.recovery.pending
+      || snapshot.inspection.pendingMarketplaceDeployment != nil
+      || snapshot.inspection.marketplaceIssue != nil
+  }
+
+  private func isEmpty(_ snapshot: WorkspaceSnapshot) -> Bool {
+    !hasInstalledPackages(snapshot) && !hasStatusItems(snapshot)
   }
 
   private func packageRoot(_ root: MarketplaceResolvedRoot, in graph: MarketplaceGraph)
@@ -113,20 +190,19 @@ struct PackagesView: View {
     let node = graph.nodes.first { $0.id == root.node }
     return DetailsGroup(root.intent.name + (node.map { " · " + $0.coordinate.version } ?? "")) {
       LabeledContent("Marketplace") { CompactText(text: root.intent.catalog.location) }
-      LabeledContent("Version Requirement", value: DeclarationLabels.requirement(root.intent.requirement))
+      LabeledContent(
+        "Version Requirement", value: DeclarationLabels.requirement(root.intent.requirement))
       if let node {
         ForEach(Array(node.dependencies.enumerated()), id: \.offset) { _, edge in
           let version = graph.nodes.first { $0.id == edge.target }?.coordinate.version
-          LabeledContent("Dependency", value: edge.target.package + (version.map { " · " + $0 } ?? ""))
+          LabeledContent(
+            "Dependency", value: edge.target.package + (version.map { " · " + $0 } ?? ""))
         }
       }
       ForEach(Array(root.intent.selections.enumerated()), id: \.offset) { _, selection in
-        HStack {
-          Text(selection.package + " / " + selection.member.name)
-          Spacer()
-          Text(selection.targets.map(\.displayName).joined(separator: ", "))
-            .foregroundStyle(.secondary)
-        }
+        LabeledContent(
+          selection.package + " / " + selection.member.name,
+          value: selection.targets.map(\.displayName).joined(separator: ", "))
       }
     }
   }

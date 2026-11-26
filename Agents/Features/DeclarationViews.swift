@@ -56,8 +56,13 @@ struct DeclarationListView: View {
         }
       }
       ToolbarItem {
-        Button("Edit Configuration…") { model.editConfigurationYAML() }
+        if model.page == .components {
+          Menu("Declaration Actions", systemImage: "ellipsis.circle") {
+            Button("Configure Default Clients…") { model.beginDraft(.defaults) }
+            Button("Edit YAML Source…") { model.editConfigurationYAML() }
+          }
           .disabled(!model.canModify)
+        }
       }
     }
   }

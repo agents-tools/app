@@ -411,7 +411,7 @@ struct ChangesView: View {
         Spacer()
         if !showingHistory {
           Menu("Configuration") {
-            Button("Edit Configuration…") { model.editConfigurationYAML() }
+            Button("Configure Default Clients…") { model.beginDraft(.defaults) }
             Button("Preview Full Update…") {
               model.previewUpdate(title: "Update Configuration", intent: .update)
             }
