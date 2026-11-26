@@ -28,9 +28,10 @@ struct PathView: View {
 }
 
 @MainActor
-func copyText(_ text: String) {
+@discardableResult
+func copyText(_ text: String) -> Bool {
   NSPasteboard.general.clearContents()
-  NSPasteboard.general.setString(text, forType: .string)
+  return NSPasteboard.general.setString(text, forType: .string)
 }
 
 struct CompactText: View {

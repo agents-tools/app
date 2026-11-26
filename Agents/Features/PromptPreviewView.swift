@@ -12,17 +12,28 @@ struct PromptPreviewView: View {
         case .loading:
           HStack {
             ProgressView().controlSize(.small)
-            Text("Generating prompt preview…")
+            Text(
+              session.copyAfterRead == nil
+                ? "Generating prompt preview…" : "Reading managed instructions…")
           }
         case .ready(let text):
           ScrollView {
-            Text(text).textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading)
+            Text(verbatim: text).textSelection(.enabled).frame(
+              maxWidth: .infinity, alignment: .leading)
           }
-          Button("Copy Prompt") { copyText(text) }
+          HStack {
+            Button("Copy Text") {
+              model.copyInstructionPreview(copy: copyText)
+            }
+            if let copied = session.clipboardResult {
+              Text(copied ? "Copied to Clipboard" : "Couldn’t write to the clipboard.")
+                .foregroundStyle(.secondary)
+            }
+          }
         case .failed:
           ForEach(session.messages) { Text($0.message).textSelection(.enabled) }
         case .outdated:
-          Text("The selection changed. Generate a new preview for the current selection.")
+          Text("The selection changed. Try again for the current selection.")
         case .cancelled:
           Text("The preview was cancelled before it started.")
         }

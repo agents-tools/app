@@ -125,7 +125,7 @@ struct MappingItem: Identifiable, Sendable {
   let prompts: [String: [LockedSection]]
 }
 
-struct MappingTarget: Identifiable, Sendable {
+struct MappingTarget: Identifiable, Equatable, Sendable {
   let id: String
   let recipients: [AgentID]
   let sections: [LockedSection]
