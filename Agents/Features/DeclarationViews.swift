@@ -3,8 +3,6 @@ import SwiftUI
 
 struct DeclarationListView: View {
   @Bindable var model: AppModel
-  @State private var authoring = false
-  @State private var packagingProject = false
 
   var body: some View {
     VStack(spacing: 0) {
@@ -45,20 +43,6 @@ struct DeclarationListView: View {
         }.padding(16)
       }
     }
-    .sheet(isPresented: $authoring) {
-      if let snapshot = model.snapshot {
-        BundleAuthoringSheet(
-          snapshot: snapshot, environment: model.actions.environment(for: snapshot.scope)
-        )
-        .id(snapshot.scope)
-      }
-    }
-    .sheet(isPresented: $packagingProject) {
-      if let snapshot = model.snapshot {
-        ProjectPackageSheet(snapshot: snapshot, environment: model.actions.environment(for: snapshot.scope))
-          .id(snapshot.scope)
-      }
-    }
     .searchable(text: $model.search, prompt: "Search \(model.page.title.lowercased())")
     .toolbar {
       ToolbarItem {
@@ -67,33 +51,13 @@ struct DeclarationListView: View {
         }
       }
       ToolbarItem {
-        if model.page == .components {
-          Button("New Local Skill…") { model.beginCreation(.skill) }
-        }
-      }
-      ToolbarItem {
         if model.page == .sources {
           Button("Add from Source…") { model.beginCatalog() }.disabled(!model.canModify)
         }
       }
       ToolbarItem {
-        Menu("Packages", systemImage: "shippingbox") {
-          Button("Manage Packages…") { model.packageScope = model.scope }
-          if model.page == .components {
-            if model.scope.kind == .project {
-              Button("Package Project…") { packagingProject = true }
-            }
-            Button("Create Bundle…") { authoring = true }
-              .disabled(model.snapshot?.inspection.components.isEmpty != false)
-          }
-        }.disabled(!model.canModify)
-      }
-      ToolbarItem {
-        Button("Browse MCP Registry…", systemImage: "magnifyingglass") { model.browseRegistry() }
-          .disabled(!model.canModify)
-      }
-      ToolbarItem {
         Button("Edit Configuration…") { model.beginDraft(.defaults) }
+          .disabled(!model.canModify)
       }
     }
   }
@@ -156,6 +120,16 @@ struct InspectorView: View {
             }
             LabeledContent("Resolved") { PathView(url: snapshot.resolvedURL, scope: model.scope) }
             LabeledContent("Subscriptions") { PathView(url: snapshot.watchURL, scope: model.scope) }
+            if model.page == .components, let document = snapshot.document {
+              DetailsGroup("Declaration YAML") {
+                ScrollView {
+                  Text(verbatim: String(decoding: document.bytes, as: UTF8.self))
+                    .font(.body.monospaced()).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+              }
+            }
           }
         }
         Section {

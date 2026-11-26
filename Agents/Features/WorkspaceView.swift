@@ -1,61 +1,38 @@
 import AgentsCore
 import AgentsManifest
 import AgentsUpdates
+import AppKit
 import SwiftUI
 
 struct WorkspaceView: View {
   @Bindable var model: AppModel
   @State private var pendingReview: UpdateProposal?
-  @State private var packageActionScope: WorkspaceScope?
 
   var body: some View {
     NavigationSplitView {
       List(
         selection: Binding<WorkspacePage?>(
           get: { model.page },
-          set: { page in
-            if let page {
-              model.page = page
-              model.selectedItem = nil
-            }
-          })
+          set: { if let page = $0 { model.page = page } })
       ) {
+        Section("Scope") {
+          scopePicker
+        }
         Section("Configuration") {
-          Button {
-            model.select(.init(kind: .user, root: model.home))
-          } label: {
-            scopeLabel(.init(kind: .user, root: model.home), symbol: "person.crop.circle")
+          ForEach(WorkspacePage.allCases.filter(\.showsClientFilter)) { page in pageRow(page) }
+        }
+        Section("Distribution & Maintenance") {
+          ForEach(
+            [WorkspacePage.packages, .sources, .changes, .backups, .diagnostics]
+          ) { page in pageRow(page) }
+          SettingsLink {
+            Label("Settings…", systemImage: "gearshape")
           }
           .buttonStyle(.plain)
-          .accessibilityIdentifier("scope.user")
+          .accessibilityIdentifier("workspace.settings")
         }
-        Section("Projects") {
-          ForEach(model.preferences.projects, id: \.self) { url in
-            let scope = WorkspaceScope(kind: .project, root: url)
-            Button {
-              model.select(scope)
-            } label: {
-              scopeLabel(scope, symbol: "folder")
-            }
-            .buttonStyle(.plain)
-            .contextMenu {
-              Button("Remove from Project List") { model.removeProject(url) }
-            }
-          }
-          Button("Add Project…", systemImage: "plus") { chooseProject(for: model) }
-            .accessibilityIdentifier("project.add")
-        }
-        Section(model.scope.title) {
-          ForEach(WorkspacePage.allCases.filter { $0 != .backups }) { page in
-            Label(page.title, systemImage: page.symbol)
-              .tag(page)
-              .accessibilityIdentifier("page.\(page.rawValue)")
-          }
-        }
-        Section("Tools") {
-          Label(WorkspacePage.backups.title, systemImage: WorkspacePage.backups.symbol)
-            .tag(WorkspacePage.backups)
-            .accessibilityIdentifier("page.backups")
+        if model.page == .components {
+          Section("Advanced") { pageRow(.components) }
         }
       }
       .listStyle(.sidebar)
@@ -66,22 +43,26 @@ struct WorkspaceView: View {
         .navigationTitle(model.page.title)
         .navigationSubtitle(model.page == .backups ? "" : model.scope.title)
         .toolbar {
+          if model.page.showsClientFilter, model.snapshot != nil {
+            ToolbarItem {
+              ClientFilterPicker(selection: $model.clientFilter)
+                .accessibilityIdentifier("workspace.clientFilter")
+            }
+          }
           if model.page != .backups {
             ToolbarItem {
               Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
                 .disabled(model.isTerminating || model.isApplying)
                 .help("Read configuration again")
             }
-            ToolbarItem {
-              Button("Package Actions…", systemImage: "play.circle") {
-                packageActionScope = model.scope
-              }.disabled(model.isTerminating || model.isApplying)
-            }
+          }
+          if model.page.hasInspector, model.snapshot != nil {
             ToolbarItem {
               Button("Inspector", systemImage: "sidebar.right") {
                 model.setInspectorVisible(!model.preferences.inspectorVisible)
               }
               .help("Show or hide the inspector")
+              .accessibilityIdentifier("workspace.toggleInspector")
             }
           }
         }
@@ -89,12 +70,11 @@ struct WorkspaceView: View {
     }
     .inspector(
       isPresented: Binding(
-        get: { model.page != .backups && model.preferences.inspectorVisible },
-        set: { if model.page != .backups { model.setInspectorVisible($0) } }
+        get: { model.page.hasInspector && model.snapshot != nil && model.preferences.inspectorVisible },
+        set: { if model.page.hasInspector, model.snapshot != nil { model.setInspectorVisible($0) } }
       )
     ) {
-      InspectorView(model: model)
-        .inspectorColumnWidth(min: 260, ideal: 300, max: 420)
+      inspector.inspectorColumnWidth(min: 260, ideal: 300, max: 420)
     }
     .sheet(
       item: Binding(
@@ -106,9 +86,6 @@ struct WorkspaceView: View {
     .sheet(item: $model.watchSession) { _ in WatchView(model: model) }
     .sheet(item: $model.importSession) { _ in ImportView(model: model) }
     .sheet(item: $model.connectionSession) { _ in ConnectionView(model: model) }
-    .sheet(item: $packageActionScope) { scope in
-      PackageActionsSheet(model: model, scope: scope, environment: model.actions.environment(for: scope))
-    }
     .sheet(
       item: Binding(
         get: { model.existingConfigurationSession },
@@ -153,7 +130,6 @@ struct WorkspaceView: View {
     .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
     .sheet(item: $model.creationSession) { _ in CreationView(model: model) }
     .sheet(item: $model.promptSession) { _ in PromptPreviewView(model: model) }
-
   }
 
   @ViewBuilder private var workspace: some View {
@@ -161,7 +137,9 @@ struct WorkspaceView: View {
     case (.backups, _):
       ClientBackupsView(model: model)
     case (.diagnostics, _):
-      DiagnosticsView(model: model)
+      DiagnosticsView(model: model).id(model.scope.id)
+    case (.packages, _):
+      PackagesView(model: model).id(model.scope.id)
     case (_, .idle):
       ContentUnavailableView {
         Label("Configuration Not Loaded", systemImage: "doc.text.magnifyingglass")
@@ -194,27 +172,102 @@ struct WorkspaceView: View {
         Button("Show Diagnostics") { model.page = .diagnostics }
       }
     case (.overview, .loaded(let snapshot)):
-      OverviewView(model: model, snapshot: snapshot)
+      OverviewView(model: model, snapshot: snapshot).id(snapshot.scope.id)
+    case (.skills, .loaded(let snapshot)):
+      SkillWorkspaceView(model: model, snapshot: snapshot)
+        .safeAreaInset(edge: .bottom) {
+          if let client = model.clientFilter,
+            !snapshot.skillWorkspaceItems.isEmpty,
+            !snapshot.skillWorkspaceItems.contains(where: { $0.recipients.contains(client) })
+          {
+            HStack {
+              Text("No skills match \(client.displayName).")
+              Button("Show All Clients") { model.clientFilter = nil }
+                .accessibilityIdentifier("skills.showAllClients")
+            }
+            .padding(8).frame(maxWidth: .infinity).background(.bar)
+          }
+        }
+        .id(snapshot.scope.id)
     case (.components, .loaded), (.sources, .loaded):
-      DeclarationListView(model: model)
+      DeclarationListView(model: model).id(model.scope.id)
     case (.instructions, .loaded(let snapshot)):
       InstructionsView(model: model, snapshot: snapshot).id(snapshot.scope.id)
+    case (.mcp, .loaded(let snapshot)):
+      NativeCapabilityView(model: model, snapshot: snapshot, kind: .mcpServer)
+        .id(snapshot.scope.id)
+    case (.other, .loaded(let snapshot)):
+      NativeCapabilityView(model: model, snapshot: snapshot, kind: nil).id(snapshot.scope.id)
     case (.changes, .loaded):
       ChangesView(model: model)
     }
   }
 
-  private func scopeLabel(_ scope: WorkspaceScope, symbol: String) -> some View {
-    HStack {
-      Label(scope.title, systemImage: symbol).lineLimit(1)
-      Spacer(minLength: 4)
-      if scope == model.scope {
-        Image(systemName: "checkmark").foregroundStyle(.secondary).accessibilityLabel("Selected")
-      }
+  @ViewBuilder private var inspector: some View {
+    if model.page == .skills, let snapshot = model.snapshot {
+      SkillWorkspaceInspector(model: model, snapshot: snapshot)
+        .id(snapshot.scope.id)
+        .accessibilityIdentifier("workspace.inspector")
+    } else if model.page.hasInspector {
+      InspectorView(model: model)
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .contentShape(Rectangle())
-    .help(scope.root.path)
+  }
+
+  private var scopePicker: some View {
+    HStack(spacing: 6) {
+      Picker("Scope", selection: Binding(get: { model.scope }, set: model.select)) {
+        ForEach(model.scopes) { scope in
+          Label(scopePickerTitle(scope), systemImage: scope.kind == .user ? "person.crop.circle" : "folder")
+            .help(scope.root.path)
+            .tag(scope)
+            .accessibilityIdentifier("scope.\(scope.kind == .user ? "user" : scope.id)")
+        }
+      }
+      .pickerStyle(.menu)
+      .labelsHidden()
+      .accessibilityIdentifier("workspace.scope")
+      .help(model.scope.root.path)
+      Menu("Scope Actions", systemImage: "ellipsis.circle") {
+        Button("Add Project…", systemImage: "plus") { chooseProject(for: model) }
+          .accessibilityIdentifier("project.add")
+        if model.scope.kind == .project {
+          Button("Remove from Project List") { model.removeProject(model.scope.root) }
+        }
+        Divider()
+        Button("Edit Configuration…") { model.beginDraft(.defaults) }.disabled(!model.canModify)
+        Button("Show Declaration") { model.page = .components }
+          .disabled(model.snapshot == nil)
+          .accessibilityIdentifier("workspace.declaration")
+        if case .existingConfigurationAvailable = model.loadState {
+          Button("Review Existing Configuration Import…") { model.previewExistingConfiguration() }
+            .disabled(!model.canPreviewExistingConfiguration)
+        }
+        Button("Reveal Scope in Finder") {
+          NSWorkspace.shared.open(model.scope.root)
+        }
+        Button("Copy Scope Path") { copyText(model.scope.root.path) }
+      }
+      .menuStyle(.borderlessButton)
+      .menuIndicator(.hidden)
+      .labelStyle(.iconOnly)
+      .fixedSize()
+      .help("Scope actions")
+      .accessibilityIdentifier("workspace.scopeActions")
+    }
+    .padding(.vertical, 2)
+  }
+
+  private func scopePickerTitle(_ scope: WorkspaceScope) -> String {
+    if scope.kind == .project, model.scopes.contains(where: { $0 != scope && $0.title == scope.title }) {
+      return scope.root.path
+    }
+    return scope.title
+  }
+
+  private func pageRow(_ page: WorkspacePage) -> some View {
+    Label(page.title, systemImage: page.symbol)
+      .tag(page)
+      .accessibilityIdentifier("page.\(page.rawValue)")
   }
 
   @ViewBuilder private var operationStatus: some View {
@@ -243,93 +296,184 @@ struct WorkspaceView: View {
 }
 
 struct OverviewView: View {
-  @State private var confirmsRecovery = false
   let model: AppModel
   let snapshot: WorkspaceSnapshot
 
+  @State private var showingManagedState = false
+
   var body: some View {
-    if snapshot.isEmpty {
-      ContentUnavailableView {
-        Label("No Configuration", systemImage: "doc.badge.plus")
-      } description: {
-        Text("Add a source or create a local skill to get started.")
-      } actions: {
-        Button("Edit Configuration…") { model.beginDraft(.defaults) }
-        Button("New Local Skill…") { model.beginCreation(.skill) }
-        if model.scope.kind == .project {
-          Button("New Local Instructions…") { model.beginCreation(.instructions) }
-        }
-        Button("Add from Source…") { model.beginCatalog() }
-        Button("Install Package…") { model.packageScope = model.scope }.disabled(!model.canModify)
-        Button("Browse MCP Registry…") { model.browseRegistry() }.disabled(!model.canModify)
-        Button("Import…") { model.beginImport() }
+    Group {
+      if showingManagedState, model.clientFilter == nil {
+        managedState
+      } else {
+        summary
       }
-    } else {
-      List {
-        if snapshot.inspection.recovery.pending {
-          Section("Recovery Pending") {
-            Text(snapshot.inspection.recovery.diagnostic ?? "An earlier operation is incomplete.")
-            Button("Recover and Recheck…") { confirmsRecovery = true }.disabled(
-              model.isApplying || model.isTerminating)
-            Text(
-              "Recover the incomplete operation before making further changes."
-            )
+    }
+    .onChange(of: model.clientFilter) { showingManagedState = false }
+  }
+
+  private var summary: some View {
+    let counts = OverviewCounts(snapshot: snapshot, client: model.clientFilter)
+    return List {
+      if snapshot.isEmpty, snapshot.skillWorkspaceItems.isEmpty,
+        snapshot.inspection.components.isEmpty
+      {
+        Section("Get Started") {
+          Button("Edit Configuration…") { model.beginDraft(.defaults) }
+            .disabled(!model.canModify)
+          Button("Create a Local Skill…") { model.beginCreation(.skill) }
+            .disabled(!model.canModify)
+          Button("Add from Source…") { model.beginCatalog() }
+            .disabled(!model.canModify)
+          Button("Import Configuration…") { model.beginImport() }
+            .disabled(!model.canModify)
+        }
+      }
+
+      Section {
+        categoryLink(.skills, count: counts.skills)
+        if snapshot.scope.kind == .project, counts.userSkills > 0 {
+          Text("\(counts.skills - counts.userSkills) project · \(counts.userSkills) user")
             .font(.caption).foregroundStyle(.secondary)
+        }
+        categoryLink(.instructions, count: counts.instructions)
+        categoryLink(.mcp, count: counts.mcp)
+        categoryLink(.other, count: counts.other)
+      } header: {
+        if let client = model.clientFilter {
+          HStack {
+            Text(client.displayName + " Configuration")
+            Spacer()
+            Button("Show All Clients") { model.clientFilter = nil }
+              .accessibilityIdentifier("overview.showAllClients")
+          }
+        } else {
+          Text("Configuration")
+        }
+      }
+
+      if model.clientFilter == nil {
+        Section("Clients") {
+          ForEach(AgentID.allCases, id: \.self) { client in
+            clientLink(client, counts: OverviewCounts(snapshot: snapshot, client: client))
           }
         }
-        Section("Scope") {
+      }
+
+      Section("Scope Issues") {
+        let problems = model.currentScopeProblems
+        Button {
+          model.page = .diagnostics
+        } label: {
+          linkLabel(
+            problems.isEmpty ? "No problems reported" : "Review Configuration Problems",
+            symbol: problems.isEmpty ? "checkmark.circle" : "exclamationmark.triangle",
+            count: problems.isEmpty ? nil : problems.count)
+        }
+        .accessibilityIdentifier("overview.diagnostics")
+      }
+
+      Section("Scope Details") {
+        DetailsGroup("Configuration Files and Defaults") {
           LabeledContent("Location") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }
+          LabeledContent("Declaration") {
+            PathView(url: snapshot.manifestURL, scope: snapshot.scope)
+          }
+          LabeledContent("Resolved State") {
+            PathView(url: snapshot.resolvedURL, scope: snapshot.scope)
+          }
+          LabeledContent("Subscriptions") {
+            PathView(url: snapshot.watchURL, scope: snapshot.scope)
+          }
           LabeledContent(
             "Read", value: snapshot.readAt.formatted(date: .abbreviated, time: .standard))
           LabeledContent(
-            "Default agents",
+            "Default Agents",
             value: snapshot.effectiveDefaultAgents.isEmpty
               ? "None" : snapshot.effectiveDefaultAgents.map(\.displayName).joined(separator: ", "))
-          Text(
-            snapshot.document?.declaration.defaultAgents == nil
-              ? "Uses built-in defaults."
-              : "Default agents are declared in this scope."
-          )
-          .font(.caption).foregroundStyle(.secondary)
+          Button("Show Declaration") { model.page = .components }
         }
-        Section("Declaration") {
-          LabeledContent("Components", value: String(snapshot.components.count))
-          LabeledContent("Sources", value: String(snapshot.sources.count))
-          LabeledContent("Groups", value: String(snapshot.document?.declaration.groups.count ?? 0))
-          LabeledContent(
-            "Exports", value: snapshot.document?.declaration.exports.joined(separator: ", ") ?? "")
-          Button("View Declaration") { model.page = .components }
-          Button("New Local Skill…") { model.beginCreation(.skill) }
-          if model.scope.kind == .project {
-            Button("New Local Instructions…") { model.beginCreation(.instructions) }
-          }
-        }
-        ManagedStateView(model: model, snapshot: snapshot)
-        Section("Read Status") {
-          if let inventory = snapshot.inventory {
-            LabeledContent("Skill inventory entries", value: String(inventory.count))
-          } else {
-            Label("Skill inventory unavailable", systemImage: "exclamationmark.triangle")
-          }
-          LabeledContent(
-            "Diagnostics in this session", value: String(model.currentDiagnostics.count))
-          Text(
-            "Configuration and installed content refresh automatically when files change."
-          )
-          .foregroundStyle(.secondary)
-          Button("Show Diagnostics") { model.page = .diagnostics }
+        if model.clientFilter == nil, !snapshot.isEmpty || !snapshot.inspection.deployments.isEmpty
+          || !snapshot.inspection.resources.isEmpty
+        {
+          Button("Show Managed State") { showingManagedState = true }
+            .accessibilityIdentifier("overview.managedState")
         }
       }
-      .listStyle(.inset)
-      .buttonStyle(.borderless)
-      .confirmationDialog(
-        "Recover this configuration?", isPresented: $confirmsRecovery, titleVisibility: .visible
-      ) {
-        Button("Recover and Recheck") { model.recoverScope(in: snapshot.scope) }
-      } message: {
-        Text(
-          "Recover the incomplete operation in " + snapshot.scope.root.path
-            + ". No new configuration changes will be applied.")
+    }
+    .listStyle(.inset)
+    .buttonStyle(.borderless)
+  }
+
+  private var managedState: some View {
+    List {
+      Section("Managed State") {
+        Button("Back to Overview", systemImage: "chevron.backward") { showingManagedState = false }
+          .keyboardShortcut(.cancelAction)
+          .accessibilityIdentifier("overview.backFromManagedState")
+        LabeledContent("Scope") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }
+      }
+      ManagedStateView(model: model, snapshot: snapshot)
+    }
+    .listStyle(.inset)
+    .buttonStyle(.borderless)
+  }
+
+  private func categoryLink(_ page: WorkspacePage, count: Int) -> some View {
+    Button {
+      model.page = page
+    } label: {
+      linkLabel(page.title, symbol: page.symbol, count: count)
+    }
+    .accessibilityIdentifier("overview.category.\(page.rawValue)")
+  }
+
+  private func clientLink(_ client: AgentID, counts: OverviewCounts) -> some View {
+    Button {
+      model.showClientOverview(client)
+    } label: {
+      linkLabel(client.displayName, symbol: "terminal", count: counts.total)
+    }
+    .help("View \(client.displayName) configuration in this scope")
+    .accessibilityIdentifier("overview.client.\(client.rawValue)")
+  }
+
+  private func linkLabel(_ title: String, symbol: String, count: Int?) -> some View {
+    HStack {
+      Label(title, systemImage: symbol)
+      Spacer()
+      if let count {
+        Text(count, format: .number).monospacedDigit()
+      }
+      Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true)
+    }
+    .contentShape(Rectangle())
+  }
+}
+
+private struct OverviewCounts {
+  let skills: Int
+  let userSkills: Int
+  var instructions = 0
+  var mcp = 0
+  var other = 0
+
+  var total: Int { skills + instructions + mcp + other }
+
+  init(snapshot: WorkspaceSnapshot, client: AgentID?) {
+    let skills = snapshot.skillWorkspaceItems.filter { item in
+      client.map { item.recipients.contains($0) } ?? true
+    }
+    self.skills = skills.count
+    userSkills = skills.count { $0.scope.kind == .user }
+
+    for component in snapshot.inspection.components {
+      if let client, !component.recipients.contains(client) { continue }
+      switch component.kind {
+      case .skills: break
+      case .instructions: instructions += 1
+      case .mcpServer: mcp += 1
+      default: other += 1
       }
     }
   }
