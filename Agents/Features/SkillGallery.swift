@@ -375,7 +375,7 @@ private struct SkillGalleryContent: View {
       .width(min: 120, ideal: 160)
 
       TableColumn("Clients") { item in
-        Text(formattedClients(for: item.recipients))
+        Text(item.isResolved ? formattedClients(for: item.recipients) : "Pending installation")
           .foregroundStyle(item.recipients.isEmpty ? .tertiary : .secondary)
           .lineLimit(1)
       }
@@ -683,7 +683,8 @@ private struct SkillDetailsContent: View {
       if !item.occurrences.isEmpty {
         Section("Declarations") {
           ForEach(Array(item.occurrences.enumerated()), id: \.offset) { _, occurrence in
-            DetailsGroup(occurrence.manifestPath) {
+            DetailsGroup(occurrence.manifestPath + (occurrence.recipients.isEmpty ? "" : " · " + occurrence.recipients.map(\.displayName).joined(separator: ", "))) {
+              LabeledContent("Targets", value: occurrence.recipients.map(\.displayName).joined(separator: ", "))
               LabeledContent("Source") { CompactText(text: occurrence.declaringSource) }
               LabeledContent("Owner", value: occurrence.consumerEditable ? "Scope" : "Source")
               if let agents = occurrence.condition.agents { LabeledContent("Clients", value: agents.map(\.displayName).joined(separator: ", ")) }

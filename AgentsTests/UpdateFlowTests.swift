@@ -219,7 +219,7 @@ struct UpdateFlowTests {
     defer { try? fixture.remove() }
     let folder = fixture.project.appendingPathComponent("toolkit/skills/review")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    try Data("---\nname: review\ndescription: Review changes.\n---\n".utf8)
+    try Data("---\nname: code-review\ndescription: Review changes.\n---\n".utf8)
       .write(to: folder.appendingPathComponent("SKILL.md"))
     _ = try fixture.writeManifest("""
       version: 1
@@ -237,6 +237,7 @@ struct UpdateFlowTests {
     model.confirmUpdate(id: id)
     try await idle(model)
     let resolved = try #require(model.snapshot?.skillWorkspaceItems.first { $0.isResolved })
+    #expect(resolved.name == "code-review")
     #expect(resolved.isUsed(by: .geminiCLI, in: model.scope))
     #expect(model.selectedSkillID == resolved.id)
   }

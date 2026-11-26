@@ -975,7 +975,7 @@ final class AppModel {
             guard let previousSkill, !previousSkill.isResolved, item.isResolved,
               let owner = previousSkill.targetOwner else { return false }
             return item.scope == previousSkill.scope && item.source == previousSkill.source
-              && item.name == previousSkill.name && item.targetOwner?.declarationPointer == owner.declarationPointer
+              && item.targetOwner?.name == owner.name && item.targetOwner?.declarationPointer == owner.declarationPointer
           }
           self.selectedSkillID = matches.count == 1 ? matches[0].id : nil
         }

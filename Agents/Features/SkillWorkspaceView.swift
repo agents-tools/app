@@ -54,7 +54,8 @@ struct SkillWorkspaceInspector: View {
             if item.scope != snapshot.scope { model.select(item.scope) }
             model.showClientOverview(client)
           },
-          assistance: model.assistanceAvailable && item.scope == snapshot.scope && component != nil
+          assistance: model.assistanceAvailable && item.scope == snapshot.scope
+            && component.flatMap({ AssistanceInput.skill($0, action: .explainSkill) }) != nil
             ? { action in
               if let component, let input = AssistanceInput.skill(component, action: action) {
                 model.reviewAssistance(input)

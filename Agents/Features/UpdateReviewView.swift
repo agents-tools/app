@@ -319,7 +319,7 @@ struct InstructionFileReviewRow: Identifiable {
   }
 }
 
-private struct InstructionFileReview: View {
+struct InstructionFileReview: View {
   let targets: [InstructionTargetChange]
   @State private var selection: URL?
 

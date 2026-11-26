@@ -87,8 +87,12 @@ struct SkillTargetsSheet: View {
       if let report = review.report {
         Form {
           SkillTargetEffectsView(report: report, scope: item.scope)
+          let changedFiles = report.instructions.targets.filter(\.changed)
+          if !changedFiles.isEmpty {
+            Section("Instruction Files") { InstructionFileReview(targets: changedFiles) }
+          }
           if report.components.contains(where: \.changed)
-            || report.instructions.targets.contains(where: \.changed)
+            || !changedFiles.isEmpty
             || report.marketplaceChanges?.isEmpty == false
             || !report.instructions.changedPrompts.isEmpty
           {
