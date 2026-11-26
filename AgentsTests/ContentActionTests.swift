@@ -350,7 +350,7 @@ struct ContentActionTests {
       sources: {fixture: {path: "\(source.deletingLastPathComponent().path)"}}
       components:
         - kind: instructions
-          agents: [codex]
+          agents: [codex, antigravity]
           sections: [{name: user, source: fixture}]
       """, user: true)
     _ = try InstructionOperations.updateInstalled(scope: .user, environment: runtime, apply: true)
@@ -358,7 +358,8 @@ struct ContentActionTests {
     let project = WorkspaceScope(kind: .project, root: fixture.project)
     let reader = CoreReader(home: fixture.home, processEnvironment: environment)
     let snapshot = try #require(reader.read(scope: project).snapshot)
-    let target = try #require(snapshot.mappings.first { $0.scope == user }?.targets.first)
+    let mapping = try #require(snapshot.mappings.first { $0.scope == user })
+    let target = try #require(mapping.targets.first { $0.recipients.contains(.codex) })
     let file = codexHome.appendingPathComponent("AGENTS.md")
     #expect(target.id == file.path)
     let before = try fixture.entries()
@@ -370,6 +371,15 @@ struct ContentActionTests {
       return
     }
     #expect(Data(text.utf8) == (try Data(contentsOf: file)))
+    let rule = try #require(mapping.targets.first { $0.recipients.contains(.antigravity) })
+    let ruleURL = try #require(mapping.fileURL(for: rule.id))
+    let copy = actions.render(
+      .init(id: UUID(), scope: user, content: .mapped(rule), title: "Copy Full Text"))
+    guard case .prompt(_, let ruleText) = copy.output else {
+      Issue.record("Expected the managed Antigravity rule: \(copy.diagnostics.map(\.message))")
+      return
+    }
+    #expect(Data(ruleText.utf8) == (try Data(contentsOf: ruleURL)))
     let wrongScope = actions.render(
       .init(id: UUID(), scope: project, content: .mapped(target), title: "Copy Full Text"))
     #expect(wrongScope.disposition == .failed)

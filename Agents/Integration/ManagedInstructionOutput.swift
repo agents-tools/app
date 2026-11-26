@@ -114,7 +114,7 @@ enum ManagedInstructionOutput {
         if url.path == admitted.path { return url }
       case .container:
         if url.deletingLastPathComponent().path == admitted.path,
-          leaf.range(of: #"^agents-[a-z0-9_-]{1,60}-[a-f0-9]{64}\.md\z"#) != nil
+          leaf.range(of: #"^agents-[a-z0-9_-]{1,60}-[a-f0-9]{64}\.md\z"#, options: .regularExpression) != nil
         {
           return url
         }
