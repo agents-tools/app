@@ -28,7 +28,7 @@ struct ManifestDraftView: View {
           .foregroundStyle(.secondary)
         }
         if let yaml = draft.yaml {
-          ConfigurationYAMLEditor(
+          DeclarationYAMLEditor(
             text: Binding(
               get: { model.manifestDraft?.yaml ?? yaml },
               set: { model.manifestDraft?.yaml = $0 }
@@ -201,17 +201,15 @@ struct GroupUsesEditor: View {
   }
 }
 
-private struct ConfigurationYAMLEditor: View {
+private struct DeclarationYAMLEditor: View {
   @Binding var text: String
   let path: String
   @State private var validation: String?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 8) {
-      TextEditor(text: $text)
-        .font(.system(.body, design: .monospaced))
+      ConfigurationYAMLEditor(label: "Configuration YAML", text: $text)
         .autocorrectionDisabled()
-        .accessibilityLabel("Configuration YAML")
         .accessibilityIdentifier("configuration.yaml")
       HStack {
         Button("Check YAML") {
