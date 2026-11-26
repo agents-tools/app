@@ -58,6 +58,7 @@ struct PromptSession: Identifiable {
 }
 
 enum ContentOutput: Sendable {
+  case userSkillReferences([SkillWorkspaceItem])
   case clientInspection(UUID, AgentClientInspection)
   case clientInspectionFailed(UUID, String)
   case clientBackup([ClientBackupOutcome])

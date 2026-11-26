@@ -15,6 +15,22 @@ struct CoreReader: Sendable {
       .environment(for: scope)
   }
 
+  func readUserSkillReferences() -> CoreCompletion {
+    let scope = WorkspaceScope(kind: .user, root: home)
+    let runtime = environment(for: scope)
+    let store = StateStore(scope: .user, environment: runtime)
+    let dependencies = Self.stateDependencies(store: store)
+    do {
+      let inspection = try UpdateOperations.inspect(scope: .user, environment: runtime)
+      let skills = Self.skillWorkspace(inspection, scope: scope, store: store)
+      return .init(disposition: .completed, output: .userSkillReferences(skills.items),
+                   readDependencies: dependencies + skills.dependencies + inspection.readLocations.map(ReadDependency.subtree))
+    } catch {
+      return .init(disposition: .failed, diagnostics: Self.diagnostics(error, scope: scope, operation: "Read user skills"),
+                   readDependencies: dependencies)
+    }
+  }
+
   func read(scope: WorkspaceScope) -> CoreCompletion {
     let runtime = environment(for: scope)
     let store = StateStore(scope: scope.installScope, environment: runtime)

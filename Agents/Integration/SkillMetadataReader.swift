@@ -31,7 +31,9 @@ struct SkillMetadataReader {
 
   private mutating func read(root location: URL) -> Display {
     // The locked resource or installation can itself be a managed symlink.
-    let root = location.resolvingSymlinksInPath()
+    guard let physical = realpath(location.path, nil) else { return Display() }
+    defer { free(physical) }
+    let root = URL(fileURLWithPath: String(cString: physical), isDirectory: true)
     let manifest = root.appendingPathComponent("agents/openai.yaml")
     let markdown = root.appendingPathComponent("SKILL.md")
     dependencies.insert(.entry(manifest))

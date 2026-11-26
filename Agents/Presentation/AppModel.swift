@@ -967,6 +967,13 @@ final class AppModel {
           self.selectedSkillID = nil
         }
         monitor(snapshot.inspection.readLocations.map(ReadDependency.subtree), since: readBoundary)
+        if case .workspace = operation.purpose, scope.kind == .project, !isTerminating {
+          let reader = reader
+          startOperation(title: "Read user skills", scope: scope) { reader.readUserSkillReferences() }
+        }
+      } else if case .userSkillReferences(let items) = result.output, var snapshot, snapshot.scope == scope {
+        snapshot.skillWorkspaceItems = snapshot.skillWorkspaceItems.filter { $0.scope == scope } + items
+        loadState = .loaded(snapshot)
       } else if case .workspace = operation.purpose,
         case .existingConfigurationAvailable = result.output
       {

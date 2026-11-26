@@ -178,7 +178,7 @@ struct WorkspaceView: View {
         .safeAreaInset(edge: .bottom) {
           if let client = model.clientFilter,
             !snapshot.skillWorkspaceItems.isEmpty,
-            !snapshot.skillWorkspaceItems.contains(where: { $0.recipients.contains(client) })
+            !snapshot.skillWorkspaceItems.contains(where: { $0.scope == snapshot.scope && $0.recipients.contains(client) })
           {
             HStack {
               Text("No skills match \(client.displayName).")
@@ -462,7 +462,7 @@ private struct OverviewCounts {
 
   init(snapshot: WorkspaceSnapshot, client: AgentID?) {
     let skills = snapshot.skillWorkspaceItems.filter { item in
-      client.map { item.recipients.contains($0) } ?? true
+      client.map { item.scope == snapshot.scope && item.recipients.contains($0) } ?? true
     }
     self.skills = skills.count
     userSkills = skills.count { $0.scope.kind == .user }

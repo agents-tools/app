@@ -30,7 +30,7 @@ struct SkillWorkspaceView: View {
 
   private var visibleSkills: [SkillWorkspaceItem] {
     guard let client = model.clientFilter else { return snapshot.skillWorkspaceItems }
-    return snapshot.skillWorkspaceItems.filter { $0.recipients.contains(client) }
+    return snapshot.skillWorkspaceItems.filter { $0.scope == snapshot.scope && $0.recipients.contains(client) }
   }
 }
 
@@ -48,8 +48,8 @@ struct SkillWorkspaceInspector: View {
         SkillDetails(
           item: item,
           openClient: { client in
-            model.clientFilter = client
-            model.page = .overview
+            if item.scope != snapshot.scope { model.select(item.scope) }
+            model.showClientOverview(client)
           },
           editTargets: item.scope == snapshot.scope && item.canEditTargets && model.canModify
             ? { editingItem = item } : nil,
