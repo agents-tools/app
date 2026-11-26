@@ -241,19 +241,16 @@ struct InstructionsView: View {
 
   private func appOutputs(in scope: WorkspaceScope) -> some View {
     Section("App Destinations") {
-      ForEach(InstructionAppDestination.inScope(scope, snapshot: snapshot)) { destination in
-        LabeledContent {
+      ForEach([InstructionRecipient.chatGPTApp, .geminiApp], id: \.self) { recipient in
+        LabeledContent(recipient.displayName) {
           Button("Preview Output…") {
-            previewOutput(.app(destination.recipient), in: scope)
+            previewOutput(.app(recipient), in: scope)
           }
           .disabled(!canBuildDisplayedScope)
-          .accessibilityLabel("Preview " + destination.recipient.displayName + " output")
-          .accessibilityIdentifier("instructions.output.preview." + destination.recipient.rawValue)
-        } label: {
-          Text(destination.recipient.displayName)
-          Text(destination.status)
+          .accessibilityLabel("Preview " + recipient.displayName + " output")
+          .accessibilityIdentifier("instructions.output.preview." + recipient.rawValue)
         }
-        .accessibilityIdentifier("instructions.output.app." + destination.recipient.rawValue)
+        .accessibilityIdentifier("instructions.output.app." + recipient.rawValue)
       }
       if scope == model.scope && scope == snapshot.scope {
         Text("Choose app recipients for each section in your instruction declarations.")
@@ -379,30 +376,6 @@ struct InstructionsView: View {
         Text(section.source + " · " + section.path)
           .font(.caption).foregroundStyle(.secondary)
       }.accessibilityElement(children: .combine)
-    }
-  }
-}
-
-struct InstructionAppDestination: Identifiable {
-  let recipient: InstructionRecipient
-  let hasResolvedUnits: Bool?
-  var id: InstructionRecipient { recipient }
-
-  var status: String {
-    switch hasResolvedUnits {
-    case .some(true): "Resolved instruction units available"
-    case .some(false): "No resolved instruction units"
-    case nil: "Open this configuration to see its instruction units"
-    }
-  }
-
-  static func inScope(_ scope: WorkspaceScope, snapshot: WorkspaceSnapshot) -> [Self] {
-    [InstructionRecipient.chatGPTApp, .geminiApp].map { recipient in
-      let hasResolvedUnits =
-        scope == snapshot.scope
-        ? snapshot.inspection.components.contains { $0.copyRecipients.contains(recipient) }
-        : nil
-      return Self(recipient: recipient, hasResolvedUnits: hasResolvedUnits)
     }
   }
 }

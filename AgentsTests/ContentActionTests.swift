@@ -240,9 +240,6 @@ struct ContentActionTests {
     let resolvedMixed = try #require(resolved.first { $0.name == "both" })
     #expect(resolvedMixed.recipients == [.codex])
     #expect(resolvedMixed.copyRecipients == [.chatGPTApp])
-    let snapshot = try #require(model.snapshot)
-    let destinations = InstructionAppDestination.inScope(scope, snapshot: snapshot)
-    #expect(destinations.allSatisfy { $0.hasResolvedUnits == true })
     model.closeUpdateReview()
 
     try FileManager.default.removeItem(at: localFile)
@@ -292,7 +289,10 @@ struct ContentActionTests {
     #expect(try Data(contentsOf: localFile) == local.content)
   }
 
-  @Test func unconfiguredAppDestinationsAreVisibleAndPreviewTheirOwnEmptyOutput() async throws {
+  @Test(arguments: [InstructionRecipient.chatGPTApp, .geminiApp])
+  func unconfiguredAppDestinationsPreviewTheirOwnEmptyOutput(recipient: InstructionRecipient)
+    async throws
+  {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
     let runtime = RuntimeEnvironment(
@@ -314,15 +314,8 @@ struct ContentActionTests {
       processEnvironment: fixture.environment)
     model.select(scope)
     try await idle(model)
-    let snapshot = try #require(model.snapshot)
-    let destinations = InstructionAppDestination.inScope(scope, snapshot: snapshot)
-    #expect(destinations.map(\.recipient) == [.chatGPTApp, .geminiApp])
-    #expect(destinations.allSatisfy { $0.hasResolvedUnits == false })
-    let otherDestinations = InstructionAppDestination.inScope(userScope, snapshot: snapshot)
-    #expect(otherDestinations.allSatisfy { $0.hasResolvedUnits == nil })
-
     let before = try fixture.entries()
-    let focus = InstructionOutputFocus.app(.chatGPTApp)
+    let focus = InstructionOutputFocus.app(recipient)
     model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: userScope, focus: focus))
     #expect(model.updateSession == nil)
     model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: scope, focus: focus))
@@ -332,7 +325,7 @@ struct ContentActionTests {
     #expect(preview.report?.instructions.outputs.map(\.recipient) == [.local(.codex)])
     #expect(preview.instructionOutputs.isEmpty)
     let guidance = try #require(preview.instructionOutputFocus?.emptyMessage)
-    #expect(guidance.contains("ChatGPT App") && guidance.contains("Recipients picker"))
+    #expect(guidance.contains(recipient.displayName) && guidance.contains("Recipients picker"))
     #expect(!preview.offersApply)
     #expect(try fixture.entries() == before)
   }
@@ -358,6 +351,7 @@ struct ContentActionTests {
       processEnvironment: fixture.environment)
     model.select(scope)
     try await idle(model)
+    #expect(model.snapshot?.inspection.components.isEmpty == true)
     let before = try fixture.entries()
     let otherScope = WorkspaceScope(kind: .user, root: fixture.home)
     model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: otherScope))
@@ -376,6 +370,18 @@ struct ContentActionTests {
     model.confirmUpdate()
     try await idle(model)
     #expect(try fixture.entries() == before)
+
+    for recipient in [InstructionRecipient.chatGPTApp, .geminiApp] {
+      model.closeUpdateReview()
+      model.previewUpdate(
+        UpdateProposal(previewingInstructionOutputsIn: scope, focus: .app(recipient)))
+      try await idle(model)
+      let preview = try #require(model.updateSession)
+      #expect(preview.instructionOutputs.map(\.recipient) == [recipient])
+      #expect(preview.instructionOutputs.first?.fullText?.contains("# copy") == true)
+      #expect(!preview.offersApply)
+      #expect(try fixture.entries() == before)
+    }
   }
 
   @Test func quitCancelsQueuedCreationAndConsumesItsTerminal() async throws {
