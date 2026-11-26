@@ -193,6 +193,54 @@ struct UpdateFlowTests {
     #expect(model.previewSkillTargets(for: item, recipients: [.codex]) == nil)
   }
 
+  @Test func yamlEditorKeepsTheExactReviewedDocument() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let path = try fixture.writeManifest("version: 1\n")
+    let model = await loadedModel(fixture)
+    defer { _ = model.requestTermination() }
+    model.editConfigurationYAML()
+    let initial = try String(contentsOf: path, encoding: .utf8)
+    #expect(model.manifestDraft?.yaml == initial)
+    let proposed = "# Shared defaults\nversion: 1\ndefaultAgents: [codex]  # Keep the selection\n"
+    model.manifestDraft?.yaml = proposed
+    model.previewDraft()
+    try await idle(model)
+    let session = try #require(model.updateSession)
+    #expect(session.stage == .review)
+    #expect(try String(contentsOf: path, encoding: .utf8) == initial)
+    model.confirmUpdate(id: session.id)
+    try await idle(model)
+    #expect(try String(contentsOf: path, encoding: .utf8) == proposed)
+  }
+
+  @Test func resolvingASelectedSkillKeepsItsInspector() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let folder = fixture.project.appendingPathComponent("toolkit/skills/review")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    try Data("---\nname: review\ndescription: Review changes.\n---\n".utf8)
+      .write(to: folder.appendingPathComponent("SKILL.md"))
+    _ = try fixture.writeManifest("""
+      version: 1
+      sources: {toolkit: {path: ./toolkit}}
+      components:
+        - {kind: skills, source: toolkit, select: [review], agents: [codex]}
+      """)
+    let model = await loadedModel(fixture)
+    defer { _ = model.requestTermination() }
+    let pending = try #require(model.snapshot?.skillWorkspaceItems.first)
+    #expect(!pending.isUsed(by: .codex, in: model.scope))
+    model.selectedSkillID = pending.id
+    let id = try #require(model.previewSkillTargets(for: pending, recipients: [.codex, .geminiCLI]))
+    try await idle(model)
+    model.confirmUpdate(id: id)
+    try await idle(model)
+    let resolved = try #require(model.snapshot?.skillWorkspaceItems.first { $0.isResolved })
+    #expect(resolved.isUsed(by: .geminiCLI, in: model.scope))
+    #expect(model.selectedSkillID == resolved.id)
+  }
+
   @Test func preciseSelectionRemovalUsesRealRecordedState() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

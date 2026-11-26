@@ -21,6 +21,19 @@ struct UpdateReviewView: View {
         case .review:
           if let report = session.report {
             Form {
+              if let draft = model.manifestDraft, let proposed = draft.yaml {
+                Section("Configuration File") {
+                  if let location = model.snapshot?.manifestURL { PathView(url: location, scope: draft.scope) }
+                  if let document = draft.document {
+                    DetailsGroup("Current YAML") {
+                      Text(verbatim: String(decoding: document.bytes, as: UTF8.self)).font(.body.monospaced()).textSelection(.enabled)
+                    }
+                  }
+                  DetailsGroup("Proposed YAML") {
+                    Text(verbatim: proposed).font(.body.monospaced()).textSelection(.enabled)
+                  }
+                }
+              }
               if let change = report.marketplaceGraphChange {
                 MarketplaceGraphReview(change: change)
               }
