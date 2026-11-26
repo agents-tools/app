@@ -6,18 +6,26 @@ struct SkillWorkspaceView: View {
   let snapshot: WorkspaceSnapshot
 
   var body: some View {
-    SkillGallery(items: visibleSkills, scope: snapshot.scope, selection: $model.selectedSkillID)
-      .toolbar {
-        ToolbarItem {
-          Menu {
-            Button("New Local Skill…") { model.beginCreation(.skill) }
-            Button("Add from Source…") { model.beginCatalog() }
-          } label: {
-            Label("Add Skill", systemImage: "plus")
-          }
-          .disabled(!model.canModify)
+    SkillGallery(
+      items: visibleSkills, scope: snapshot.scope,
+      selection: Binding(
+        get: { model.selectedSkillID },
+        set: { id in
+          model.selectedSkillID = id
+          if id != nil, !model.preferences.inspectorVisible { model.setInspectorVisible(true) }
+        })
+    )
+    .toolbar {
+      ToolbarItem {
+        Menu {
+          Button("New Local Skill…") { model.beginCreation(.skill) }
+          Button("Add from Source…") { model.beginCatalog() }
+        } label: {
+          Label("Add Skill", systemImage: "plus")
         }
+        .disabled(!model.canModify)
       }
+    }
   }
 
   private var visibleSkills: [SkillWorkspaceItem] {

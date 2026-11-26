@@ -18,7 +18,7 @@ struct ClientFilterPicker: View {
     }
     .pickerStyle(.menu)
     .accessibilityLabel("View")
-    .help("Filter visible skills by client")
+    .help("Filter configuration by client")
   }
 }
 
@@ -226,9 +226,6 @@ private struct SkillGalleryContent: View {
   private var headerBar: some View {
     HStack(spacing: 12) {
       HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(scopeDisplayName(for: scope))
-          .font(.headline)
-          .lineLimit(1)
         Text(itemCountSummary)
           .font(.subheadline)
           .foregroundStyle(.secondary)
@@ -901,7 +898,7 @@ private struct SkillIconContent: View {
   @Environment(\.displayScale) private var displayScale
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
-  private static let maxIconFileBytes = 1_048_576
+  private nonisolated static let maxIconFileBytes = 1_048_576
 
   private var maxPixelSize: Int {
     let scaled = Int(ceil(size * max(displayScale, 2.0)))
