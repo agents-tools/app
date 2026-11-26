@@ -384,6 +384,17 @@ final class AppModel {
       .named(name), in: scope, title: title ?? name, operation: "Generate prompt “\(name)”")
   }
 
+  func previewWebInstructionSelection(
+    _ selection: [String], in configuration: WebInstructionConfiguration
+  ) {
+    guard scope == configuration.scope, !selection.isEmpty, configuration.accepts(selection)
+    else { return }
+    let destination = configuration.destination.title
+    readInstructionText(
+      .webSelection(selection), in: scope, title: destination,
+      operation: "Preview " + destination + " Instructions")
+  }
+
   func copyMappedInstructions(
     _ target: MappingTarget, in scope: WorkspaceScope, copy: @escaping (String) -> Bool
   ) {

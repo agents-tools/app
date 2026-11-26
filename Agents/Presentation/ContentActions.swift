@@ -42,6 +42,7 @@ struct PromptRequest: Sendable {
   enum Content: Sendable {
     case named(String)
     case mapped(MappingTarget)
+    case webSelection([String])
   }
 
   let id: UUID
