@@ -45,21 +45,27 @@ struct CompactText: View {
 /// inside the expanded content rather than participating in the header's inferred AX label.
 struct DetailsGroup<Content: View>: View {
   let title: String
-  let content: Content
+  let content: () -> Content
 
-  init(_ title: String, @ViewBuilder content: () -> Content) {
+  init(_ title: String, @ViewBuilder content: @escaping () -> Content) {
     self.title = title
-    self.content = content()
+    self.content = content
   }
 
   var body: some View {
     DisclosureGroup {
-      content
+      DetailContent(build: content)
     } label: {
       Text(verbatim: title)
     }
     .disclosureGroupStyle(DetailsStyle(title: title))
   }
+}
+
+// Keep the builder behind a view boundary so collapsed rows never evaluate their details.
+private struct DetailContent<Content: View>: View {
+  let build: () -> Content
+  var body: some View { build() }
 }
 
 private struct DetailsStyle: DisclosureGroupStyle {

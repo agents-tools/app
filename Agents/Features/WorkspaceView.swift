@@ -265,7 +265,7 @@ struct OverviewView: View {
         Button("Import…") { model.beginImport() }
       }
     } else {
-      Form {
+      List {
         if snapshot.inspection.recovery.pending {
           Section("Recovery Pending") {
             Text(snapshot.inspection.recovery.diagnostic ?? "An earlier operation is incomplete.")
@@ -320,7 +320,7 @@ struct OverviewView: View {
           Button("Show Diagnostics") { model.page = .diagnostics }
         }
       }
-      .formStyle(.grouped)
+      .listStyle(.inset)
       .confirmationDialog(
         "Recover this configuration?", isPresented: $confirmsRecovery, titleVisibility: .visible
       ) {
