@@ -41,6 +41,8 @@ struct SkillDetails: View {
   let openClient: (AgentID) -> Void
   var assistance: ((AssistanceInput.Action) -> Void)? = nil
   var editTargets: (() -> Void)? = nil
+  var changeInstallMode: (() -> Void)? = nil
+  var openSource: (() -> Void)? = nil
   var openOwner: (() -> Void)? = nil
 
   var body: some View {
@@ -49,6 +51,8 @@ struct SkillDetails: View {
       openClient: openClient,
       assistance: assistance,
       editTargets: editTargets,
+      changeInstallMode: changeInstallMode,
+      openSource: openSource,
       openOwner: openOwner
     )
   }
@@ -632,6 +636,8 @@ private struct SkillDetailsContent: View {
   let openClient: (AgentID) -> Void
   var assistance: ((AssistanceInput.Action) -> Void)? = nil
   let editTargets: (() -> Void)?
+  let changeInstallMode: (() -> Void)?
+  let openSource: (() -> Void)?
   let openOwner: (() -> Void)?
 
   @State private var copiedInstallationID: String?
@@ -679,7 +685,6 @@ private struct SkillDetailsContent: View {
     Form {
       summarySection
       usedBySection
-      originSection
       if !item.occurrences.isEmpty {
         Section("Declarations") {
           ForEach(Array(item.occurrences.enumerated()), id: \.offset) { _, occurrence in
@@ -700,6 +705,7 @@ private struct SkillDetailsContent: View {
           Button("Translate Description…") { assistance(.translateDescription) }
         }
       }
+      sourceSection
       if !installationRows.isEmpty {
         installationsSection
       }
@@ -783,8 +789,8 @@ private struct SkillDetailsContent: View {
     }
   }
 
-  private var originSection: some View {
-    Section("Details") {
+  private var sourceSection: some View {
+    Section("Source") {
       LabeledContent("Owner Scope") {
         Text(ownerScopeLabel)
           .foregroundStyle(.secondary)
@@ -801,11 +807,8 @@ private struct SkillDetailsContent: View {
           .accessibilityIdentifier("skill.openOwner")
       }
 
-      if let url = item.sourceURL {
-        Button("Show Skill in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
-      }
       if !trimmedSource.isEmpty {
-        LabeledContent("Source") {
+        LabeledContent("Location") {
           Text(trimmedSource)
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.trailing)
@@ -813,6 +816,30 @@ private struct SkillDetailsContent: View {
             .truncationMode(.middle)
             .textSelection(.enabled)
             .help(trimmedSource)
+        }
+      }
+      if let owner = item.targetOwner {
+        let mode = owner.effectiveMode.skillLabel
+        LabeledContent(
+          "Install Mode", value: owner.skillOverride.mode == nil ? "\(mode) (Inherited)" : mode)
+      } else if let mode = item.resolvedModes.first {
+        LabeledContent(
+          "Install Mode", value: item.resolvedModes.count == 1 ? mode.skillLabel : "Mixed")
+      }
+      if let changeInstallMode {
+        Button("Change Install Mode…", action: changeInstallMode)
+          .accessibilityIdentifier("skill.changeInstallMode")
+      } else if item.canEditTargets && !item.canEditInstallMode {
+        Text("Install mode can be changed for unpinned local sources.")
+          .font(.callout)
+          .foregroundStyle(.secondary)
+      }
+      if let openSource {
+        Button("Open Source SKILL.md", action: openSource)
+          .accessibilityIdentifier("skill.openSource")
+      } else if !item.resolvedModes.contains(.edit), let url = item.sourceURL {
+        Button("Show Resolved File in Finder") {
+          NSWorkspace.shared.activateFileViewerSelecting([url])
         }
       }
     }
@@ -912,6 +939,16 @@ private struct SkillDetailsContent: View {
     pasteboard.clearContents()
     pasteboard.setString(path, forType: .string)
     copiedInstallationID = rowID
+  }
+}
+
+extension InstallMode {
+  var skillLabel: String {
+    switch self {
+    case .link: "Link"
+    case .copy: "Copy"
+    case .edit: "Live Edit"
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import AgentsCore
 import AgentsManifest
 import AgentsUpdates
+import Darwin
 import Foundation
 
 extension CoreReader {
@@ -10,8 +11,12 @@ extension CoreReader {
     let skills = inspection.components.filter { $0.kind == .skills }
     let byRecord = Dictionary(uniqueKeysWithValues: skills.map { ($0.record, $0) })
     let resources = Dictionary(uniqueKeysWithValues: inspection.resources.map { ($0.identity, $0) })
+    let sources = Dictionary(uniqueKeysWithValues: inspection.sources.map { ($0.record, $0) })
     let declarations = SkillDeclarationOwner.collect(inspection, store: store)
     let bySource = Dictionary(grouping: declarations, by: \.source)
+    let manifestRoot = scope.kind == .user ? store.directory : store.environment.projectDirectory
+    let manifestSource = "local:" + manifestRoot.path
+    let manifestPath = scope.kind == .user ? "agents.yaml" : ".agent/agents.yaml"
     var inventory: [InventoryItem] = []
     var installations: [String: [InventoryItem]] = [:]
     var currentDestinations: [String: [URL]] = [:]
@@ -25,7 +30,7 @@ extension CoreReader {
               name: skill.name, agent: agent, scope: scope.installScope,
               path: deployment.location.path),
             status: deployment.status.rawValue,
-            mode: skill.skillField("mode").flatMap(InstallMode.init(rawValue:)),
+            mode: skill.skillInstallMode,
             source: skill.source, revision: skill.revision, version: skill.version)
         }
         inventory += rows
@@ -59,10 +64,10 @@ extension CoreReader {
           declaration.match(skill, resourcePath: resource(skill)?.path)
         }
         represented.formUnion(matches.map(\.key))
-        let expectedPath = scope.kind == .user ? "agents.yaml" : ".agent/agents.yaml"
         guard matches.count == 1, let match = matches.first, !skill.occurrences.isEmpty,
           skill.occurrences.allSatisfy({
-            $0.consumerEditable && $0.manifestPath == expectedPath
+            $0.consumerEditable && $0.manifestPath == manifestPath
+              && $0.declaringSource == manifestSource
           })
         else {
           allOwned = false
@@ -78,15 +83,30 @@ extension CoreReader {
       let rows = records.flatMap { installations[$0.record] ?? [] }
         .filter { seen.insert($0.id).inserted }
       let recipients = Set(records.flatMap(\.recipients))
+      let owner = allOwned && matchedOwners.count == 1 ? matchedOwners.first : nil
+      let modes = Set(records.compactMap(\.skillInstallMode))
+      let liveSource: SkillSourceFile?
+      if owner?.canEditInstallMode == true, owner?.effectiveMode == .edit, modes == [.edit],
+        let resource = resource(first), resource.kind == LedgerResource.Kind.liveEdit.rawValue,
+        records.allSatisfy({ $0.resources == [resource.identity] }),
+        let source = sources[resource.sourceRecord], source.identity == first.source,
+        source.kind == .local, source.container == nil, source.revision == "live",
+        let root = source.location
+      {
+        liveSource = SkillSourceFile(root: root, resourcePath: resource.path)
+      } else {
+        liveSource = nil
+      }
       return SkillWorkspaceItem(
         id: id, name: first.name,
         title: display.title ?? first.skillField("name") ?? first.name,
         summary: display.summary
           ?? records.lazy.compactMap { $0.skillField("description") }.first ?? "",
-        scope: scope, source: first.source, sourceURL: display.sourceURL, iconURL: display.iconURL, iconRevision: display.iconRevision,
+        scope: scope, source: first.source, sourceURL: display.sourceURL, iconURL: display.iconURL,
+        iconRevision: display.iconRevision,
         recipients: AgentID.allCases.filter(recipients.contains), installations: rows,
-        occurrences: records.flatMap(\.occurrences), componentRecords: Set(records.map(\.record)), isResolved: true,
-        targetOwner: allOwned && matchedOwners.count == 1 ? matchedOwners.first : nil)
+        occurrences: records.flatMap(\.occurrences), componentRecords: Set(records.map(\.record)),
+        isResolved: true, targetOwner: owner, resolvedModes: modes, liveSource: liveSource)
     }
 
     // Explicit root selections can be browsed ahead of the first preparation. A group
@@ -143,6 +163,8 @@ private struct SkillDeclarationOwner {
   let pointer: String
   let digest: String
   let defaults: [AgentID]
+  let defaultMode: InstallMode
+  let canEditInstallMode: Bool
 
   func match(_ skill: ComponentInspection, resourcePath: String?)
     -> (key: Key, owner: SkillTargetOwner)?
@@ -172,7 +194,8 @@ private struct SkillDeclarationOwner {
     return SkillTargetOwner(
       documentDigest: digest, node: node, name: override?.name ?? name, declarationPointer: pointer,
       requestedRecipients: Set(override?.override.agents ?? defaults),
-      mode: override?.override.mode)
+      skillOverride: override?.override ?? .init(), inheritedMode: defaultMode,
+      canEditInstallMode: canEditInstallMode)
   }
 
   static func collect(_ inspection: ScopeInspection, store: StateStore) -> [Self] {
@@ -209,7 +232,9 @@ private struct SkillDeclarationOwner {
           overrides: Dictionary(
             grouping: selection.overrideDeclarations, by: { PathSafety.sanitizeName($0.name) }),
           node: node, pointer: pointer, digest: document.digest,
-          defaults: selection.agents ?? declaration.defaultAgents)
+          defaults: selection.agents ?? declaration.defaultAgents,
+          defaultMode: selection.mode ?? .link,
+          canEditInstallMode: declaredSource.kind == .local && declaredSource.requirement == nil)
       }
     }
     return owners(declaration.components, base: "/components", group: nil)
@@ -219,7 +244,48 @@ private struct SkillDeclarationOwner {
   }
 }
 
+struct SkillSourceFile: Equatable, Sendable {
+  private let root: URL
+  private let physicalRoot: String
+  private let markdown: URL
+
+  init?(root: URL, resourcePath: String) {
+    let parts = resourcePath.split(separator: "/")
+    guard root.isFileURL, !resourcePath.isEmpty, !resourcePath.hasPrefix("/"),
+      !resourcePath.hasPrefix("~"), !resourcePath.contains("\\"), !resourcePath.contains("\0"),
+      resourcePath == "." || parts.allSatisfy({ $0 != "." && $0 != ".." }),
+      let physicalRoot = Self.realPath(root)
+    else { return nil }
+    self.root = root
+    self.physicalRoot = physicalRoot
+    let directory = resourcePath == "." ? root : root.appendingPathComponent(resourcePath)
+    self.markdown = directory.appendingPathComponent("SKILL.md")
+    guard fileURL() != nil else { return nil }
+  }
+
+  func fileURL() -> URL? {
+    // Resolve again on open so a replaced symlink cannot redirect the editor outside the source.
+    guard let currentRoot = Self.realPath(root), currentRoot.utf8.elementsEqual(physicalRoot.utf8),
+      let path = Self.realPath(markdown),
+      path.utf8.starts(with: (physicalRoot == "/" ? "/" : physicalRoot + "/").utf8)
+    else { return nil }
+    var info = stat()
+    guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return nil }
+    return URL(fileURLWithPath: path)
+  }
+
+  private static func realPath(_ url: URL) -> String? {
+    guard let path = realpath(url.path, nil) else { return nil }
+    defer { free(path) }
+    return String(cString: path)
+  }
+}
+
 extension ComponentInspection {
+  fileprivate var skillInstallMode: InstallMode? {
+    skillField("mode").flatMap(InstallMode.init(rawValue:))
+  }
+
   fileprivate func skillField(_ name: String) -> String? {
     guard case .object(let fields) = configuration, case .string(let value) = fields[name]
     else { return nil }

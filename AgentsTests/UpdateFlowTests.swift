@@ -193,6 +193,133 @@ struct UpdateFlowTests {
     #expect(model.previewSkillTargets(for: item, recipients: [.codex]) == nil)
   }
 
+  @Test func skillInstallModeReviewKeepsInheritedTargetsAndOpensTheAuthoredSkill() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let producer = fixture.project.appendingPathComponent("toolkit")
+    let folder = producer.appendingPathComponent("collection/skills/review")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let markdown = folder.appendingPathComponent("SKILL.md")
+    let original = Data("---\nname: code-review\ndescription: Review changes.\n---\n".utf8)
+    try original.write(to: markdown)
+    let declarationURL = try fixture.writeManifest(
+      """
+      version: 1
+      sources:
+        toolkit: {path: ./toolkit, subpath: collection}
+      components:
+        - kind: skills
+          source: toolkit
+          path: skills
+          select: [review]
+          agents: [claude-code, codex]
+          mode: copy
+      """)
+    let model = await loadedModel(fixture)
+    defer { _ = model.requestTermination() }
+
+    let pending = try #require(model.snapshot?.skillWorkspaceItems.first)
+    #expect(!pending.isResolved)
+    #expect(pending.canEditInstallMode)
+    #expect(pending.targetOwner?.effectiveMode == .copy)
+    #expect(pending.targetOwner?.skillOverride.agents == nil)
+    #expect(model.currentSkillSourceURL(for: pending) == nil)
+    model.selectedSkillID = pending.id
+
+    let initialYAML = try Data(contentsOf: declarationURL)
+    let preview = try #require(model.previewSkillInstallMode(for: pending, mode: .edit))
+    try await idle(model)
+    #expect(model.skillTargetsUpdateSession?.stage == .review)
+    #expect(try Data(contentsOf: declarationURL) == initialYAML)
+    model.closeSkillTargetsReview(preview)
+    #expect(try Data(contentsOf: declarationURL) == initialYAML)
+
+    let apply = try #require(model.previewSkillInstallMode(for: pending, mode: .edit))
+    try await idle(model)
+    let review = try #require(model.skillTargetsUpdateSession)
+    try #require(review.stage == .review, "\(review.messages.map(\.message))")
+    model.confirmUpdate(id: apply)
+    try await idle(model)
+    #expect(model.skillTargetsUpdateSession?.terminal?.disposition == .committed)
+    model.closeSkillTargetsReview(apply)
+
+    let item = try #require(model.snapshot?.skillWorkspaceItems.first { $0.isResolved })
+    #expect(model.selectedSkillID == item.id)
+    #expect(item.targetOwner?.skillOverride == .init(mode: .edit))
+    #expect(Set(item.recipients) == [.codex, .claudeCode])
+    #expect(Set(item.installations.map(\.id.agent)) == Set(item.recipients))
+    for installation in item.installations {
+      #expect(installation.mode == .edit)
+      let destination = URL(fileURLWithPath: installation.id.path)
+      #expect(destination.resolvingSymlinksInPath() == folder.resolvingSymlinksInPath())
+    }
+    #expect(model.currentSkillSourceURL(for: item)?.path == markdown.resolvingSymlinksInPath().path)
+    #expect(try Data(contentsOf: markdown) == original)
+
+    let reset = try #require(model.previewSkillInstallMode(for: item, mode: nil))
+    try await idle(model)
+    try #require(model.skillTargetsUpdateSession?.stage == .review)
+    model.confirmUpdate(id: reset)
+    try await idle(model)
+    #expect(model.skillTargetsUpdateSession?.terminal?.disposition == .committed)
+    let inherited = try #require(model.snapshot?.skillWorkspaceItems.first { $0.isResolved })
+    #expect(inherited.targetOwner?.skillOverride == .init())
+    #expect(inherited.targetOwner?.effectiveMode == .copy)
+    #expect(Set(inherited.recipients) == [.codex, .claudeCode])
+    #expect(model.currentSkillSourceURL(for: inherited) == nil)
+    #expect(try Data(contentsOf: markdown) == original)
+  }
+
+  @Test func skillSourceFileRejectsTraversalAndReplacedSymlinks() throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let files = FileManager.default
+    let producer = fixture.project.appendingPathComponent("producer")
+    let neighbor = fixture.project.appendingPathComponent("producer-other")
+    for root in [producer, neighbor] {
+      try files.createDirectory(at: root, withIntermediateDirectories: true)
+      try Data("Fixture".utf8).write(to: root.appendingPathComponent("SKILL.md"))
+    }
+    let source = try #require(SkillSourceFile(root: producer, resourcePath: "."))
+    #expect(SkillSourceFile(root: producer, resourcePath: "../producer-other") == nil)
+    let markdown = producer.appendingPathComponent("SKILL.md")
+    try files.removeItem(at: markdown)
+    try files.createSymbolicLink(
+      atPath: markdown.path, withDestinationPath: "../producer-other/SKILL.md")
+    #expect(source.fileURL() == nil)
+    #expect(SkillSourceFile(root: producer, resourcePath: ".") == nil)
+  }
+
+  @Test(arguments: [[AgentID.claudeCode, .codex], []])
+  func skillInstallModeRequestPreservesExplicitTargetOverride(_ agents: [AgentID]) throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    try fixture.writeManifest(
+      """
+      version: 1
+      components:
+        - kind: skills
+          source: .
+          select: [review]
+          overrides:
+            review: {agents: [\(agents.map(\.rawValue).joined(separator: ", "))], mode: copy}
+      """)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    let read = CoreReader(home: fixture.home, processEnvironment: fixture.environment)
+      .read(scope: scope)
+    let owner = try #require(read.snapshot?.skillWorkspaceItems.first?.targetOwner)
+    let request = owner.request(mode: nil)
+    guard case .edit(let edits) = request.operation, edits.count == 1,
+      case .upsertSkillOverride(let node, let value) = edits[0]
+    else {
+      Issue.record("Expected one skill override edit")
+      return
+    }
+    #expect(node == owner.node)
+    #expect(value.name == "review")
+    #expect(value.override == .init(agents: agents))
+  }
+
   @Test func yamlEditorKeepsTheExactReviewedDocument() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
