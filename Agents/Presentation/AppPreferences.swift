@@ -18,9 +18,6 @@ final class AppPreferences {
   var assistanceEnabled: Bool {
     didSet { defaults?.set(assistanceEnabled, forKey: "assistanceEnabled") }
   }
-  var webInstructionSelections: [String: [String]] {
-    didSet { defaults?.set(webInstructionSelections, forKey: "webInstructionSelections") }
-  }
 
   init(defaults: UserDefaults? = .standard, initialProjects: [URL] = []) {
     self.defaults = defaults
@@ -33,8 +30,6 @@ final class AppPreferences {
     selectedScopeID = defaults?.string(forKey: "selectedScope")
     inspectorVisible = defaults?.object(forKey: "inspectorVisible") as? Bool ?? true
     assistanceEnabled = defaults?.object(forKey: "assistanceEnabled") as? Bool ?? false
-    webInstructionSelections =
-      defaults?.dictionary(forKey: "webInstructionSelections") as? [String: [String]] ?? [:]
   }
 
   func addProject(_ url: URL) {

@@ -39,15 +39,9 @@ struct CreationSession: Identifiable {
 }
 
 struct PromptRequest: Sendable {
-  enum Content: Sendable {
-    case named(String)
-    case mapped(MappingTarget)
-    case webSelection([String])
-  }
-
   let id: UUID
   let scope: WorkspaceScope
-  let content: Content
+  let name: String
   let title: String
 }
 
@@ -60,7 +54,6 @@ struct PromptSession: Identifiable {
   let id: UUID
   let scope: WorkspaceScope
   let name: String
-  var copyAfterRead: ((String) -> Bool)?
   var clipboardResult: Bool?
   var stage: Stage = .loading
   var messages: [AppDiagnostic] = []

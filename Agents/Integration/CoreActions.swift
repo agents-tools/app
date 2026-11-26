@@ -19,28 +19,15 @@ struct CoreActions: Sendable {
   func render(_ request: PromptRequest) -> CoreCompletion {
     do {
       try ProjectRootAccess.requireAvailable(request.scope)
-      let runtime = environment(for: request.scope)
-      let bytes: Data
-      let dependencies: [ReadDependency]
-      switch request.content {
-      case .named(let name):
-        let export = try InstructionOperations.inspectChatGPTExport(
-          prompt: name, scope: request.scope.installScope, environment: runtime)
-        bytes = export.bytes
-        dependencies = export.readLocations.map(ReadDependency.subtree)
-      case .mapped(let target):
-        (bytes, dependencies) = try ManagedInstructionOutput.read(
-          target, in: request.scope, environment: runtime)
-      case .webSelection(let references):
-        (bytes, dependencies) = try WebInstructionPreview.render(
-          references, scope: request.scope, environment: runtime)
-      }
-      guard let text = String(data: bytes, encoding: .utf8) else {
+      let export = try InstructionOperations.inspectChatGPTExport(
+        prompt: request.name, scope: request.scope.installScope,
+        environment: environment(for: request.scope))
+      guard let text = String(data: export.bytes, encoding: .utf8) else {
         throw InstructionError.invalidUTF8
       }
       return CoreCompletion(
         disposition: .completed, output: .prompt(request, text),
-        readDependencies: dependencies
+        readDependencies: export.readLocations.map(ReadDependency.subtree)
       )
     } catch {
       return CoreCompletion(

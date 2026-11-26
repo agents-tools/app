@@ -3,18 +3,20 @@ import SwiftUI
 
 struct SectionsEditor: View {
   @Binding var values: [SectionDeclaration]
-  var allowsAntigravity = false
-  var recipientTitle = "Specify agents"
+  var instructionScope: InstallScope?
+  var defaultAgents: [AgentID] = []
 
   var body: some View {
     DraftRows(values: $values) { row, actions in
       DisclosureGroup(row.wrappedValue.name.isEmpty ? "New Section" : row.wrappedValue.reference) {
         TextField("Name", text: row.name)
         OptionalText(title: "source", value: row.source)
-        ConditionEditor(
-          value: row.condition,
-          agentTitle: recipientTitle,
-          allowsAntigravity: allowsAntigravity)
+        if let instructionScope {
+          InstructionRecipientsEditor(
+            section: row, scope: instructionScope, defaultAgents: defaultAgents
+          )
+        }
+        ConditionEditor(value: row.condition, showsAgents: instructionScope == nil)
         DraftRowButtons(actions: actions)
       }
     }
@@ -22,19 +24,118 @@ struct SectionsEditor: View {
   }
 }
 
+struct InstructionRecipientsEditor: View {
+  @Binding var section: SectionDeclaration
+  let scope: InstallScope
+  let defaultAgents: [AgentID]
+
+  @State private var showsRecipients = false
+
+  private var localRecipients: [InstructionRecipient] {
+    AgentID.allCases.filter { $0.supportsInstructions(in: scope) }.map(InstructionRecipient.local)
+  }
+
+  private var summary: String {
+    let names = selection.map(\.displayName).joined(separator: ", ")
+    if section.recipients == nil {
+      return names.isEmpty ? "Defaults" : "Defaults · " + names
+    }
+    return names.isEmpty ? "No Recipients" : names
+  }
+
+  private var selection: [InstructionRecipient] {
+    let requested = section.recipients ?? defaultAgents
+      .filter { $0.supportsInstructions(in: scope) }
+      .map(InstructionRecipient.local)
+    guard let restricted = section.condition?.agents else { return requested }
+    return requested.filter {
+      if case .local(let agent) = $0 { return restricted.contains(agent) }
+      return true
+    }
+  }
+
+  var body: some View {
+    LabeledContent("Recipients") {
+      Button {
+        showsRecipients.toggle()
+      } label: {
+        HStack(spacing: 6) {
+          Text(summary).lineLimit(1)
+          Image(systemName: "chevron.up.chevron.down").font(.caption2.weight(.semibold))
+            .accessibilityHidden(true)
+        }
+      }
+      .accessibilityLabel("Recipients")
+      .accessibilityValue(summary)
+      .accessibilityIdentifier("instructions.recipients." + section.reference)
+      .popover(isPresented: $showsRecipients, arrowEdge: .trailing) {
+        VStack(alignment: .leading, spacing: 8) {
+          Toggle("Use Defaults", isOn: usesDefaults)
+          Divider()
+          Text("Local Clients").font(.caption).foregroundStyle(.secondary)
+          ForEach(localRecipients, id: \.self) { recipient in
+            Toggle(recipient.displayName, isOn: selection(for: recipient))
+          }
+          Text("Copy Only").font(.caption).foregroundStyle(.secondary)
+          ForEach([InstructionRecipient.chatGPTApp, .geminiApp], id: \.self) { recipient in
+            Toggle(recipient.displayName, isOn: selection(for: recipient))
+          }
+        }
+        .toggleStyle(.checkbox)
+        .frame(minWidth: 180, alignment: .leading)
+        .padding(12)
+      }
+    }
+  }
+
+  var usesDefaults: Binding<Bool> {
+    Binding(
+      get: { section.recipients == nil },
+      set: { inherited in
+        if inherited { section.recipients = nil } else { setSelection(selection) }
+      })
+  }
+
+  func selection(for recipient: InstructionRecipient) -> Binding<Bool> {
+    Binding(
+      get: { selection.contains(recipient) },
+      set: { isSelected in
+        var explicit = selection
+        guard explicit.contains(recipient) != isSelected else { return }
+        if isSelected {
+          explicit.append(recipient)
+        } else {
+          explicit.removeAll { $0 == recipient }
+        }
+        setSelection(explicit)
+      })
+  }
+
+  private func setSelection(_ recipients: [InstructionRecipient]) {
+    var edited = section
+    edited.recipients = recipients
+    // Move legacy section-level agent restrictions into the explicit selection.
+    if edited.condition?.agents != nil {
+      edited.condition?.agents = nil
+      if edited.condition == DeclarationCondition() { edited.condition = nil }
+    }
+    section = edited
+  }
+}
+
 struct InstructionDraftEditor: View {
   @Binding var value: InstructionsDeclaration
-  let allowsAntigravity: Bool
+  let scope: InstallScope
+  let defaultAgents: [AgentID]
 
   @State private var orderedSectionsExpanded = true
 
   var body: some View {
     DisclosureGroup("Ordered Sections", isExpanded: $orderedSectionsExpanded) {
-      Text("Each section can restrict the installation targets, scopes, and platforms it uses.")
+      Text("Choose recipients for each section or use the configured defaults.")
         .font(.caption).foregroundStyle(.secondary)
       SectionsEditor(
-        values: $value.sectionReferences, allowsAntigravity: allowsAntigravity,
-        recipientTitle: "Restrict section recipients")
+        values: $value.sectionReferences, instructionScope: scope, defaultAgents: defaultAgents)
     }
     DisclosureGroup("Named Prompts") {
       DraftRows(values: $value.prompts) { row, actions in

@@ -9,6 +9,8 @@ struct ManifestDraftView: View {
 
   var body: some View {
     if let draft = model.manifestDraft {
+      let defaultAgents = draft.document?.declaration.defaultAgents?.compactMap(AgentID.init(rawValue:))
+        ?? Declaration().defaultAgents
       VStack(alignment: .leading, spacing: 16) {
         Text(
           draft.replacingNode == nil && draft.kind == .component
@@ -65,7 +67,9 @@ struct ManifestDraftView: View {
                     model.manifestDraft?.sourcePath = $0.path
                   }))
             case .component:
-              ComponentDraftEditor(value: binding(\.component), scope: draft.scope.installScope)
+              ComponentDraftEditor(
+                value: binding(\.component), scope: draft.scope.installScope,
+                defaultAgents: defaultAgents)
               if draft.replacingNode == nil, let document = draft.document {
                 Picker("Container", selection: binding(\.destinationGroup)) {
                   Text("Scope").tag(nil as NodeID?)
@@ -83,12 +87,13 @@ struct ManifestDraftView: View {
                     value: Binding(
                       get: { ComponentDraft(row.wrappedValue) },
                       set: { row.wrappedValue = $0.value }),
-                    scope: draft.scope.installScope
+                    scope: draft.scope.installScope, defaultAgents: defaultAgents
                   )
                   DraftRowButtons(actions: actions)
                 }
                 DisclosureGroup("Add Component") {
-                  ComponentDraftEditor(value: $groupChild, scope: draft.scope.installScope)
+                  ComponentDraftEditor(
+                    value: $groupChild, scope: draft.scope.installScope, defaultAgents: defaultAgents)
                   Button("Add to Group") {
                     model.manifestDraft?.groupComponents.append(groupChild.value)
                   }

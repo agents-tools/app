@@ -30,7 +30,7 @@ struct UpdateProposal: Sendable {
   init(compilingInstructionsIn scope: WorkspaceScope) {
     id = UUID()
     self.scope = scope
-    title = "Compile Instructions"
+    title = "Build Instructions"
     contents = .instructionCompilation
   }
 
@@ -112,6 +112,7 @@ struct UpdateSession: Identifiable {
   }
   var closeTitle: String {
     switch stage {
+    case .review where isInstructionBuild && !offersApply: "Done"
     case .preparing, .review, .stale, .applying: "Cancel"
     case .finished, .failed, .cancelled: "Done"
     }
@@ -124,9 +125,18 @@ struct UpdateSession: Identifiable {
     }
   }
   var canApplyReport: Bool {
-    guard let report else { return false }
+    guard let report, offersApply else { return false }
     return report.instructions.conflicts.isEmpty
       && (report.hasChanges || packageReview?.lifecycle.hasRunnableActions == true)
+  }
+
+  var isInstructionBuild: Bool {
+    if case .instructionCompilation = proposal.contents { return true }
+    return false
+  }
+
+  var offersApply: Bool {
+    !isInstructionBuild || report?.instructions.targets.isEmpty == false
   }
 }
 

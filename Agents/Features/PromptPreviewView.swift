@@ -12,9 +12,7 @@ struct PromptPreviewView: View {
         case .loading:
           HStack {
             ProgressView().controlSize(.small)
-            Text(
-              session.copyAfterRead == nil
-                ? "Generating prompt preview…" : "Reading managed instructions…")
+            Text("Generating prompt preview…")
           }
         case .ready(let text):
           ScrollView {

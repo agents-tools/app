@@ -3,6 +3,7 @@ import AgentsInstructions
 import AgentsManifest
 import AgentsUpdates
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import AgentsApp
@@ -153,407 +154,132 @@ struct ContentActionTests {
     #expect(mapping.copyText.contains("Target: AGENTS.md"))
   }
 
-  @Test func webDestinationsStartEmptyAndRenderIndependentSelectionsWithoutLocalOutputs()
-    async throws
-  {
-    let fixture = try TestFixture()
-    defer { try? fixture.remove() }
-    let runtime = RuntimeEnvironment(
-      projectDirectory: fixture.project, homeDirectory: fixture.home,
-      environment: fixture.environment)
-    for name in ["first", "second"] {
-      _ = try InstructionOperations.initializeInstructions(named: name, environment: runtime)
-    }
-    try fixture.writeManifest(
-      """
-      version: 1
-      components:
-        - kind: instructions
-          agents: [codex]
-          sections: [{name: first}]
-      """)
-    let model = AppModel(
-      home: fixture.home, preferences: AppPreferences(defaults: nil),
-      processEnvironment: fixture.environment)
-    let scope = WorkspaceScope(kind: .project, root: fixture.project)
-    model.select(scope)
-    try await idle(model)
-
-    let before = try fixture.entries()
-    for (destination, selection) in [
-      (WebInstructionDestination.chatGPT, ["second", "first"]), (.gemini, ["first"]),
-    ] {
-      let snapshot = try #require(model.snapshot)
-      let configuration = WebInstructionConfiguration(
-        destination, snapshot: snapshot, environment: runtime)
-      #expect(!configuration.hasNamedPrompt)
-      #expect(configuration.choices == ["first", "second"])
-      model.saveWebInstructionSelection(selection, in: configuration)
-      #expect(model.preferences.webInstructionSelections[configuration.preferenceKey] == selection)
-      #expect(model.updateSession == nil)
-      model.confirmUpdate()
-    }
-
-    let snapshot = try #require(model.snapshot)
-    let mapping = try #require(snapshot.mappings.first { $0.scope == scope })
-    #expect(mapping.targets.isEmpty)
-    for (destination, headings) in [
-      (WebInstructionDestination.chatGPT, ["# second", "# first"]), (.gemini, ["# first"]),
-    ] {
-      let configuration = WebInstructionConfiguration(
-        destination, snapshot: snapshot, environment: runtime)
-      let selection = try #require(
-        model.preferences.webInstructionSelections[configuration.preferenceKey])
-      model.previewWebInstructionSelection(selection, in: configuration)
-      try await idle(model)
-      guard case .ready(let preview) = model.promptSession?.stage else {
-        Issue.record("Expected the configured destination’s rendered text")
-        return
-      }
-      #expect(
-        preview.split(separator: "\n").filter { $0.hasPrefix("# ") }.map(String.init) == headings)
-      var copied: String?
-      model.copyInstructionPreview {
-        copied = $0
-        return true
-      }
-      #expect(copied == preview)
-      model.promptSession = nil
-    }
-    #expect(try fixture.entries() == before)
-  }
-
-  @Test func webPreviewKeepsMissingAndDriftedDeploymentsAndTheirLock() async throws {
+  @Test func instructionDraftAndBuildExposeTheSameFullOutputsBeforeInstallation() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
     let runtime = RuntimeEnvironment(
       projectDirectory: fixture.project, homeDirectory: fixture.home,
       environment: fixture.environment)
     _ = try InstructionOperations.initializeInstructions(named: "shared", environment: runtime)
-    try fixture.writeManifest(
-      """
-      version: 1
-      components:
-        - kind: instructions
-          agents: [codex, gemini-cli]
-          sections: [{name: shared}]
-      """)
-    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
-    let codex = fixture.project.appendingPathComponent("AGENTS.md")
-    let gemini = fixture.project.appendingPathComponent("GEMINI.md")
-    let drifted = Data("# Locally changed\n".utf8)
-    try drifted.write(to: codex)
-    try FileManager.default.removeItem(at: gemini)
-    let store = StateStore(scope: .project, environment: runtime)
-    let lock = try Data(contentsOf: store.resolvedURL)
-    let before = try fixture.entries()
-
-    // A named prompt has a destination ID, but the public selector operates on unit names.
-    let operation = UpdateOperation.edit([
-      .insertComponent(
-        .instructions(.init(agents: [], chatgpt: ["chatgpt-web": .init(sections: ["shared"])])),
-        into: .root, at: .last)
-    ])
-    #expect(throws: CoreError.self) {
-      try UpdateOperations.preview(
-        .init(operation: operation, kinds: [.instructions], names: ["chatgpt-web"]),
-        environment: runtime)
-    }
-    let unitPlan = try UpdateOperations.preview(
-      .init(operation: operation, kinds: [.instructions], names: ["shared"]),
-      environment: runtime)
-    #expect(unitPlan.instructions.changedPrompts == ["chatgpt-web"])
-    #expect(
-      Set(unitPlan.instructions.targets.filter(\.changed).map(\.target)) == [
-        "AGENTS.md", "GEMINI.md",
-      ])
-
-    let model = AppModel(
-      home: fixture.home, preferences: AppPreferences(defaults: nil),
-      processEnvironment: fixture.environment)
-    let scope = WorkspaceScope(kind: .project, root: fixture.project)
-    model.select(scope)
-    try await idle(model)
-    let configuration = WebInstructionConfiguration(
-      .chatGPT, snapshot: try #require(model.snapshot), environment: runtime)
-    model.saveWebInstructionSelection(["shared"], in: configuration)
-    model.confirmUpdate()
-    #expect(model.updateSession == nil)
-    model.previewWebInstructionSelection(["shared"], in: configuration)
-    try await idle(model)
-    var copied: String?
-    model.copyInstructionPreview {
-      copied = $0
-      return true
-    }
-    #expect(copied?.hasPrefix("# shared\n") == true)
-    #expect(try Data(contentsOf: codex) == drifted)
-    #expect(!FileManager.default.fileExists(atPath: gemini.path))
-    #expect(try Data(contentsOf: store.resolvedURL) == lock)
-    #expect(try fixture.entries() == before)
-  }
-
-  @Test func webChoicesIgnoreInactiveGroupsAndKeepImportedNamedPromptSeparate() async throws {
-    let fixture = try TestFixture()
-    defer { try? fixture.remove() }
-    let runtime = RuntimeEnvironment(
-      projectDirectory: fixture.project, homeDirectory: fixture.home,
-      environment: fixture.environment)
-    _ = try InstructionOperations.initializeInstructions(named: "own", environment: runtime)
-    let producer = fixture.root.appendingPathComponent("producer")
-    let producerRuntime = RuntimeEnvironment(
-      projectDirectory: producer, homeDirectory: fixture.home, environment: fixture.environment)
-    try FileManager.default.createDirectory(at: producer, withIntermediateDirectories: true)
-    _ = try InstructionOperations.initializeInstructions(
-      named: "upstream", environment: producerRuntime)
-    let sourceUnits = producer.appendingPathComponent("instructions")
-    try FileManager.default.createDirectory(at: sourceUnits, withIntermediateDirectories: true)
-    for name in ["active-unit", "conditional-unit"] {
-      try Data("---\ndescription: A source instruction.\n---\n# \(name)\nFull body.\n".utf8)
-        .write(to: sourceUnits.appendingPathComponent(name + ".md"))
-    }
-    let producerManifest = producer.appendingPathComponent(".agent/agents.yaml")
-    try Data(
-      """
-      version: 1
-      groups:
-        published:
-          components:
-            - kind: instructions
-              chatgpt:
-                gemini-web: {sections: [{name: upstream}]}
-      exports: [published]
-      """.utf8
-    ).write(to: producerManifest)
-    try fixture.writeManifest(
-      """
-      version: 1
-      sources: {team: {path: ../producer}}
-      groups:
-        active-here:
-          components:
-            - kind: instructions
-              agents: []
-              sections: [{name: active-unit, source: team}]
-        unused:
-          components:
-            - kind: instructions
-              chatgpt:
-                gemini-web: {sections: [{name: unused-unit, source: team}]}
-        inactive-here:
-          condition: {scopes: [user]}
-          components:
-            - kind: instructions
-              chatgpt:
-                gemini-web: {sections: [{name: conditional-unit, source: team}]}
-      uses: [{group: active-here}, {group: inactive-here}, {group: published, source: team}]
-      """)
-    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
-    let named = try InstructionOperations.renderChatGPT(prompt: "gemini-web", environment: runtime)
-    let before = try fixture.entries()
-    let model = AppModel(
-      home: fixture.home, preferences: AppPreferences(defaults: nil),
-      processEnvironment: fixture.environment)
-    let scope = WorkspaceScope(kind: .project, root: fixture.project)
-    model.select(scope)
-    try await idle(model)
-    let configuration = WebInstructionConfiguration(
-      .gemini, snapshot: try #require(model.snapshot), environment: runtime)
-    #expect(configuration.hasNamedPrompt)
-    #expect(configuration.choices == ["own", "team:active-unit"])
-    #expect(model.preferences.webInstructionSelections[configuration.preferenceKey] == nil)
-
-    let selection = ["own", "team:active-unit"]
-    model.saveWebInstructionSelection(selection, in: configuration)
-    model.previewWebInstructionSelection(selection, in: configuration)
-    try await idle(model)
-    guard case .ready(let text) = model.promptSession?.stage else {
-      Issue.record("Expected an independent Gemini Web composition")
-      return
-    }
-    #expect(text.hasPrefix("# own\n"))
-    #expect(text.contains("# active-unit\nFull body.\n"))
-    #expect(String(decoding: named, as: UTF8.self).hasPrefix("# upstream\n"))
-    #expect(
-      try InstructionOperations.renderChatGPT(prompt: "gemini-web", environment: runtime) == named)
-    #expect(try fixture.entries() == before)
-  }
-
-  @Test func webCompositionPreservesExistingNamedPromptsAndTheirCustomAppends() async throws {
-    let fixture = try TestFixture()
-    defer { try? fixture.remove() }
-    let runtime = RuntimeEnvironment(
-      projectDirectory: fixture.project, homeDirectory: fixture.home,
-      environment: fixture.environment)
-    for name in ["first", "second"] {
-      _ = try InstructionOperations.initializeInstructions(named: name, environment: runtime)
-    }
-    try fixture.writeManifest(
-      """
-      version: 1
-      components:
-        - kind: instructions
-          chatgpt:
-            daily: { sections: [{name: first}], append: daily.md }
-            chatgpt-web: { sections: [{name: first}], append: custom.md }
-      """)
-    try Data("Daily appendix".utf8).write(to: fixture.project.appendingPathComponent("daily.md"))
-    try Data("Destination appendix".utf8).write(
-      to: fixture.project.appendingPathComponent("custom.md"))
-    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
-    let daily = try InstructionOperations.renderChatGPT(prompt: "daily", environment: runtime)
-    let named = try InstructionOperations.renderChatGPT(prompt: "chatgpt-web", environment: runtime)
-    let before = try fixture.entries()
-    let scope = WorkspaceScope(kind: .project, root: fixture.project)
-    let model = AppModel(
-      home: fixture.home, preferences: AppPreferences(defaults: nil),
-      processEnvironment: fixture.environment)
-    model.select(scope)
-    try await idle(model)
-    let snapshot = try #require(model.snapshot)
-    let configuration = WebInstructionConfiguration(
-      .chatGPT, snapshot: snapshot, environment: runtime)
-    #expect(configuration.hasNamedPrompt)
-    model.saveWebInstructionSelection(["second"], in: configuration)
-    model.previewWebInstructionSelection(["second"], in: configuration)
-    try await idle(model)
-    guard case .ready(let composed) = model.promptSession?.stage else {
-      Issue.record("Expected the app's independent composition")
-      return
-    }
-    #expect(composed.hasPrefix("# second"))
-    model.previewPrompt(name: "chatgpt-web", in: scope)
-    try await idle(model)
-    guard case .ready(let previous) = model.promptSession?.stage else {
-      Issue.record("Expected the original named prompt")
-      return
-    }
-    #expect(Data(previous.utf8) == named)
-    #expect(previous.hasSuffix("Destination appendix"))
-    #expect(try InstructionOperations.renderChatGPT(prompt: "daily", environment: runtime) == daily)
-    #expect(try fixture.entries() == before)
-  }
-
-  @Test func mappedCopyReturnsExactSharedBytesAndRejectsDriftAndSymlinks() async throws {
-    let fixture = try TestFixture()
-    defer { try? fixture.remove() }
-    let runtime = RuntimeEnvironment(
-      projectDirectory: fixture.project, homeDirectory: fixture.home,
-      environment: fixture.environment)
-    _ = try InstructionOperations.initializeInstructions(named: "shared", environment: runtime)
-    let claude = fixture.project.appendingPathComponent(".claude/CLAUDE.md")
-    try FileManager.default.createDirectory(
-      at: claude.deletingLastPathComponent(), withIntermediateDirectories: true)
-    try Data("Handwritten Claude notes\n".utf8).write(to: claude)
-    try fixture.writeManifest(
-      """
-      version: 1
-      components:
-        - kind: instructions
-          agents: [claude-code, codex]
-          sections: [{name: shared}]
-      """)
-    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
-    let model = AppModel(
-      home: fixture.home, preferences: AppPreferences(defaults: nil),
-      processEnvironment: fixture.environment)
-    let scope = WorkspaceScope(kind: .project, root: fixture.project)
-    model.select(scope)
-    try await idle(model)
-    let mapping = try #require(model.snapshot?.mappings.first { $0.scope == scope })
-    let shared = try #require(mapping.targets.first { $0.id == "AGENTS.md" })
-    let forwarding = try #require(mapping.targets.first { $0.id == ".claude/CLAUDE.md" })
-    let before = try fixture.entries()
-    let sharedURL = fixture.project.appendingPathComponent("AGENTS.md")
-    let bytes = try Data(contentsOf: sharedURL)
-    let expected = try #require(String(data: bytes, encoding: .utf8))
-    var clipboard: [String] = []
-    for target in [shared, forwarding] {
-      model.copyMappedInstructions(target, in: scope) {
-        clipboard.append($0)
-        return true
-      }
-      try await idle(model)
-      #expect(model.promptSession?.clipboardResult == true)
-      model.promptSession = nil
-    }
-    #expect(clipboard == [expected, expected])
-    #expect(try fixture.entries() == before)
-
-    let actions = CoreActions(home: fixture.home, processEnvironment: fixture.environment)
-    func read(_ target: MappingTarget) -> CoreCompletion {
-      actions.render(
-        .init(id: UUID(), scope: scope, content: .mapped(target), title: "Copy Full Text"))
-    }
-    try Data("Drifted".utf8).write(to: sharedURL)
-    #expect(read(shared).diagnostics.contains { $0.message.contains("differs from its lock") })
-    try FileManager.default.removeItem(at: sharedURL)
-    let outside = fixture.root.appendingPathComponent("outside")
-    try Data(bytes).write(to: outside)
-    try FileManager.default.createSymbolicLink(at: sharedURL, withDestinationURL: outside)
-    #expect(read(shared).disposition == .failed)
-    try FileManager.default.removeItem(at: sharedURL)
-    try bytes.write(to: sharedURL)
-    let claudeDirectory = claude.deletingLastPathComponent()
-    let moved = fixture.root.appendingPathComponent("outside-claude")
-    try FileManager.default.moveItem(at: claudeDirectory, to: moved)
-    try FileManager.default.createSymbolicLink(at: claudeDirectory, withDestinationURL: moved)
-    #expect(read(forwarding).disposition == .failed)
-    let arbitrary = MappingTarget(
-      id: outside.path, recipients: [.codex], sections: shared.sections, importedFile: nil)
-    #expect(read(arbitrary).disposition == .failed)
-  }
-
-  @Test func mappedUserCopyUsesTheConfiguredClientHomeAndKeepsProjectScopeSeparate() throws {
-    let fixture = try TestFixture()
-    defer { try? fixture.remove() }
-    let codexHome = fixture.root.appendingPathComponent("custom-codex")
-    let environment = fixture.environment.merging(["CODEX_HOME": codexHome.path]) { _, new in new }
-    let runtime = RuntimeEnvironment(
-      projectDirectory: fixture.project, homeDirectory: fixture.home, environment: environment)
-    let source = fixture.root.appendingPathComponent("source/instructions")
+    _ = try InstructionOperations.initializeInstructions(named: "both", environment: runtime)
+    let source = fixture.project.appendingPathComponent("producer/instructions")
     try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
-    try Data("---\ndescription: User fixture\n---\n# User rules\nFull body.\n".utf8)
-      .write(to: source.appendingPathComponent("user.md"))
+    try Data("---\ndescription: Producer fixture\n---\n# Producer rules\nFull body café.\n".utf8)
+      .write(to: source.appendingPathComponent("shared.md"))
     try fixture.writeManifest(
       """
       version: 1
-      sources: {fixture: {path: "\(source.deletingLastPathComponent().path)"}}
+      defaultAgents: [codex]
+      sources: {team: {path: ./producer}}
       components:
         - kind: instructions
-          agents: [codex, antigravity]
-          sections: [{name: user, source: fixture}]
-      """, user: true)
-    _ = try InstructionOperations.updateInstalled(scope: .user, environment: runtime, apply: true)
-    let user = WorkspaceScope(kind: .user, root: fixture.home)
-    let project = WorkspaceScope(kind: .project, root: fixture.project)
-    let reader = CoreReader(home: fixture.home, processEnvironment: environment)
-    let snapshot = try #require(reader.read(scope: project).snapshot)
-    let mapping = try #require(snapshot.mappings.first { $0.scope == user })
-    let target = try #require(mapping.targets.first { $0.recipients.contains(.codex) })
-    let file = codexHome.appendingPathComponent("AGENTS.md")
-    #expect(target.id == file.path)
+          sections: [{name: shared}, {name: shared, source: team}, {name: both}]
+      """)
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    model.select(scope)
+    try await idle(model)
+    model.selectedItem = try #require(model.snapshot?.instructions.first?.id)
+    model.editSelectedDeclaration()
+    let draft = try #require(model.manifestDraft)
+    var sections = draft.component.instructions.sectionReferences
+    #expect(sections.map(\.reference) == ["shared", "team:shared", "both"])
+
+    let appOnly = InstructionRecipientsEditor(
+      section: Binding(get: { sections[1] }, set: { sections[1] = $0 }), scope: .project,
+      defaultAgents: [.codex])
+    appOnly.selection(for: .chatGPTApp).wrappedValue = true
+    appOnly.selection(for: .geminiApp).wrappedValue = true
+    #expect(sections[1].recipients == [.local(.codex), .chatGPTApp, .geminiApp])
+    appOnly.selection(for: .local(.codex)).wrappedValue = false
+    let mixed = InstructionRecipientsEditor(
+      section: Binding(get: { sections[2] }, set: { sections[2] = $0 }), scope: .project,
+      defaultAgents: [.codex])
+    mixed.selection(for: .chatGPTApp).wrappedValue = true
+    model.manifestDraft?.component.instructions.sectionReferences = sections
+
     let before = try fixture.entries()
-    let actions = CoreActions(home: fixture.home, processEnvironment: environment)
-    let result = actions.render(
-      .init(id: UUID(), scope: user, content: .mapped(target), title: "Copy Full Text"))
-    guard case .prompt(_, let text) = result.output else {
-      Issue.record("Expected the mapped user output: \(result.diagnostics.map(\.message))")
-      return
-    }
-    #expect(Data(text.utf8) == (try Data(contentsOf: file)))
-    let rule = try #require(mapping.targets.first { $0.recipients.contains(.antigravity) })
-    let ruleURL = try #require(mapping.fileURL(for: rule.id))
-    let copy = actions.render(
-      .init(id: UUID(), scope: user, content: .mapped(rule), title: "Copy Full Text"))
-    guard case .prompt(_, let ruleText) = copy.output else {
-      Issue.record("Expected the managed Antigravity rule: \(copy.diagnostics.map(\.message))")
-      return
-    }
-    #expect(Data(ruleText.utf8) == (try Data(contentsOf: ruleURL)))
-    let wrongScope = actions.render(
-      .init(id: UUID(), scope: project, content: .mapped(target), title: "Copy Full Text"))
-    #expect(wrongScope.disposition == .failed)
+    let localFile = fixture.project.appendingPathComponent("AGENTS.md")
+    model.previewDraft()
+    try await idle(model)
+    let review = try #require(model.updateSession?.report)
+    #expect(try fixture.entries() == before)
+    #expect(!FileManager.default.fileExists(atPath: localFile.path))
+    #expect(
+      Set(review.instructions.outputs.map(\.recipient)) == [
+        .local(.codex), .chatGPTApp, .geminiApp,
+      ])
+    let local = try #require(review.instructions.outputs.first { $0.recipient == .local(.codex) })
+    let chatGPT = try #require(review.instructions.outputs.first { $0.recipient == .chatGPTApp })
+    let gemini = try #require(review.instructions.outputs.first { $0.recipient == .geminiApp })
+    let localText = try #require(local.fullText)
+    let chatGPTText = try #require(chatGPT.fullText)
+    let geminiText = try #require(gemini.fullText)
+    #expect(local.fileURL?.path == localFile.path)
+    #expect(localText.contains("# shared") && localText.contains("# both"))
+    #expect(!localText.contains("Producer rules"))
+    #expect(chatGPT.fileURL == nil && gemini.fileURL == nil)
+    #expect(chatGPTText.contains("Full body café.") && chatGPTText.contains("# both"))
+    #expect(geminiText.contains("Full body café.") && !geminiText.contains("# both"))
+    #expect(Data(chatGPTText.utf8) == chatGPT.content)
+    #expect(
+      local.content == review.instructions.targets.first { $0.url.path == localFile.path }?.after)
+
+    model.confirmUpdate()
+    try await idle(model)
+    #expect(model.updateRecords.last?.terminal.disposition == .committed)
+    let saved = try #require(model.snapshot?.inspection.declaration)
+    #expect(try saved.instructions?.sectionReferences == sections)
+    #expect(try Data(contentsOf: localFile) == local.content)
+    model.closeUpdateReview()
+
+    try FileManager.default.removeItem(at: localFile)
+    model.refresh()
+    try await idle(model)
+    let beforeBuild = try fixture.entries()
+    model.previewUpdate(UpdateProposal(compilingInstructionsIn: scope))
+    try await idle(model)
+    let build = try #require(model.updateSession?.report)
+    #expect(build.instructions.outputs == review.instructions.outputs)
+    #expect(model.updateSession?.canApplyReport == true)
+    #expect(try fixture.entries() == beforeBuild)
+  }
+
+  @Test func copyOnlyBuildNeverOffersLocalApply() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    _ = try InstructionOperations.initializeInstructions(named: "copy", environment: runtime)
+    try fixture.writeManifest(
+      """
+      version: 1
+      defaultAgents: [codex]
+      components:
+        - kind: instructions
+          sections: [{name: copy, recipients: [chatgpt-app, gemini-app]}]
+      """)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    model.select(scope)
+    try await idle(model)
+    let before = try fixture.entries()
+    model.previewUpdate(UpdateProposal(compilingInstructionsIn: scope))
+    try await idle(model)
+    let session = try #require(model.updateSession)
+    let report = try #require(session.report)
+    #expect(session.stage == .review)
+    #expect(Set(report.instructions.outputs.map(\.recipient)) == [.chatGPTApp, .geminiApp])
+    #expect(report.instructions.outputs.allSatisfy { $0.fileURL == nil })
+    #expect(report.instructions.targets.isEmpty)
+    #expect(!session.canApplyReport && !session.offersApply)
+    model.confirmUpdate()
+    try await idle(model)
     #expect(try fixture.entries() == before)
   }
 

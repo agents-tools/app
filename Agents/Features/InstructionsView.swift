@@ -4,7 +4,7 @@ import AppKit
 import SwiftUI
 
 struct InstructionsView: View {
-  private enum Presentation: Hashable { case units, output, web }
+  private enum Presentation: Hashable { case units, output }
 
   @Bindable var model: AppModel
   let snapshot: WorkspaceSnapshot
@@ -29,7 +29,6 @@ struct InstructionsView: View {
       Picker("Instructions", selection: $presentation) {
         Text("Instruction Units").tag(Presentation.units)
         Text("Client Output").tag(Presentation.output)
-        Text("Web Instructions").tag(Presentation.web)
       }
       .pickerStyle(.segmented)
       .accessibilityIdentifier("instructions.presentation")
@@ -44,8 +43,6 @@ struct InstructionsView: View {
           clientOutput(mapping)
           if !mapping.prompts.isEmpty { namedPrompts(mapping) }
         }
-      case .web:
-        WebInstructionsView(model: model, snapshot: snapshot)
       }
     }
     .formStyle(.grouped)
@@ -53,10 +50,11 @@ struct InstructionsView: View {
     .onChange(of: snapshot.scope) { mappingID = nil }
     .toolbar {
       ToolbarItem {
-        Button("Preview Instruction Changes…") {
+        Button("Build Instructions…") {
           model.previewUpdate(UpdateProposal(compilingInstructionsIn: snapshot.scope))
         }
         .disabled(!model.canModify)
+        .accessibilityIdentifier("instructions.build")
       }
       ToolbarItem {
         Menu("Instruction Actions", systemImage: "ellipsis.circle") {
@@ -245,11 +243,6 @@ struct InstructionsView: View {
     if let url = mapping.fileURL(for: target.id) {
       LabeledContent("Path") { PathView(url: url, scope: mapping.scope) }
     }
-    Button("Copy Full Text") {
-      model.copyMappedInstructions(target, in: mapping.scope, copy: copyText)
-    }
-    .disabled(model.isApplying || model.isTerminating)
-    .accessibilityIdentifier("instructions.output.copy." + target.id)
     LabeledContent("Mapped Recipients") {
       ClientFilterButtons(recipients: target.recipients) { model.clientFilter = $0 }
     }

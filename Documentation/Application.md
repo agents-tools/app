@@ -42,9 +42,11 @@ Backups is available from the sidebar regardless of the workspace’s selected s
 
 Restore Package opens one archive and asks Core to inspect it. Original project roots are shown beside editable local destinations. An original directory that still exists is suggested as its destination. Review Restore passes the displayed mapping to Core and shows its file paths and change kinds, with replacements first. Changing a destination clears the review. The table displays paths and change kinds only. Before restoring file changes, quit the client named in the review. Restore submits the exact reviewed Core preview on the serial worker. The app waits for the operation to finish before releasing it and then refreshes the configuration view. Core owns package validation, destination checks and file writes.
 
-## Instructions for web clients
+## Instruction recipients and outputs
 
-In **Instructions & Rules → Web Instructions**, configure ChatGPT Web and Gemini Web independently. Choose instruction units, preview their combined text and copy it. The App remembers each selection on this Mac for the current user or project scope. **Client Output → Copy Full Text** copies a verified local output. For a managed Claude forwarding file, it copies the referenced instruction text.
+In **Instructions & Rules**, edit an instruction declaration and open an ordered section. The **Recipients** picker includes the local clients available in that scope, ChatGPT App and Gemini App. **Use Defaults** follows the configured local recipients. Changing a selection starts with those recipients already checked. Clear the local choices for an app-only section.
+
+**Review Changes** shows the compiled outputs before saving the declaration or applying local changes. Use **Build Instructions** to preview outputs from the saved declaration. Select an output and choose **Copy Full Text**. Local output previews show the content for the intended path even when the file is missing. ChatGPT App and Gemini App outputs are ready to paste. **Apply Local Changes** is a separate confirmation for the local files. Named prompts keep their own preview and copy action.
 
 ## Skill sources
 

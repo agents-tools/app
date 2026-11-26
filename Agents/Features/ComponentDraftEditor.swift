@@ -4,6 +4,7 @@ import SwiftUI
 struct ComponentDraftEditor: View {
   @Binding var value: ComponentDraft
   let scope: InstallScope
+  let defaultAgents: [AgentID]
 
   private var allowsAntigravity: Bool { value.kind.supportsAntigravity(in: scope) }
 
@@ -19,11 +20,15 @@ struct ComponentDraftEditor: View {
       TextField("Source alias", text: $value.source)
       SkillDraftEditor(value: $value.skills)
     case .instructions:
-      Section("Installation Targets") {
-        AgentsEditor(value: $value.agents, title: "Specify targets", allowsAntigravity: allowsAntigravity)
-      }
       InstructionDraftEditor(
-        value: $value.instructions, allowsAntigravity: allowsAntigravity)
+        value: $value.instructions, scope: scope,
+        defaultAgents: (value.agents ?? defaultAgents).filter {
+          value.condition?.agents?.contains($0) ?? true
+        })
+      DisclosureGroup("Default Local Recipients") {
+        AgentsEditor(
+          value: $value.agents, title: "Specify defaults", allowsAntigravity: allowsAntigravity)
+      }
     case .mcpServer: TransportEditor(value: $value.transport)
     case .hook:
       HookEventEditor(value: $value.event)

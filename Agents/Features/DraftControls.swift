@@ -68,8 +68,8 @@ struct AgentsEditor: View {
 
 struct ConditionEditor: View {
   @Binding var value: DeclarationCondition?
-  var agentTitle = "Specify agents"
   var allowsAntigravity = false
+  var showsAgents = true
 
   var body: some View {
     Toggle(
@@ -77,9 +77,11 @@ struct ConditionEditor: View {
       isOn: Binding(get: { value != nil }, set: { value = $0 ? .init() : nil }))
     if value != nil {
       DisclosureGroup("Conditions") {
-        AgentsEditor(
-          value: Binding(get: { value?.agents }, set: { value?.agents = $0 }),
-          title: agentTitle, allowsAntigravity: allowsAntigravity)
+        if showsAgents {
+          AgentsEditor(
+            value: Binding(get: { value?.agents }, set: { value?.agents = $0 }),
+            allowsAntigravity: allowsAntigravity)
+        }
         Toggle(
           "Restrict scopes",
           isOn: Binding(get: { value?.scopes != nil }, set: { value?.scopes = $0 ? [] : nil }))

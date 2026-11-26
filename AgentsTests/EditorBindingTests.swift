@@ -9,6 +9,44 @@ import Testing
 @Suite("Lossless editor bindings")
 @MainActor
 struct EditorBindingTests {
+  @Test func instructionRecipientBindingDistinguishesDefaultsFromAnExplicitEmptySelection() {
+    var section = SectionDeclaration(name: "fixture")
+    let editor = InstructionRecipientsEditor(
+      section: Binding(get: { section }, set: { section = $0 }), scope: .project,
+      defaultAgents: [.codex])
+
+    #expect(editor.usesDefaults.wrappedValue)
+    #expect(editor.selection(for: .local(.codex)).wrappedValue)
+    editor.selection(for: .geminiApp).wrappedValue = true
+    #expect(section.recipients == [.local(.codex), .geminiApp])
+    #expect(!editor.usesDefaults.wrappedValue)
+    editor.selection(for: .local(.codex)).wrappedValue = false
+    editor.selection(for: .geminiApp).wrappedValue = false
+    #expect(section.recipients == [])
+    editor.usesDefaults.wrappedValue = true
+    #expect(section.recipients == nil)
+  }
+
+  @Test func editingRecipientsCarriesForwardTheLegacyRestrictionAndOtherConditions() {
+    let condition = DeclarationCondition(agents: [.codex], scopes: [.project], platforms: [.macOS])
+    var section = SectionDeclaration(name: "fixture", source: "team", condition: condition)
+    let editor = InstructionRecipientsEditor(
+      section: Binding(get: { section }, set: { section = $0 }), scope: .project,
+      defaultAgents: [.codex, .claudeCode])
+
+    #expect(editor.usesDefaults.wrappedValue)
+    #expect(editor.selection(for: .local(.codex)).wrappedValue)
+    #expect(!editor.selection(for: .local(.claudeCode)).wrappedValue)
+    #expect(section.recipients == nil && section.condition == condition)
+
+    editor.selection(for: .chatGPTApp).wrappedValue = true
+    #expect(section.recipients == [.local(.codex), .chatGPTApp])
+    #expect(section.reference == "team:fixture")
+    #expect(section.condition == DeclarationCondition(scopes: [.project], platforms: [.macOS]))
+    editor.selection(for: .local(.claudeCode)).wrappedValue = true
+    #expect(section.recipients == [.local(.codex), .chatGPTApp, .local(.claudeCode)])
+  }
+
   @Test func argumentRowBindingsPreserveOccurrencesAndExactStringsThroughCorePreparation() throws {
     var executable = ExecutableDeclaration(executable: "fixture-command")
     let editor = ExecutableEditor(value: Binding(get: { executable }, set: { executable = $0 }))
