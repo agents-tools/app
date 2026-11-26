@@ -28,11 +28,11 @@ final class AgentsUITests: XCTestCase {
 
     let preview = app.buttons["existingConfiguration.preview"]
     XCTAssertTrue(preview.waitForExistence(timeout: 10))
-    XCTAssertEqual(preview.label, "Preview Configuration…")
+    XCTAssertEqual(preview.label, "Review Import…")
     preview.click()
     let apply = app.buttons["existingConfiguration.apply"]
     XCTAssertTrue(apply.wait(for: \.isEnabled, toEqual: true, timeout: 10))
-    XCTAssertEqual(apply.label, "Apply")
+    XCTAssertEqual(apply.label, "Import Configuration")
     app.buttons["existingConfiguration.cancel"].click()
     XCTAssertTrue(apply.waitForNonExistence(timeout: 5))
     XCTAssertTrue(preview.isEnabled)

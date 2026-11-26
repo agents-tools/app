@@ -325,61 +325,77 @@ struct ChangesView: View {
   @Bindable var model: AppModel
   @State private var selection: Set<ComponentSelection> = []
   @State private var showingPatches = false
+  @State private var showingHistory = false
   var body: some View {
     Form {
-      Section("Configuration") {
-        Button("Edit Configuration…") { model.beginDraft(.defaults) }
-        Button("Preview Full Update…") {
-          model.previewUpdate(title: "Update Configuration", intent: .update)
-        }
-        Button("Preview Restore…") {
-          model.previewUpdate(title: "Restore Managed Outputs", request: .init(operation: .restore))
-        }
-      }.disabled(!model.canModify)
-      Section("Local Edits") {
-        Button("Export Patches…") { showingPatches = true }
-      }
-      Section("Managed Components") {
-        if model.availableComponentSelection.isEmpty { Text("No managed components are recorded.") }
-        ForEach(model.availableComponentSelection, id: \.record) { component in
-          Toggle(
-            isOn: Binding(
-              get: { selection.contains(component.selection) },
-              set: {
-                if $0 {
-                  selection.insert(component.selection)
-                } else {
-                  selection.remove(component.selection)
-                }
-              })
-          ) {
-            VStack(alignment: .leading) {
-              Text(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name)
-              Text(component.source).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                .truncationMode(.middle).help(component.source)
-            }
+      Picker("View", selection: $showingHistory) {
+        Text("Changes").tag(false)
+        Text("History").tag(true)
+      }.pickerStyle(.segmented).labelsHidden()
+      if showingHistory {
+        Section("Operation History") {
+          let records = model.updateRecords.filter { $0.scope == model.scope }
+          if records.isEmpty { Text("No operations this session.").foregroundStyle(.secondary) }
+          ForEach(records.reversed()) { record in
+            LabeledContent(record.title, value: record.terminal.message)
           }
         }
-        Button("Preview Selected Update…") {
-          model.previewUpdate(
-            title: "Update Selected Components", request: .init(selections: Array(selection)))
-        }.disabled(selection.isEmpty || !model.canModify)
-        Button("Preview Selected Removal…") {
-          model.previewUpdate(
-            title: "Remove Selected Components",
-            request: .init(operation: .remove, selections: Array(selection)))
-        }.disabled(selection.isEmpty || !model.canModify)
-      }
-      Section("Operation Results") {
-        ForEach(model.updateRecords.filter { $0.scope == model.scope }) { record in
-          LabeledContent(record.title, value: record.terminal.message)
+      } else {
+        Section("Configuration") {
+          Button("Edit Configuration…") { model.beginDraft(.defaults) }
+          Button("Preview Full Update…") {
+            model.previewUpdate(title: "Update Configuration", intent: .update)
+          }
+          Button("Preview Restore…") {
+            model.previewUpdate(
+              title: "Restore Managed Outputs", request: .init(operation: .restore))
+          }
+        }.disabled(!model.canModify)
+        Section("Local Edits") {
+          Button("Export Patches…") { showingPatches = true }
+        }
+        Section("Update or Remove Components") {
+          if model.availableComponentSelection.isEmpty {
+            Text("No installed components.").foregroundStyle(.secondary)
+          }
+          ForEach(model.availableComponentSelection, id: \.record) { component in
+            Toggle(
+              isOn: Binding(
+                get: { selection.contains(component.selection) },
+                set: {
+                  if $0 {
+                    selection.insert(component.selection)
+                  } else {
+                    selection.remove(component.selection)
+                  }
+                })
+            ) {
+              VStack(alignment: .leading) {
+                Text(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name)
+                Text(component.source).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                  .truncationMode(.middle).help(component.source)
+              }
+            }.toggleStyle(.checkbox)
+          }
+          Button("Preview Update (\(selection.count))…") {
+            model.previewUpdate(
+              title: "Update Selected Components", request: .init(selections: Array(selection)))
+          }.disabled(selection.isEmpty || !model.canModify)
+          Button("Preview Removal (\(selection.count))…") {
+            model.previewUpdate(
+              title: "Remove Selected Components",
+              request: .init(operation: .remove, selections: Array(selection)))
+          }.disabled(selection.isEmpty || !model.canModify)
         }
       }
     }.formStyle(.grouped)
       .sheet(isPresented: $showingPatches) {
-        ProducerPatchSheet(scope: model.scope.installScope, environment: model.actions.environment(for: model.scope))
-          .id(model.scope.id)
+        ProducerPatchSheet(
+          scope: model.scope.installScope, environment: model.actions.environment(for: model.scope)
+        )
+        .id(model.scope.id)
       }
+      .onChange(of: model.scope.id) { selection.removeAll() }
       .onChange(of: model.snapshot?.inspection.generation) { selection.removeAll() }
   }
 }

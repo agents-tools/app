@@ -6,9 +6,12 @@ struct InstructionsView: View {
   @Bindable var model: AppModel
   let snapshot: WorkspaceSnapshot
 
+  @State private var mappingID: String?
+  @State private var targetID: String?
+
   var body: some View {
-    List {
-      Section("Declarations") {
+    Form {
+      Section("Instruction Sources") {
         if snapshot.instructions.isEmpty {
           Text("No instruction components are declared.").foregroundStyle(.secondary)
         }
@@ -29,7 +32,7 @@ struct InstructionsView: View {
               Button("Generate “\(name)”…") { model.previewPrompt(name: name, in: snapshot.scope) }
             }
           } label: {
-            Label(item.container + " · Instructions", systemImage: "doc.text")
+            Label(item.container, systemImage: "doc.text")
           }
         }
       }
@@ -52,7 +55,9 @@ struct InstructionsView: View {
           }
         }
       }
-      let rules = snapshot.inspection.deployments.filter { $0.format == "agents/antigravity-rule@1" }
+      let rules = snapshot.inspection.deployments.filter {
+        $0.format == "agents/antigravity-rule@1"
+      }
       if !rules.isEmpty {
         Section("Installed Antigravity Rules") {
           ForEach(rules, id: \.identity) { rule in
@@ -68,48 +73,68 @@ struct InstructionsView: View {
           }
         }
       }
-      Section("Locked Target Mappings") {
-        ForEach(snapshot.mappings) { mapping in
-          DisclosureGroup {
-            Text(mapping.status).foregroundStyle(.secondary)
-            Button("Copy Mapping") { copyText(mapping.copyText) }
-            ForEach(mapping.targets) { target in
-              DisclosureGroup(target.id) {
-                LabeledContent("Agents", value: target.agents)
-                if let imported = target.importedFile {
-                  LabeledContent("Imports", value: imported)
-                }
-                ForEach(Array(target.sections.enumerated()), id: \.offset) { _, section in
-                  Text(section)
-                }
-              }
+      if let mapping = snapshot.mappings.first(where: { $0.id == mappingID })
+        ?? snapshot.mappings.first
+      {
+        Section("Instruction Output") {
+          if snapshot.mappings.count > 1 {
+            Picker(
+              "Configuration",
+              selection: Binding(
+                get: { mapping.id },
+                set: {
+                  mappingID = $0
+                  targetID = nil
+                })
+            ) {
+              ForEach(snapshot.mappings) { item in Text(item.title).tag(item.id) }
             }
-            if !mapping.unplaced.isEmpty {
-              DisclosureGroup("Unplaced Sections") {
-                ForEach(Array(mapping.unplaced.enumerated()), id: \.offset) { _, section in
-                  Text(section)
-                }
-              }
+          }
+          Text(mapping.status).foregroundStyle(.secondary)
+          if let target = mapping.targets.first(where: { $0.id == targetID })
+            ?? mapping.targets.first
+          {
+            Picker("Output file", selection: Binding(get: { target.id }, set: { targetID = $0 })) {
+              ForEach(mapping.targets) { item in Text(item.id).tag(item.id) }
             }
+            LabeledContent("Used by", value: target.agents)
+            if let imported = target.importedFile {
+              LabeledContent("Imports", value: imported)
+            }
+          }
+          Button("Copy Mapping") { copyText(mapping.copyText) }
+        }
+        if let target = mapping.targets.first(where: { $0.id == targetID })
+          ?? mapping.targets.first,
+          !target.sections.isEmpty
+        {
+          Section("Sections in File Order") { orderedSections(target.sections) }
+        }
+        if !mapping.unplaced.isEmpty {
+          Section("Unassigned Sections") { orderedSections(mapping.unplaced) }
+        }
+        if !mapping.prompts.isEmpty {
+          Section("Named Prompts") {
             ForEach(mapping.prompts.keys.sorted(), id: \.self) { name in
-              DisclosureGroup("Named Prompt · " + name) {
-                ForEach(Array((mapping.prompts[name] ?? []).enumerated()), id: \.offset) {
-                  _, section in
-                  Text(section)
-                }
-                Button("Generate Preview…") { model.previewPrompt(name: name, in: mapping.scope) }
+              HStack {
+                Text(name)
+                Spacer()
+                Button("Preview…") { model.previewPrompt(name: name, in: mapping.scope) }
+                  .accessibilityLabel("Preview " + name)
+              }
+              if let sections = mapping.prompts[name], !sections.isEmpty {
+                Text(sections.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
               }
             }
-          } label: {
-            Text(mapping.title)
           }
         }
       }
     }
+    .formStyle(.grouped)
     .textSelection(.enabled)
     .toolbar {
       ToolbarItem {
-        Button("Review Compilation…") {
+        Button("Preview Instruction Changes…") {
           model.previewUpdate(UpdateProposal(compilingInstructionsIn: snapshot.scope))
         }
         .disabled(!model.canModify)
@@ -137,4 +162,15 @@ struct InstructionsView: View {
       }
     }
   }
+  private func orderedSections(_ sections: [String]) -> some View {
+    ForEach(Array(sections.enumerated()), id: \.offset) { index, name in
+      HStack(alignment: .firstTextBaseline, spacing: 12) {
+        Text(index + 1, format: .number)
+          .monospacedDigit().foregroundStyle(.secondary)
+          .frame(minWidth: 24, alignment: .trailing)
+        Text(name)
+      }.accessibilityElement(children: .combine)
+    }
+  }
+
 }

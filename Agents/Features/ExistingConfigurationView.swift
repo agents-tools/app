@@ -7,7 +7,7 @@ struct ExistingConfigurationView: View {
   var body: some View {
     if let session = model.existingConfigurationSession {
       VStack(alignment: .leading, spacing: 12) {
-        Text("Use Existing Configuration")
+        Text("Review Configuration Import")
           .font(.headline)
           .padding(.horizontal, 16)
           .padding(.top, 16)
@@ -16,34 +16,28 @@ struct ExistingConfigurationView: View {
             ProgressView("Preparing configuration preview…").controlSize(.small)
           }
           if let preview = session.preview {
-            Section("Configuration Contents") {
-              LabeledContent("Declared sources", value: String(preview.sourceCount))
-              LabeledContent("Locked skills", value: String(preview.skillCount))
+            Section("Import Summary") {
+              LabeledContent("Sources", value: String(preview.sourceCount))
+              LabeledContent("Skills", value: String(preview.skillCount))
               LabeledContent(
-                "Managed skill installations", value: String(preview.installationCount))
+                "Skill installations", value: String(preview.installationCount))
               LabeledContent("Instruction sections", value: String(preview.instructionCount))
-              Text(
-                "Shared installation paths count once. Instruction sections include saved prompts."
-              )
-              .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Configuration Files") {
-              LabeledContent("Keep existing declaration") {
-                PathView(
-                  url: ExistingConfigurationSession.existingDeclaration(
-                    in: preview.declarationURL.deletingLastPathComponent()), scope: session.scope)
-              }
-              LabeledContent("Create declaration") {
+            Section("Files to Write") {
+              LabeledContent("New YAML configuration") {
                 PathView(url: preview.declarationURL, scope: session.scope)
               }
-              LabeledContent("Update resolved state") {
+              LabeledContent("Installation lock") {
                 PathView(url: preview.ledgerURL, scope: session.scope)
               }
-              LabeledContent("Save original resolved state") {
+              LabeledContent("Backup of original lock") {
                 PathView(url: preview.originalLedgerURL, scope: session.scope)
               }
-              Text("The backup keeps the original resolved state. Existing backups are preserved.")
-                .font(.caption).foregroundStyle(.secondary)
+            }
+            DisclosureGroup("Import Source") {
+              PathView(
+                url: ExistingConfigurationSession.existingDeclaration(
+                  in: preview.declarationURL.deletingLastPathComponent()), scope: session.scope)
             }
           }
           if session.stale && session.stage == .review {
@@ -52,14 +46,12 @@ struct ExistingConfigurationView: View {
               systemImage: "exclamationmark.triangle")
           }
           if !session.messages.isEmpty {
-            Section("Unable to Use Existing Configuration") {
+            Section("Import Unavailable") {
               ForEach(session.messages) { diagnostic in
                 Text(verbatim: diagnostic.message).textSelection(.enabled)
               }
             }
           }
-          Label("Native client files stay as they are.", systemImage: "lock.shield")
-            .foregroundStyle(.secondary)
         }
         .formStyle(.grouped)
 
@@ -71,12 +63,12 @@ struct ExistingConfigurationView: View {
             .accessibilityIdentifier("existingConfiguration.cancel")
           Spacer()
           if session.stage == .applying {
-            ProgressView("Applying…").controlSize(.small)
+            ProgressView("Importing…").controlSize(.small)
           } else if session.stage == .failed || (session.stage == .review && session.stale) {
             Button("Refresh Preview") { model.previewExistingConfiguration() }
               .disabled(model.isApplying || model.isTerminating)
           }
-          Button("Apply") { model.applyExistingConfiguration() }
+          Button("Import Configuration") { model.applyExistingConfiguration() }
             .keyboardShortcut(.defaultAction)
             .disabled(!model.canApplyExistingConfiguration)
             .accessibilityIdentifier("existingConfiguration.apply")

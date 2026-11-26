@@ -6,71 +6,45 @@ struct ManagedStateView: View {
   let model: AppModel
   let snapshot: WorkspaceSnapshot
   var body: some View {
-    Section("Managed State") {
-      ForEach(snapshot.inspection.components, id: \.record) { component in
-        DetailsGroup(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name) {
-          if component.kind == .mcpServer {
-            Button("Test Connection…") { model.beginConnection(component) }
+    let groups = Dictionary(grouping: snapshot.inspection.components, by: \.kind)
+    ForEach(DeclaredComponentKind.allCases, id: \.self) { kind in
+      if let items = groups[kind] {
+        Section {
+          ForEach(items, id: \.record) { component in
+            componentRow(component)
           }
-          if model.assistanceAvailable {
-            if let input = AssistanceInput.skill(component, action: .explainSkill) {
-              Button("Explain This Skill…") { model.reviewAssistance(input) }
-            }
-            if let input = AssistanceInput.skill(component, action: .translateDescription) {
-              Button("Translate Description…") { model.reviewAssistance(input) }
-            }
-          }
-          LabeledContent("Source") { CompactText(text: component.source) }
-          if let revision = component.revision {
-            LabeledContent("Revision") { CompactText(text: revision) }
-          }
-          LabeledContent(
-            "Agents", value: component.recipients.map(\.displayName).joined(separator: ", "))
-          if component.chatGPT { Label("Included in named prompts", systemImage: "text.quote") }
-          DetailsGroup("Symbolic Configuration") {
-            NativeInspectionValue(name: "Configuration", value: component.configuration)
-          }
-          ForEach(Array(component.occurrences.enumerated()), id: \.offset) { _, occurrence in
-            DetailsGroup("Declared in " + occurrence.manifestPath) {
-              LabeledContent("Source") { CompactText(text: occurrence.declaringSource) }
-              LabeledContent(
-                "Editing",
-                value: occurrence.consumerEditable ? "Consumer declaration" : "Producer declaration"
-              )
-              if let agents = occurrence.condition.agents {
-                LabeledContent(
-                  "Condition agents", value: agents.map(\.displayName).joined(separator: ", "))
-              }
-              if let scopes = occurrence.condition.scopes {
-                LabeledContent(
-                  "Condition scopes", value: scopes.map(\.rawValue).joined(separator: ", "))
-              }
-              if let platforms = occurrence.condition.platforms {
-                LabeledContent(
-                  "Condition platforms", value: platforms.map(\.rawValue).joined(separator: ", "))
-              }
-            }
+        } header: {
+          HStack {
+            Text(groupTitle(kind))
+            Spacer()
+            Text(items.count, format: .number).foregroundStyle(.secondary)
           }
         }
       }
-      ForEach(snapshot.inspection.deployments, id: \.identity) { deployment in
-        DetailsGroup(deployment.location.lastPathComponent) {
-          LabeledContent("Target") { PathView(url: deployment.location, scope: snapshot.scope) }
-          LabeledContent("Status", value: deployment.status.rawValue.capitalized)
-          LabeledContent("Format", value: deployment.format)
-          LabeledContent("Ownership", value: deployment.ownership)
-          LabeledContent(
-            "Agents", value: deployment.recipients.map(\.displayName).joined(separator: ", "))
-          if let readers = deployment.effectiveReaders {
-            LabeledContent("Readers", value: readers.map(\.displayName).joined(separator: ", "))
+    }
+    if !snapshot.inspection.deployments.isEmpty {
+      Section("Installed Files") {
+        ForEach(snapshot.inspection.deployments, id: \.identity) { deployment in
+          DetailsGroup(deployment.location.lastPathComponent) {
+            LabeledContent("Target") { PathView(url: deployment.location, scope: snapshot.scope) }
+            LabeledContent("Status", value: deployment.status.rawValue.capitalized)
+            LabeledContent("Format", value: deployment.format)
+            LabeledContent("Ownership", value: deployment.ownership)
+            LabeledContent(
+              "Agents", value: deployment.recipients.map(\.displayName).joined(separator: ", "))
+            if let readers = deployment.effectiveReaders {
+              LabeledContent("Readers", value: readers.map(\.displayName).joined(separator: ", "))
+            }
+            if deployment.privateMaterialization {
+              Label("Contains private material", systemImage: "lock")
+            }
+            if let message = deployment.diagnostic { Text(message) }
           }
-          if deployment.privateMaterialization {
-            Label("Contains private material", systemImage: "lock")
-          }
-          if let message = deployment.diagnostic { Text(message) }
         }
       }
-      DetailsGroup("Retained Resources") {
+    }
+    if !snapshot.inspection.resources.isEmpty {
+      Section("Resources") {
         ForEach(snapshot.inspection.resources, id: \.identity) { resource in
           DetailsGroup(resource.path) {
             LabeledContent("Kind", value: resource.kind)
@@ -88,6 +62,65 @@ struct ManagedStateView: View {
       }
     }
   }
+  private func groupTitle(_ kind: DeclaredComponentKind) -> String {
+    switch kind {
+    case .mcpServer: "MCP Servers"
+    case .lspServer: "Language Servers"
+    case .command: "Commands"
+    case .hook: "Hooks"
+    case .plugin: "Plugins"
+    case .subagent: "Subagents"
+    default: DeclarationLabels.kind(kind.rawValue)
+    }
+  }
+
+  private func componentRow(_ component: ComponentInspection) -> some View {
+    DetailsGroup(component.name) {
+      if component.kind == .mcpServer {
+        Button("Test Connection…") { model.beginConnection(component) }
+      }
+      if model.assistanceAvailable {
+        if let input = AssistanceInput.skill(component, action: .explainSkill) {
+          Button("Explain This Skill…") { model.reviewAssistance(input) }
+        }
+        if let input = AssistanceInput.skill(component, action: .translateDescription) {
+          Button("Translate Description…") { model.reviewAssistance(input) }
+        }
+      }
+      LabeledContent("Source") { CompactText(text: component.source) }
+      if let revision = component.revision {
+        LabeledContent("Revision") { CompactText(text: revision) }
+      }
+      LabeledContent(
+        "Agents", value: component.recipients.map(\.displayName).joined(separator: ", "))
+      if component.chatGPT { Label("Included in named prompts", systemImage: "text.quote") }
+      DetailsGroup("Symbolic Configuration") {
+        NativeInspectionValue(name: "Configuration", value: component.configuration)
+      }
+      ForEach(Array(component.occurrences.enumerated()), id: \.offset) { _, occurrence in
+        DetailsGroup("Declared in " + occurrence.manifestPath) {
+          LabeledContent("Source") { CompactText(text: occurrence.declaringSource) }
+          LabeledContent(
+            "Editing",
+            value: occurrence.consumerEditable ? "Consumer declaration" : "Producer declaration"
+          )
+          if let agents = occurrence.condition.agents {
+            LabeledContent(
+              "Condition agents", value: agents.map(\.displayName).joined(separator: ", "))
+          }
+          if let scopes = occurrence.condition.scopes {
+            LabeledContent(
+              "Condition scopes", value: scopes.map(\.rawValue).joined(separator: ", "))
+          }
+          if let platforms = occurrence.condition.platforms {
+            LabeledContent(
+              "Condition platforms", value: platforms.map(\.rawValue).joined(separator: ", "))
+          }
+        }
+      }
+    }
+  }
+
 }
 
 private struct NativeInspectionValue: View {

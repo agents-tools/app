@@ -175,11 +175,11 @@ struct WorkspaceView: View {
       }.frame(maxWidth: .infinity, maxHeight: .infinity)
     case (_, .existingConfigurationAvailable):
       ContentUnavailableView {
-        Label("Use Existing Configuration", systemImage: "doc.text")
+        Label("Import User Configuration", systemImage: "doc.text")
       } description: {
-        Text("Review the changes to your user configuration. Native client files stay as they are.")
+        Text("Import your sources, skills, and instructions from agents.json.")
       } actions: {
-        Button("Preview Configuration…") { model.previewExistingConfiguration() }
+        Button("Review Import…") { model.previewExistingConfiguration() }
           .buttonStyle(.borderedProminent)
           .disabled(!model.canPreviewExistingConfiguration)
           .accessibilityIdentifier("existingConfiguration.preview")
@@ -235,7 +235,7 @@ struct WorkspaceView: View {
         Spacer()
       }.padding(8).background(.bar)
     } else if model.page == .overview && model.didApplyExistingConfiguration {
-      Label("Existing configuration applied", systemImage: "checkmark.circle")
+      Label("Configuration imported", systemImage: "checkmark.circle")
         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
         .accessibilityIdentifier("existingConfiguration.success")
     }
@@ -252,7 +252,7 @@ struct OverviewView: View {
       ContentUnavailableView {
         Label("No Configuration", systemImage: "doc.badge.plus")
       } description: {
-        Text("This scope has no declaration or resolved state. Browsing leaves it unchanged.")
+        Text("Add a source or create a local skill to get started.")
       } actions: {
         Button("Edit Configuration…") { model.beginDraft(.defaults) }
         Button("New Local Skill…") { model.beginCreation(.skill) }
