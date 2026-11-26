@@ -164,6 +164,14 @@ struct ContentActionTests {
     for name in ["first", "second"] {
       _ = try InstructionOperations.initializeInstructions(named: name, environment: runtime)
     }
+    try fixture.writeManifest(
+      """
+      version: 1
+      components:
+        - kind: instructions
+          agents: [codex]
+          sections: [{name: first}]
+      """)
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),
       processEnvironment: fixture.environment)
@@ -171,37 +179,32 @@ struct ContentActionTests {
     model.select(scope)
     try await idle(model)
 
+    let before = try fixture.entries()
     for (destination, selection) in [
       (WebInstructionDestination.chatGPT, ["second", "first"]), (.gemini, ["first"]),
     ] {
       let snapshot = try #require(model.snapshot)
       let configuration = WebInstructionConfiguration(
         destination, snapshot: snapshot, environment: runtime)
-      #expect(configuration.canConfigure)
-      #expect(!configuration.hasPreview)
+      #expect(!configuration.hasNamedPrompt)
       #expect(configuration.choices == ["first", "second"])
-      let request = try #require(configuration.updateRequest(selecting: selection))
-      let before = try fixture.entries()
-      model.previewUpdate(title: "Configure " + destination.title, request: request)
-      try await idle(model)
-      let report = try #require(model.updateSession?.report)
-      #expect(report.instructions.changedPrompts == [destination.rawValue])
-      #expect(report.instructions.targets.isEmpty)
-      #expect(try fixture.entries() == before)
+      model.saveWebInstructionSelection(selection, in: configuration)
+      #expect(model.preferences.webInstructionSelections[configuration.preferenceKey] == selection)
+      #expect(model.updateSession == nil)
       model.confirmUpdate()
-      try await idle(model)
-      #expect(model.updateRecords.last?.terminal.succeeded == true)
-      model.updateSession = nil
     }
 
     let snapshot = try #require(model.snapshot)
     let mapping = try #require(snapshot.mappings.first { $0.scope == scope })
     #expect(mapping.targets.isEmpty)
-    let beforeCopies = try fixture.entries()
     for (destination, headings) in [
       (WebInstructionDestination.chatGPT, ["# second", "# first"]), (.gemini, ["# first"]),
     ] {
-      model.previewPrompt(name: destination.rawValue, in: scope, title: destination.title)
+      let configuration = WebInstructionConfiguration(
+        destination, snapshot: snapshot, environment: runtime)
+      let selection = try #require(
+        model.preferences.webInstructionSelections[configuration.preferenceKey])
+      model.previewWebInstructionSelection(selection, in: configuration)
       try await idle(model)
       guard case .ready(let preview) = model.promptSession?.stage else {
         Issue.record("Expected the configured destination’s rendered text")
@@ -217,10 +220,166 @@ struct ContentActionTests {
       #expect(copied == preview)
       model.promptSession = nil
     }
-    #expect(try fixture.entries() == beforeCopies)
+    #expect(try fixture.entries() == before)
   }
 
-  @Test func updatingWebMembershipPreservesExistingPromptAndCustomAppend() throws {
+  @Test func webPreviewKeepsMissingAndDriftedDeploymentsAndTheirLock() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    _ = try InstructionOperations.initializeInstructions(named: "shared", environment: runtime)
+    try fixture.writeManifest(
+      """
+      version: 1
+      components:
+        - kind: instructions
+          agents: [codex, gemini-cli]
+          sections: [{name: shared}]
+      """)
+    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
+    let codex = fixture.project.appendingPathComponent("AGENTS.md")
+    let gemini = fixture.project.appendingPathComponent("GEMINI.md")
+    let drifted = Data("# Locally changed\n".utf8)
+    try drifted.write(to: codex)
+    try FileManager.default.removeItem(at: gemini)
+    let store = StateStore(scope: .project, environment: runtime)
+    let lock = try Data(contentsOf: store.resolvedURL)
+    let before = try fixture.entries()
+
+    // A named prompt has a destination ID, but the public selector operates on unit names.
+    let operation = UpdateOperation.edit([
+      .insertComponent(
+        .instructions(.init(agents: [], chatgpt: ["chatgpt-web": .init(sections: ["shared"])])),
+        into: .root, at: .last)
+    ])
+    #expect(throws: CoreError.self) {
+      try UpdateOperations.preview(
+        .init(operation: operation, kinds: [.instructions], names: ["chatgpt-web"]),
+        environment: runtime)
+    }
+    let unitPlan = try UpdateOperations.preview(
+      .init(operation: operation, kinds: [.instructions], names: ["shared"]),
+      environment: runtime)
+    #expect(unitPlan.instructions.changedPrompts == ["chatgpt-web"])
+    #expect(
+      Set(unitPlan.instructions.targets.filter(\.changed).map(\.target)) == [
+        "AGENTS.md", "GEMINI.md",
+      ])
+
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    model.select(scope)
+    try await idle(model)
+    let configuration = WebInstructionConfiguration(
+      .chatGPT, snapshot: try #require(model.snapshot), environment: runtime)
+    model.saveWebInstructionSelection(["shared"], in: configuration)
+    model.confirmUpdate()
+    #expect(model.updateSession == nil)
+    model.previewWebInstructionSelection(["shared"], in: configuration)
+    try await idle(model)
+    var copied: String?
+    model.copyInstructionPreview {
+      copied = $0
+      return true
+    }
+    #expect(copied?.hasPrefix("# shared\n") == true)
+    #expect(try Data(contentsOf: codex) == drifted)
+    #expect(!FileManager.default.fileExists(atPath: gemini.path))
+    #expect(try Data(contentsOf: store.resolvedURL) == lock)
+    #expect(try fixture.entries() == before)
+  }
+
+  @Test func webChoicesIgnoreInactiveGroupsAndKeepImportedNamedPromptSeparate() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    _ = try InstructionOperations.initializeInstructions(named: "own", environment: runtime)
+    let producer = fixture.root.appendingPathComponent("producer")
+    let producerRuntime = RuntimeEnvironment(
+      projectDirectory: producer, homeDirectory: fixture.home, environment: fixture.environment)
+    try FileManager.default.createDirectory(at: producer, withIntermediateDirectories: true)
+    _ = try InstructionOperations.initializeInstructions(
+      named: "upstream", environment: producerRuntime)
+    let sourceUnits = producer.appendingPathComponent("instructions")
+    try FileManager.default.createDirectory(at: sourceUnits, withIntermediateDirectories: true)
+    for name in ["active-unit", "conditional-unit"] {
+      try Data("---\ndescription: A source instruction.\n---\n# \(name)\nFull body.\n".utf8)
+        .write(to: sourceUnits.appendingPathComponent(name + ".md"))
+    }
+    let producerManifest = producer.appendingPathComponent(".agent/agents.yaml")
+    try Data(
+      """
+      version: 1
+      groups:
+        published:
+          components:
+            - kind: instructions
+              chatgpt:
+                gemini-web: {sections: [{name: upstream}]}
+      exports: [published]
+      """.utf8
+    ).write(to: producerManifest)
+    try fixture.writeManifest(
+      """
+      version: 1
+      sources: {team: {path: ../producer}}
+      groups:
+        active-here:
+          components:
+            - kind: instructions
+              agents: []
+              sections: [{name: active-unit, source: team}]
+        unused:
+          components:
+            - kind: instructions
+              chatgpt:
+                gemini-web: {sections: [{name: unused-unit, source: team}]}
+        inactive-here:
+          condition: {scopes: [user]}
+          components:
+            - kind: instructions
+              chatgpt:
+                gemini-web: {sections: [{name: conditional-unit, source: team}]}
+      uses: [{group: active-here}, {group: inactive-here}, {group: published, source: team}]
+      """)
+    _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
+    let named = try InstructionOperations.renderChatGPT(prompt: "gemini-web", environment: runtime)
+    let before = try fixture.entries()
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    model.select(scope)
+    try await idle(model)
+    let configuration = WebInstructionConfiguration(
+      .gemini, snapshot: try #require(model.snapshot), environment: runtime)
+    #expect(configuration.hasNamedPrompt)
+    #expect(configuration.choices == ["own", "team:active-unit"])
+    #expect(model.preferences.webInstructionSelections[configuration.preferenceKey] == nil)
+
+    let selection = ["own", "team:active-unit"]
+    model.saveWebInstructionSelection(selection, in: configuration)
+    model.previewWebInstructionSelection(selection, in: configuration)
+    try await idle(model)
+    guard case .ready(let text) = model.promptSession?.stage else {
+      Issue.record("Expected an independent Gemini Web composition")
+      return
+    }
+    #expect(text.hasPrefix("# own\n"))
+    #expect(text.contains("# active-unit\nFull body.\n"))
+    #expect(String(decoding: named, as: UTF8.self).hasPrefix("# upstream\n"))
+    #expect(
+      try InstructionOperations.renderChatGPT(prompt: "gemini-web", environment: runtime) == named)
+    #expect(try fixture.entries() == before)
+  }
+
+  @Test func webCompositionPreservesExistingNamedPromptsAndTheirCustomAppends() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
     let runtime = RuntimeEnvironment(
@@ -229,7 +388,7 @@ struct ContentActionTests {
     for name in ["first", "second"] {
       _ = try InstructionOperations.initializeInstructions(named: name, environment: runtime)
     }
-    let manifest = try fixture.writeManifest(
+    try fixture.writeManifest(
       """
       version: 1
       components:
@@ -242,25 +401,37 @@ struct ContentActionTests {
     try Data("Destination appendix".utf8).write(
       to: fixture.project.appendingPathComponent("custom.md"))
     _ = try InstructionOperations.updateInstalled(environment: runtime, apply: true)
-    let previous = try InstructionOperations.renderChatGPT(prompt: "daily", environment: runtime)
+    let daily = try InstructionOperations.renderChatGPT(prompt: "daily", environment: runtime)
+    let named = try InstructionOperations.renderChatGPT(prompt: "chatgpt-web", environment: runtime)
+    let before = try fixture.entries()
     let scope = WorkspaceScope(kind: .project, root: fixture.project)
-    let reader = CoreReader(home: fixture.home, processEnvironment: fixture.environment)
-    let snapshot = try #require(reader.read(scope: scope).snapshot)
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    model.select(scope)
+    try await idle(model)
+    let snapshot = try #require(model.snapshot)
     let configuration = WebInstructionConfiguration(
       .chatGPT, snapshot: snapshot, environment: runtime)
-    let request = try #require(configuration.updateRequest(selecting: ["second"]))
-    try UpdateOperations.withPreparedUpdate(request, environment: runtime) { update in
-      #expect(update.report.instructions.targets.isEmpty)
-      #expect(update.report.instructions.changedPrompts == ["chatgpt-web"])
-      _ = try update.apply()
+    #expect(configuration.hasNamedPrompt)
+    model.saveWebInstructionSelection(["second"], in: configuration)
+    model.previewWebInstructionSelection(["second"], in: configuration)
+    try await idle(model)
+    guard case .ready(let composed) = model.promptSession?.stage else {
+      Issue.record("Expected the app's independent composition")
+      return
     }
-    let rendered = try InstructionOperations.renderChatGPT(
-      prompt: "chatgpt-web", environment: runtime)
-    #expect(String(decoding: rendered, as: UTF8.self).hasSuffix("Destination appendix"))
-    #expect(String(decoding: rendered, as: UTF8.self).hasPrefix("# second"))
-    #expect(
-      try InstructionOperations.renderChatGPT(prompt: "daily", environment: runtime) == previous)
-    #expect(try String(contentsOf: manifest, encoding: .utf8).contains("append: daily.md"))
+    #expect(composed.hasPrefix("# second"))
+    model.previewPrompt(name: "chatgpt-web", in: scope)
+    try await idle(model)
+    guard case .ready(let previous) = model.promptSession?.stage else {
+      Issue.record("Expected the original named prompt")
+      return
+    }
+    #expect(Data(previous.utf8) == named)
+    #expect(previous.hasSuffix("Destination appendix"))
+    #expect(try InstructionOperations.renderChatGPT(prompt: "daily", environment: runtime) == daily)
+    #expect(try fixture.entries() == before)
   }
 
   @Test func mappedCopyReturnsExactSharedBytesAndRejectsDriftAndSymlinks() async throws {

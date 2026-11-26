@@ -20,64 +20,63 @@ private struct WebInstructionDestinationView: View {
   let configuration: WebInstructionConfiguration
 
   @State private var selection: [String]?
-  @State private var editingDigest: String?
 
   var body: some View {
     let destination = configuration.destination
+    let saved = model.preferences.webInstructionSelections[configuration.preferenceKey] ?? []
+    let selected = selection ?? saved
+    let available = configuration.accepts(selected)
     Section(destination.title) {
-      if !configuration.canConfigure {
-        Text("This prompt is supplied by another declaration or has multiple definitions.")
-          .foregroundStyle(.secondary)
-      } else if configuration.selected.isEmpty {
+      if saved.isEmpty {
         Text("Choose the instruction units to include.").foregroundStyle(.secondary)
       } else {
-        LabeledContent("Instruction Units", value: configuration.selected.joined(separator: ", "))
+        LabeledContent("Instruction Units", value: saved.joined(separator: ", "))
+      }
+      if selection == nil && !available {
+        Text("Some saved instruction units are unavailable. Update the selection to preview it.")
+          .foregroundStyle(.secondary)
       }
       HStack {
         Button(selection == nil ? "Configure…" : "Cancel") {
-          if selection == nil {
-            selection = configuration.selected
-            editingDigest = configuration.documentDigest
-          } else {
-            selection = nil
-          }
+          selection = selection == nil ? saved : nil
         }
-        .disabled(selection == nil && (!model.canModify || !configuration.canConfigure))
+        .disabled(model.isTerminating)
         .accessibilityIdentifier("instructions.web.configure." + destination.id)
-        Button("Preview…") {
-          model.previewPrompt(
-            name: destination.rawValue, in: configuration.scope, title: destination.title)
+        Button("Preview Selection…") {
+          model.previewWebInstructionSelection(selected, in: configuration)
         }
-        .disabled(!configuration.hasPreview || model.isApplying || model.isTerminating)
+        .disabled(selected.isEmpty || !available || model.isApplying || model.isTerminating)
         .accessibilityIdentifier("instructions.web.preview." + destination.id)
       }
       .buttonStyle(.borderless)
-      if let selection {
-        if editingDigest != configuration.documentDigest
-          || !Set(selection).isSubset(of: Set(configuration.choices))
-        {
-          Text("The configuration changed. Reopen Configure to use the current instruction units.")
-            .foregroundStyle(.secondary)
-        } else if configuration.choices.isEmpty {
+      if selection != nil {
+        if configuration.choices.isEmpty {
           Text("Add instruction units in this scope before configuring this destination.")
             .foregroundStyle(.secondary)
-        } else {
-          ForEach(configuration.choices, id: \.self) { reference in
-            Toggle(isOn: selectionBinding(reference)) { Text(verbatim: reference) }
-          }
-          Button("Review Selection…") {
-            guard model.scope == configuration.scope,
-              let request = configuration.updateRequest(selecting: selection)
-            else { return }
-            model.previewUpdate(title: "Configure " + destination.title, request: request)
-          }
-          .disabled(!model.canModify || selection == configuration.selected)
-          .accessibilityIdentifier("instructions.web.review." + destination.id)
         }
+        ForEach(configuration.choices, id: \.self) { reference in
+          Toggle(isOn: selectionBinding(reference)) { Text(verbatim: reference) }
+        }
+        let unavailable = selected.filter { !configuration.choices.contains($0) }
+        ForEach(unavailable, id: \.self) { reference in
+          Toggle(isOn: selectionBinding(reference)) {
+            Text("\(reference) (unavailable)")
+          }
+        }
+        Button("Save Selection in App") {
+          model.saveWebInstructionSelection(selected, in: configuration)
+          selection = nil
+        }
+        .disabled(!available || selected == saved || model.isTerminating)
+        .accessibilityIdentifier("instructions.web.save." + destination.id)
       }
-    }
-    .onChange(of: configuration.selected) { _, applied in
-      if applied == selection { selection = nil }
+      if configuration.hasNamedPrompt {
+        Button("Preview Named Prompt…") {
+          model.previewPrompt(name: destination.rawValue, in: configuration.scope)
+        }
+        .disabled(model.isApplying || model.isTerminating)
+        .accessibilityIdentifier("instructions.web.named." + destination.id)
+      }
     }
   }
 

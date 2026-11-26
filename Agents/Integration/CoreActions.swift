@@ -31,6 +31,9 @@ struct CoreActions: Sendable {
       case .mapped(let target):
         (bytes, dependencies) = try ManagedInstructionOutput.read(
           target, in: request.scope, environment: runtime)
+      case .webSelection(let references):
+        (bytes, dependencies) = try WebInstructionPreview.render(
+          references, scope: request.scope, environment: runtime)
       }
       guard let text = String(data: bytes, encoding: .utf8) else {
         throw InstructionError.invalidUTF8
