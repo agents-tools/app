@@ -83,7 +83,7 @@ extension CoreReader {
         title: display.title ?? first.skillField("name") ?? first.name,
         summary: display.summary
           ?? records.lazy.compactMap { $0.skillField("description") }.first ?? "",
-        scope: scope, source: first.source, sourceURL: display.sourceURL, iconURL: display.iconURL,
+        scope: scope, source: first.source, sourceURL: display.sourceURL, iconURL: display.iconURL, iconRevision: display.iconRevision,
         recipients: AgentID.allCases.filter(recipients.contains), installations: rows,
         occurrences: records.flatMap(\.occurrences), isResolved: true,
         targetOwner: allOwned && matchedOwners.count == 1 ? matchedOwners.first : nil)

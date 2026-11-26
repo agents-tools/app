@@ -54,10 +54,11 @@ struct SkillDetails: View {
 
 struct SkillIconView: View {
   let url: URL?
+  let revision: String?
   var size: CGFloat = 32
 
   var body: some View {
-    SkillIconContent(url: url, size: size)
+    SkillIconContent(url: url, revision: revision, size: size)
   }
 }
 
@@ -346,7 +347,7 @@ private struct SkillGalleryContent: View {
     Table(sortedTableItems, selection: $selection, sortOrder: $sortOrder) {
       TableColumn("Name", value: \.title) { item in
         HStack(spacing: 8) {
-          SkillIconView(url: item.iconURL, size: 20)
+          SkillIconView(url: item.iconURL, revision: item.iconRevision, size: 20)
           VStack(alignment: .leading, spacing: 1) {
             Text(item.title)
               .font(.body)
@@ -468,7 +469,7 @@ private struct SkillCardView: View {
   var body: some View {
     Button(action: select) {
       HStack(alignment: .top, spacing: 10) {
-        SkillIconView(url: item.iconURL, size: 32)
+        SkillIconView(url: item.iconURL, revision: item.iconRevision, size: 32)
 
         VStack(alignment: .leading, spacing: 4) {
           Text(item.title)
@@ -696,7 +697,7 @@ private struct SkillDetailsContent: View {
     Section {
       VStack(alignment: .leading, spacing: 10) {
         HStack(alignment: .top, spacing: 12) {
-          SkillIconView(url: item.iconURL, size: 40)
+          SkillIconView(url: item.iconURL, revision: item.iconRevision, size: 40)
 
           VStack(alignment: .leading, spacing: 3) {
             Text(item.title)
@@ -770,6 +771,9 @@ private struct SkillDetailsContent: View {
           .accessibilityIdentifier("skill.openOwner")
       }
 
+      if let url = item.sourceURL {
+        Button("Show Skill in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+      }
       if !trimmedSource.isEmpty {
         LabeledContent("Source") {
           Text(trimmedSource)
@@ -883,6 +887,7 @@ private struct SkillIconContent: View {
   private struct LoadKey: Equatable, Sendable {
     let url: URL?
     let maxPixelSize: Int
+    let revision: String?
   }
 
   private enum DecodedIcon: Sendable {
@@ -891,10 +896,16 @@ private struct SkillIconContent: View {
   }
 
   let url: URL?
+  let revision: String?
   let size: CGFloat
 
   @State private var renderedImage: NSImage?
-  @State private var loadedURL: URL?
+  private static let thumbnails: NSCache<NSString, NSImage> = {
+    let cache = NSCache<NSString, NSImage>()
+    cache.countLimit = 256
+    cache.totalCostLimit = 8 * 1024 * 1024
+    return cache
+  }()
   @Environment(\.displayScale) private var displayScale
   @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
@@ -938,28 +949,26 @@ private struct SkillIconContent: View {
       tileShape.strokeBorder(Color(nsColor: .separatorColor).opacity(0.65), lineWidth: 1)
     }
     .accessibilityHidden(true)
-    .task(id: LoadKey(url: url, maxPixelSize: maxPixelSize)) {
-      guard let url else {
-        renderedImage = nil
-        loadedURL = nil
+    .task(id: LoadKey(url: url, maxPixelSize: maxPixelSize, revision: revision)) {
+      renderedImage = nil
+      guard let url, let revision else { return }
+      let key = "\(maxPixelSize)|\(revision)|\(url.path)" as NSString
+      if let cached = Self.thumbnails.object(forKey: key) {
+        renderedImage = cached
         return
-      }
-      if loadedURL != url {
-        renderedImage = nil
-        loadedURL = nil
       }
       let decoded = await Self.loadBoundedIcon(from: url, maxPixelSize: maxPixelSize)
       guard !Task.isCancelled else { return }
       switch decoded {
       case .cgImage(let cgImage):
         renderedImage = NSImage(cgImage: cgImage, size: NSSize(width: size, height: size))
-        loadedURL = url
       case .svgData(let data):
         renderedImage = Self.makeBoundedSVGImage(from: data, targetPoints: size)
-        loadedURL = url
       case .none:
         renderedImage = nil
-        loadedURL = url
+      }
+      if let renderedImage {
+        Self.thumbnails.setObject(renderedImage, forKey: key, cost: maxPixelSize * maxPixelSize * 4)
       }
     }
   }
@@ -970,7 +979,7 @@ private struct SkillIconContent: View {
   ) async -> DecodedIcon? {
     let worker = Task.detached(priority: .utility) { () -> DecodedIcon? in
       guard !Task.isCancelled, url.isFileURL else { return nil }
-      guard let data = readBoundedFileData(from: url, maxBytes: maxIconFileBytes) else {
+      guard let data = SkillMetadataReader.iconData(url, maxBytes: maxIconFileBytes) else {
         return nil
       }
       guard !Task.isCancelled, !data.isEmpty else { return nil }
@@ -988,28 +997,6 @@ private struct SkillIconContent: View {
       await worker.value
     } onCancel: {
       worker.cancel()
-    }
-  }
-
-  private nonisolated static func readBoundedFileData(from url: URL, maxBytes: Int) -> Data? {
-    do {
-      let resourceValues = try url.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-      if resourceValues.isRegularFile == false {
-        return nil
-      }
-      if let fileSize = resourceValues.fileSize, fileSize > maxBytes {
-        return nil
-      }
-      let handle = try FileHandle(forReadingFrom: url)
-      defer { try? handle.close() }
-      guard let data = try handle.read(upToCount: maxBytes + 1),
-        data.count <= maxBytes
-      else {
-        return nil
-      }
-      return data
-    } catch {
-      return nil
     }
   }
 

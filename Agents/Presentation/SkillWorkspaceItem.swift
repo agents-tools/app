@@ -12,6 +12,7 @@ struct SkillWorkspaceItem: Identifiable, Sendable {
   let source: String
   let sourceURL: URL?
   let iconURL: URL?
+  var iconRevision: String? = nil
   let recipients: [AgentID]
   let installations: [InventoryItem]
   let occurrences: [OccurrenceInspection]

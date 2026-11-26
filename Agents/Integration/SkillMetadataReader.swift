@@ -9,6 +9,7 @@ struct SkillMetadataReader {
     var summary: String?
     var sourceURL: URL?
     var iconURL: URL?
+    var iconRevision: String?
   }
 
   private let metadataLimit = 16 * 1024
@@ -48,10 +49,14 @@ struct SkillMetadataReader {
     let icon = ["icon_small", "icon_large"].lazy
       .compactMap { interface?[$0]?.string }
     var iconURL: URL?
+    var iconRevision: String?
     for path in icon {
       guard let candidate = Self.iconPath(path, root: root) else { continue }
       dependencies.insert(.entry(candidate))
-      if let size = Self.fileSize(candidate), size > 0, size <= iconLimit {
+      if let file = Self.openRegularFile(candidate) {
+        close(file.descriptor)
+        guard file.size > 0, file.size <= iconLimit else { continue }
+        iconRevision = file.revision
         iconURL = candidate
         break
       }
@@ -61,7 +66,7 @@ struct SkillMetadataReader {
         ?? Self.text(frontMatter?["name"]?.string, limit: 256),
       summary: Self.text(interface?["short_description"]?.string, limit: 1024)
         ?? Self.text(frontMatter?["description"]?.string, limit: 4096),
-      sourceURL: markdownBytes == nil ? nil : markdown, iconURL: iconURL)
+      sourceURL: markdownBytes == nil ? nil : markdown, iconURL: iconURL, iconRevision: iconRevision)
   }
 
   private static func frontMatter(_ data: Data) -> Node? {
@@ -95,7 +100,7 @@ struct SkillMetadataReader {
     return formats.contains(url.pathExtension.lowercased()) ? url : nil
   }
 
-  private static func openRegularFile(_ url: URL) -> (descriptor: Int32, size: Int)? {
+  private static func openRegularFile(_ url: URL) -> (descriptor: Int32, size: Int, revision: String)? {
     // Reject links in descendants, and avoid blocking when hostile metadata names a FIFO.
     let descriptor = open(url.path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW_ANY | O_CLOEXEC)
     guard descriptor >= 0 else { return nil }
@@ -104,13 +109,17 @@ struct SkillMetadataReader {
       close(descriptor)
       return nil
     }
-    return (descriptor, Int(info.st_size))
+    let changed = info.st_ctimespec
+    return (descriptor, Int(info.st_size), "\(info.st_dev):\(info.st_ino):\(changed.tv_sec):\(changed.tv_nsec)")
   }
 
-  private static func fileSize(_ url: URL) -> Int? {
+  static func iconData(_ url: URL, maxBytes: Int) -> Data? {
     guard let file = openRegularFile(url) else { return nil }
-    close(file.descriptor)
-    return file.size
+    let handle = FileHandle(fileDescriptor: file.descriptor, closeOnDealloc: true)
+    defer { try? handle.close() }
+    guard file.size > 0, file.size <= maxBytes, let data = try? handle.read(upToCount: maxBytes + 1),
+          !data.isEmpty, data.count <= maxBytes else { return nil }
+    return data
   }
 
   private func readFile(_ url: URL, limit: Int, prefix: Bool) -> Data? {
