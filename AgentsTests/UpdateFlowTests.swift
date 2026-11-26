@@ -196,7 +196,10 @@ struct UpdateFlowTests {
   @Test func yamlEditorKeepsTheExactReviewedDocument() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     let path = try fixture.writeManifest("version: 1\n")
+    try await boundary.settle(creation: path, root: fixture.root)
     let model = await loadedModel(fixture)
     defer { _ = model.requestTermination() }
     model.editConfigurationYAML()
