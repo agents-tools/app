@@ -36,7 +36,10 @@ extension CoreActions {
           environment: environment(for: proposal.scope))
         return try packagePreview(
           .init(review, scope: proposal.scope, report: \.self), proposal: proposal)
-      case .instructionCompilation:
+      case .instructionOutputs:
+        report = try InstructionOperations.previewOutputs(
+          scope: proposal.scope.installScope, environment: environment(for: proposal.scope))
+      case .localInstructionChanges:
         let review = try InstructionOperations.previewCompilation(
           scope: proposal.scope.installScope, environment: environment(for: proposal.scope))
         return try packagePreview(
@@ -92,7 +95,11 @@ extension CoreActions {
       completion = UpdateOperations.perform(
         request, scope: proposal.scope.installScope,
         environment: environment(for: proposal.scope), bindingProvider: provider, confirm)
-    case .packageRequest, .instructionCompilation, .packageReview:
+    case .instructionOutputs:
+      return Self.operationFailure(
+        CoreError.invalidState("Use Review Local Changes before applying instruction files."),
+        scope: proposal.scope, title: proposal.title)
+    case .packageRequest, .localInstructionChanges, .packageReview:
       return Self.operationFailure(
         CoreError.invalidState("Review the package actions before applying."),
         scope: proposal.scope, title: proposal.title)

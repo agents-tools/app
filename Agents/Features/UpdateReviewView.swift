@@ -14,25 +14,31 @@ struct UpdateReviewView: View {
           PathView(url: session.proposal.scope.root, scope: session.proposal.scope)
         }
         switch session.stage {
+        case .preparing where session.isInstructionOutputPreview:
+          ProgressView("Compiling instructions…")
         case .preparing, .applying:
           ProgressView(
             session.stage == .applying ? "Preparing again and applying…" : "Preparing preview…")
           Text("Waiting for the operation, including recovery and cleanup, to finish.")
             .foregroundStyle(.secondary)
         case .review:
-          if let report = session.report {
+          if session.isInstructionOutputPreview {
+            Form {
+              builtOutputs(session)
+              if session.instructionOutputFocus == nil, !session.instructionOutputs.isEmpty,
+                !session.instructionOutputs.contains(where: { $0.fileURL == nil })
+              {
+                Text("To build app output, choose an app in a section’s Recipients picker.")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
+              Text("Use Review Local Changes under Instruction Actions to check local files.")
+                .font(.caption).foregroundStyle(.secondary)
+            }.formStyle(.grouped)
+          } else if let report = session.report {
             let showsInstructionOutputs = session.showsInstructionOutputs(
               whileEditing: model.manifestDraft)
             Form {
-              if showsInstructionOutputs {
-                Section("Built Outputs") {
-                  InstructionBuildBrowser(
-                    outputs: session.instructionOutputs, scope: session.proposal.scope,
-                    emptyMessage: session.instructionOutputFocus?.emptyMessage
-                      ?? "No instructions were built."
-                  ).id(session.id)
-                }
-              }
+              if showsInstructionOutputs { builtOutputs(session) }
               if let draft = model.manifestDraft, let proposed = draft.yaml {
                 Section("Configuration File") {
                   if let location = model.snapshot?.manifestURL { PathView(url: location, scope: draft.scope) }
@@ -109,13 +115,12 @@ struct UpdateReviewView: View {
                   }
                 }
               }
-              if session.instructionOutputFocus == nil {
-                Text("Changes to the inputs require another review before applying.")
-                  .font(.caption).foregroundStyle(.secondary)
-              }
+              Text("Changes to the inputs require another review before applying.")
+                .font(.caption).foregroundStyle(.secondary)
             }.formStyle(.grouped)
           }
-        case .stale: Text("Configuration or scope changed. Prepare a new preview before applying.")
+        case .stale:
+          Text("Configuration or scope changed. Prepare a new preview.")
         case .cancelled:
           Text(session.terminal?.message ?? "Cancelled before the operation started.")
         case .finished, .failed:
@@ -164,6 +169,16 @@ struct UpdateReviewView: View {
       }.padding(24).frame(width: 680, height: 620)
         .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
         .interactiveDismissDisabled(model.isApplying)
+    }
+  }
+
+  private func builtOutputs(_ session: UpdateSession) -> some View {
+    Section("Built Outputs") {
+      InstructionBuildBrowser(
+        outputs: session.instructionOutputs, scope: session.proposal.scope,
+        emptyMessage: session.instructionOutputFocus?.emptyMessage
+          ?? "No instructions were built. Choose recipients in an instruction declaration."
+      ).id(session.id)
     }
   }
 }

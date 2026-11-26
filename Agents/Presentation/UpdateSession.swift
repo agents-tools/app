@@ -17,7 +17,7 @@ enum InstructionOutputFocus: Sendable {
   var emptyMessage: String {
     switch self {
     case .app(let recipient):
-      "No instruction units build for \(recipient.displayName). Choose it under Recipients in an instruction declaration."
+      "No instructions for \(recipient.displayName). Choose this app in a section’s Recipients picker."
     case .local:
       "No instructions were built for this local output. Review the recipients in your instruction declarations."
     }
@@ -46,7 +46,8 @@ struct UpdateProposal: Sendable {
   enum Contents: Sendable {
     case update(UpdateRequest)
     case packageRequest(UpdateRequest, LifecycleOperationIntent)
-    case instructionCompilation(InstructionOutputFocus?)
+    case instructionOutputs(InstructionOutputFocus?)
+    case localInstructionChanges
     case packageReview(PackageUpdateReview)
   }
   let contents: Contents
@@ -61,11 +62,18 @@ struct UpdateProposal: Sendable {
     contents = intent.map { .packageRequest(request, $0) } ?? .update(request)
   }
 
-  init(compilingInstructionsIn scope: WorkspaceScope, focus: InstructionOutputFocus? = nil) {
+  init(previewingInstructionOutputsIn scope: WorkspaceScope, focus: InstructionOutputFocus? = nil) {
     id = UUID()
     self.scope = scope
     title = focus?.title ?? "Build Instructions"
-    contents = .instructionCompilation(focus)
+    contents = .instructionOutputs(focus)
+  }
+
+  init(reviewingLocalInstructionsIn scope: WorkspaceScope) {
+    id = UUID()
+    self.scope = scope
+    title = "Review Local Changes"
+    contents = .localInstructionChanges
   }
 
   init(scope: WorkspaceScope, title: String, packageReview: PackageUpdateReview) {
@@ -146,7 +154,7 @@ struct UpdateSession: Identifiable {
   }
   var closeTitle: String {
     switch stage {
-    case .review where isInstructionBuild && !offersApply: "Done"
+    case .review where !offersApply: "Done"
     case .preparing, .review, .stale, .applying: "Cancel"
     case .finished, .failed, .cancelled: "Done"
     }
@@ -154,7 +162,7 @@ struct UpdateSession: Identifiable {
   var bindingsReady: Bool { requiredBindings.allSatisfy { bindingInputs[$0] != nil } }
   var applyingCancelTitle: String {
     switch proposal.contents {
-    case .packageRequest, .instructionCompilation, .packageReview: "Cancel Operation"
+    case .packageRequest, .localInstructionChanges, .packageReview: "Cancel Operation"
     default: "Cancel Before Apply"
     }
   }
@@ -164,18 +172,22 @@ struct UpdateSession: Identifiable {
       && (report.hasChanges || packageReview?.lifecycle.hasRunnableActions == true)
   }
 
-  var isInstructionBuild: Bool {
-    if case .instructionCompilation = proposal.contents { return true }
+  var isInstructionOutputPreview: Bool {
+    if case .instructionOutputs = proposal.contents { return true }
     return false
   }
 
   var offersApply: Bool {
-    !isInstructionBuild
-      || (instructionOutputFocus == nil && report?.instructions.targets.isEmpty == false)
+    switch proposal.contents {
+    case .instructionOutputs: false
+    case .localInstructionChanges:
+      packageReview != nil && report?.instructions.targets.isEmpty == false
+    default: true
+    }
   }
 
   var instructionOutputFocus: InstructionOutputFocus? {
-    if case .instructionCompilation(let focus) = proposal.contents { return focus }
+    if case .instructionOutputs(let focus) = proposal.contents { return focus }
     return nil
   }
 
@@ -186,13 +198,13 @@ struct UpdateSession: Identifiable {
   }
 
   func showsInstructionOutputs(whileEditing draft: ManifestDraft?) -> Bool {
-    isInstructionBuild || (draft != nil && report?.instructions.outputs.isEmpty == false)
+    isInstructionOutputPreview || (draft != nil && report?.instructions.outputs.isEmpty == false)
   }
 
   func applyTitle(whileEditing draft: ManifestDraft?) -> String {
     guard let report else { return "Apply Changes" }
     if !report.hasChanges { return "Run Package Actions" }
-    if isInstructionBuild { return "Apply Local Changes" }
+    if case .localInstructionChanges = proposal.contents { return "Apply Local Changes" }
     guard draft?.kind == .component, draft?.component.kind == .instructions,
       !report.skills.contains(where: \.changed), !report.components.contains(where: \.changed),
       report.marketplaceGraphChange == nil, report.marketplaceChanges?.isEmpty != false

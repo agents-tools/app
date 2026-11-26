@@ -46,7 +46,7 @@ Restore Package opens one archive and asks Core to inspect it. Original project 
 
 In **Instructions & Rules**, edit an instruction declaration and open an ordered section. The **Recipients** picker includes the local clients available in that scope, ChatGPT App and Gemini App. **Use Defaults** follows the configured local recipients. Changing a selection starts with those recipients already checked. Clear the local choices for an app-only section.
 
-**Review Changes** shows the compiled outputs before saving the declaration or applying local changes. Use **Build Instructions** to preview outputs from the saved declaration. Select an output and choose **Copy Full Text**. Local output previews show the content for the intended path even when the file is missing. ChatGPT App and Gemini App outputs are ready to paste. **Apply Local Changes** is a separate confirmation for the local files. Named prompts keep their own preview and copy action.
+**Review Changes** shows compiled outputs for pending declaration edits. **Build Instructions** previews outputs from the saved declaration, and **Preview Output** in **Client Output** opens a specific destination. Select an output and choose **Copy Full Text**. Local previews show the candidate text even when the file is missing. To evaluate changes to local files, choose **Instruction Actions → Review Local Changes**, then confirm with **Apply Local Changes**. Named prompts keep their own preview and copy action.
 
 ## Skill sources
 

@@ -62,13 +62,18 @@ struct InstructionsView: View {
     .toolbar {
       ToolbarItem {
         Button("Build Instructions…") {
-          model.previewUpdate(UpdateProposal(compilingInstructionsIn: displayedScope))
+          model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: displayedScope))
         }
         .disabled(!canBuildDisplayedScope)
         .accessibilityIdentifier("instructions.build")
       }
       ToolbarItem {
         Menu("Instruction Actions", systemImage: "ellipsis.circle") {
+          Button("Review Local Changes…") {
+            model.previewUpdate(UpdateProposal(reviewingLocalInstructionsIn: displayedScope))
+          }
+          .disabled(!canBuildDisplayedScope)
+          .accessibilityIdentifier("instructions.reviewLocalChanges")
           Button("Add Instructions…", action: addInstructions).disabled(!model.canModify)
           if snapshot.scope.kind == .project {
             Button("New Local Instructions…") { model.beginCreation(.instructions) }
@@ -352,7 +357,7 @@ struct InstructionsView: View {
   }
 
   private func previewOutput(_ focus: InstructionOutputFocus, in scope: WorkspaceScope) {
-    model.previewUpdate(UpdateProposal(compilingInstructionsIn: scope, focus: focus))
+    model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: scope, focus: focus))
   }
 
   private func namedPrompts(_ mapping: MappingItem) -> some View {
