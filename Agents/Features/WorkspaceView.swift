@@ -396,7 +396,7 @@ struct OverviewView: View {
         if model.clientFilter == nil, !snapshot.isEmpty || !snapshot.inspection.deployments.isEmpty
           || !snapshot.inspection.resources.isEmpty
         {
-          Button("Show Managed State") { showingManagedState = true }
+          Button("Show Installation Records") { showingManagedState = true }
             .accessibilityIdentifier("overview.managedState")
         }
       }
@@ -406,17 +406,16 @@ struct OverviewView: View {
   }
 
   private var managedState: some View {
-    List {
-      Section("Managed State") {
+    VStack(spacing: 0) {
+      HStack {
         Button("Back to Overview", systemImage: "chevron.backward") { showingManagedState = false }
           .keyboardShortcut(.cancelAction)
           .accessibilityIdentifier("overview.backFromManagedState")
-        LabeledContent("Scope") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }
-      }
+        Spacer()
+      }.padding(8)
+      Divider()
       ManagedStateView(model: model, snapshot: snapshot)
     }
-    .listStyle(.inset)
-    .buttonStyle(.borderless)
   }
 
   private func categoryLink(_ page: WorkspacePage, count: Int) -> some View {
