@@ -73,17 +73,21 @@ enum DeclarationLabels {
   }
 }
 
+extension LockedSection {
+  var qualifiedName: String { source + ":" + name }
+}
+
 extension MappingItem {
   var copyText: String {
     var lines = [title, "Location: " + scope.root.path, status]
     for target in targets {
       lines += ["", "Target: " + target.id, "Agents: " + target.agents]
       if let imported = target.importedFile { lines.append("Imports: " + imported) }
-      lines += target.sections.map { "Section: " + $0 }
+      lines += target.sections.map { "Section: " + $0.qualifiedName }
     }
-    if !unplaced.isEmpty { lines += ["", "Unplaced Sections:"] + unplaced }
+    if !unplaced.isEmpty { lines += ["", "Unplaced Sections:"] + unplaced.map(\.qualifiedName) }
     for name in prompts.keys.sorted() {
-      lines += ["", "Prompt: " + name] + (prompts[name] ?? []).map { "Section: " + $0 }
+      lines += ["", "Prompt: " + name] + (prompts[name] ?? []).map { "Section: " + $0.qualifiedName }
     }
     return lines.joined(separator: "\n")
   }

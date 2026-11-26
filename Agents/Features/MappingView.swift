@@ -43,21 +43,21 @@ struct MappingView: View {
                       LabeledContent("Imports", value: imported)
                     }
                     ForEach(Array(target.sections.enumerated()), id: \.offset) { _, section in
-                      Text(section)
+                      Text(section.qualifiedName)
                     }
                   }
                 }
                 if !mapping.unplaced.isEmpty {
                   DisclosureGroup("Unplaced Sections") {
                     ForEach(Array(mapping.unplaced.enumerated()), id: \.offset) { _, section in
-                      Text(section)
+                      Text(section.qualifiedName)
                     }
                   }
                 }
                 ForEach(mapping.prompts.keys.sorted(), id: \.self) { name in
                   DisclosureGroup("Prompt · " + name) {
                     ForEach(Array((mapping.prompts[name] ?? []).enumerated()), id: \.offset) {
-                      _, section in Text(section)
+                      _, section in Text(section.qualifiedName)
                     }
                   }
                 }

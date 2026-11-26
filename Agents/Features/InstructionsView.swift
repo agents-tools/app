@@ -1,3 +1,4 @@
+import AgentsCore
 import AgentsUpdates
 import AppKit
 import SwiftUI
@@ -123,7 +124,7 @@ struct InstructionsView: View {
                   .accessibilityLabel("Preview " + name)
               }
               if let sections = mapping.prompts[name], !sections.isEmpty {
-                Text(sections.joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
+                Text(sections.map(\.name).joined(separator: " · ")).font(.callout).foregroundStyle(.secondary)
               }
             }
           }
@@ -162,13 +163,13 @@ struct InstructionsView: View {
       }
     }
   }
-  private func orderedSections(_ sections: [String]) -> some View {
-    ForEach(Array(sections.enumerated()), id: \.offset) { index, name in
+  private func orderedSections(_ sections: [LockedSection]) -> some View {
+    ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
       HStack(alignment: .firstTextBaseline, spacing: 12) {
         Text(index + 1, format: .number)
           .monospacedDigit().foregroundStyle(.secondary)
           .frame(minWidth: 24, alignment: .trailing)
-        Text(name)
+        Text(section.name).help(section.source).accessibilityHint(section.source)
       }.accessibilityElement(children: .combine)
     }
   }

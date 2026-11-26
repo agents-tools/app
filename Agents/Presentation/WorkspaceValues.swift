@@ -95,14 +95,14 @@ struct MappingItem: Identifiable, Sendable {
   let scope: WorkspaceScope
   let status: String
   let targets: [MappingTarget]
-  let unplaced: [String]
-  let prompts: [String: [String]]
+  let unplaced: [LockedSection]
+  let prompts: [String: [LockedSection]]
 }
 
 struct MappingTarget: Identifiable, Sendable {
   let id: String
   let agents: String
-  let sections: [String]
+  let sections: [LockedSection]
   let importedFile: String?
 }
 

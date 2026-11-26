@@ -253,7 +253,7 @@ struct CoreReader: Sendable {
       status = "Unavailable: " + rootIssue.message
     } else {
       switch value.status {
-      case .locked: status = "Locked mapping; disk status is reported in Diagnostics"
+      case .locked: status = "From installation lock"
       case .missingLock: status = "No resolved instruction mapping"
       case .pendingRecovery: status = "Recovery pending"
       case .unavailable(let reason): status = "Unavailable: " + reason
@@ -267,8 +267,8 @@ struct CoreReader: Sendable {
       targets: value.targets.map {
         MappingTarget(
           id: $0.target, agents: $0.agents.map(\.displayName).joined(separator: ", "),
-          sections: $0.sections.map { $0.source + ":" + $0.name }, importedFile: $0.import)
-      }, unplaced: value.unplaced.map { $0.source + ":" + $0.name },
-      prompts: value.prompts.mapValues { $0.map { $0.source + ":" + $0.name } })
+          sections: $0.sections, importedFile: $0.import)
+      }, unplaced: value.unplaced,
+      prompts: value.prompts)
   }
 }
