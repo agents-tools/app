@@ -45,6 +45,7 @@ struct UpdateReviewView: View {
                   }
                 }
               }
+              TargetAssignmentChanges(report: report)
               UpdateReportSection(report: report, scope: session.proposal.scope)
               if let review = session.packageReview {
                 PackageActionPreview(inspection: review.lifecycle).id(session.id)
@@ -137,6 +138,61 @@ struct UpdateReviewView: View {
   }
 }
 
+private struct TargetAssignmentChanges: View {
+  let report: CombinedUpdateReport
+
+  private struct Change: Hashable {
+    let item: String
+    let source: String
+    let action: String
+  }
+
+  var body: some View {
+    let changes = assignments
+    if !changes.isEmpty {
+      Section("Target Assignment Changes") {
+        ForEach(AgentID.allCases, id: \.self) { client in
+          if let items = changes[client] {
+            VStack(alignment: .leading, spacing: 4) {
+              Text(client.displayName).font(.headline)
+              ForEach(Array(items.enumerated()), id: \.offset) { _, change in
+                LabeledContent(change.item, value: change.action)
+                  .help(change.source)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private var assignments: [AgentID: [Change]] {
+    var result: [AgentID: [Change]] = [:]
+    for skill in report.skills {
+      for member in skill.membership where member.before != member.after {
+        let action: String
+        switch (member.before, member.after) {
+        case (.absent, .installed): action = "Add"
+        case (.installed, .absent): action = "Remove"
+        case (_, .installed(let mode)): action = "Change to " + mode.rawValue
+        default: continue
+        }
+        result[member.agent, default: []].append(
+          Change(item: skill.skill, source: skill.sourceIdentity, action: action))
+      }
+    }
+    for target in report.instructions.targets where target.agentsChanged {
+      let old = Set(target.beforeAgents ?? [])
+      let new = Set(target.afterAgents)
+      for client in old.symmetricDifference(new) {
+        result[client, default: []].append(
+          Change(item: target.target, source: target.url.path, action: new.contains(client) ? "Add" : "Remove"))
+      }
+    }
+    return result
+  }
+}
+
 private struct UpdateReportSection: View {
   let report: CombinedUpdateReport
   let scope: WorkspaceScope
@@ -153,7 +209,7 @@ private struct UpdateReportSection: View {
           }
         }
       }
-      ForEach(Array(report.skills.enumerated()), id: \.offset) { _, skill in
+      ForEach(Array(report.skills.filter(\.changed).enumerated()), id: \.offset) { _, skill in
         DetailsGroup("Skill · " + skill.skill) {
           LabeledContent("Status", value: skill.changed ? "Changed" : "Unchanged")
           LabeledContent("Source") { CompactText(text: skill.sourceIdentity) }
@@ -326,69 +382,67 @@ struct ChangesView: View {
   @State private var selection: Set<ComponentSelection> = []
   @State private var showingPatches = false
   @State private var showingHistory = false
+  private struct Row: Identifiable {
+    let component: ComponentInspection
+    var id: String { component.record }
+  }
+
   var body: some View {
-    Form {
-      Picker("View", selection: $showingHistory) {
-        Text("Changes").tag(false)
-        Text("History").tag(true)
-      }.pickerStyle(.segmented).labelsHidden()
-      if showingHistory {
-        Section("Operation History") {
-          let records = model.updateRecords.filter { $0.scope == model.scope }
-          if records.isEmpty { Text("No operations this session.").foregroundStyle(.secondary) }
-          ForEach(records.reversed()) { record in
-            LabeledContent(record.title, value: record.terminal.message)
-          }
+    VStack(spacing: 0) {
+      HStack {
+        Picker("View", selection: $showingHistory) {
+          Text("Changes").tag(false)
+          Text("History").tag(true)
         }
-      } else {
-        Section("Configuration") {
-          Button("Edit Configuration…") { model.beginDraft(.defaults) }
-          Button("Preview Full Update…") {
-            model.previewUpdate(title: "Update Configuration", intent: .update)
-          }
-          Button("Preview Restore…") {
-            model.previewUpdate(
-              title: "Restore Managed Outputs", request: .init(operation: .restore))
-          }
-        }.disabled(!model.canModify)
-        Section("Local Edits") {
+        .pickerStyle(.segmented).labelsHidden().fixedSize()
+        Spacer()
+        if !showingHistory {
+          Menu("Configuration") {
+            Button("Edit Configuration…") { model.beginDraft(.defaults) }
+            Button("Preview Full Update…") {
+              model.previewUpdate(title: "Update Configuration", intent: .update)
+            }
+            Button("Preview Restore…") {
+              model.previewUpdate(title: "Restore Managed Outputs", request: .init(operation: .restore))
+            }
+          }.fixedSize().disabled(!model.canModify)
           Button("Export Patches…") { showingPatches = true }
         }
-        Section("Update or Remove Components") {
-          if model.availableComponentSelection.isEmpty {
-            Text("No installed components.").foregroundStyle(.secondary)
+      }
+      .padding()
+      Divider()
+      if showingHistory {
+        let records = model.updateRecords.filter { $0.scope == model.scope }
+        if records.isEmpty {
+          ContentUnavailableView("No Operations This Session", systemImage: "clock")
+        } else {
+          List(records.reversed()) { record in
+            LabeledContent(record.title, value: record.terminal.message)
           }
-          ForEach(model.availableComponentSelection, id: \.record) { component in
-            Toggle(
-              isOn: Binding(
-                get: { selection.contains(component.selection) },
-                set: {
-                  if $0 {
-                    selection.insert(component.selection)
-                  } else {
-                    selection.remove(component.selection)
-                  }
-                })
-            ) {
-              VStack(alignment: .leading) {
-                Text(DeclarationLabels.kind(component.kind.rawValue) + " · " + component.name)
-                Text(component.source).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                  .truncationMode(.middle).help(component.source)
-              }
-            }.toggleStyle(.checkbox)
-          }
-          Button("Preview Update (\(selection.count))…") {
-            model.previewUpdate(
-              title: "Update Selected Components", request: .init(selections: Array(selection)))
-          }.disabled(selection.isEmpty || !model.canModify)
-          Button("Preview Removal (\(selection.count))…") {
+          .listStyle(.inset)
+        }
+      } else if model.availableComponentSelection.isEmpty {
+        ContentUnavailableView("No Installed Components", systemImage: "square.stack.3d.up")
+      } else {
+        componentTable
+        Divider()
+        HStack {
+          Text("\(selection.count) selected").foregroundStyle(.secondary)
+          Spacer()
+          Button("Preview Removal…") {
             model.previewUpdate(
               title: "Remove Selected Components",
               request: .init(operation: .remove, selections: Array(selection)))
-          }.disabled(selection.isEmpty || !model.canModify)
+          }
+          Button("Preview Update…") {
+            model.previewUpdate(
+              title: "Update Selected Components", request: .init(selections: Array(selection)))
+          }
         }
+        .disabled(selection.isEmpty || !model.canModify)
+        .padding()
       }
-    }.formStyle(.grouped)
+    }
       .sheet(isPresented: $showingPatches) {
         ProducerPatchSheet(
           scope: model.scope.installScope, environment: model.actions.environment(for: model.scope)
@@ -398,6 +452,27 @@ struct ChangesView: View {
       .onChange(of: model.scope.id) { selection.removeAll() }
       .onChange(of: model.snapshot?.inspection.generation) { selection.removeAll() }
   }
+
+  private var componentTable: some View {
+    Table(model.availableComponentSelection.map(Row.init)) {
+      TableColumn("Component") { row in
+        Toggle(row.component.name, isOn: Binding(
+          get: { selection.contains(row.component.selection) },
+          set: { included in
+            if included { selection.insert(row.component.selection) }
+            else { selection.remove(row.component.selection) }
+          }))
+          .toggleStyle(.checkbox)
+      }
+      TableColumn("Kind") { row in Text(DeclarationLabels.kind(row.component.kind.rawValue)) }
+      TableColumn("Clients") { row in
+        Text(row.component.recipients.map(\.displayName).joined(separator: ", ")).lineLimit(1)
+      }
+      TableColumn("Source") { row in CompactText(text: row.component.source) }
+    }
+    .accessibilityIdentifier("changes.components")
+  }
+
 }
 
 struct SymbolicChangeView: View {
