@@ -198,7 +198,7 @@ struct WorkspaceView: View {
     case (.components, .loaded), (.sources, .loaded):
       DeclarationListView(model: model)
     case (.instructions, .loaded(let snapshot)):
-      InstructionsView(model: model, snapshot: snapshot)
+      InstructionsView(model: model, snapshot: snapshot).id(snapshot.scope.id)
     case (.changes, .loaded):
       ChangesView(model: model)
     }

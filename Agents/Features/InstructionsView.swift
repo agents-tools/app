@@ -32,7 +32,7 @@ struct InstructionsView: View {
               Button("Generate “\(name)”…") { model.previewPrompt(name: name, in: snapshot.scope) }
             }
           } label: {
-            Label(item.container, systemImage: "doc.text")
+            Label(item.title, systemImage: "doc.text")
           }
         }
       }
@@ -74,7 +74,7 @@ struct InstructionsView: View {
         }
       }
       if let mapping = snapshot.mappings.first(where: { $0.id == mappingID })
-        ?? snapshot.mappings.first
+        ?? snapshot.mappings.first(where: { $0.scope == snapshot.scope }) ?? snapshot.mappings.first
       {
         Section("Instruction Output") {
           if snapshot.mappings.count > 1 {
