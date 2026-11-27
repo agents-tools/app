@@ -536,18 +536,21 @@ struct UpdateFlowTests {
   @Test func userInstructionDraftPreviewsAppliesAndVerifiesAntigravityFiles() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     let source = fixture.root.appendingPathComponent("source/instructions")
     try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
     for name in ["shared", "antigravity-only"] {
       try Data("---\ndescription: Fixture instruction\n---\n# \(name)\nRule body.\n".utf8)
         .write(to: source.appendingPathComponent(name + ".md"))
     }
-    try fixture.writeManifest(
+    let manifest = try fixture.writeManifest(
       """
       version: 1
       defaultAgents: []
       sources: {fixture: {path: "\(source.deletingLastPathComponent().path)"}}
       """, user: true)
+    try await boundary.settle(creation: manifest, root: fixture.root)
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),
       processEnvironment: fixture.environment)
@@ -555,6 +558,7 @@ struct UpdateFlowTests {
     model.refresh()
     try await idle(model)
     model.beginDraft(.component)
+    try #require(model.manifestDraft?.scope.kind == .user)
     model.manifestDraft?.component.kind = .instructions
     model.manifestDraft?.component.agents = [.codex, .geminiCLI, .antigravity]
     model.manifestDraft?.component.instructions.sectionReferences = [
