@@ -280,6 +280,8 @@ struct UpdateFlowTests {
   @Test func skillInstallModeReviewKeepsInheritedTargetsAndOpensTheAuthoredSkill() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     let producer = fixture.project.appendingPathComponent("toolkit")
     let folder = producer.appendingPathComponent("collection/skills/review")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -299,6 +301,7 @@ struct UpdateFlowTests {
           agents: [claude-code, codex]
           mode: copy
       """)
+    try await boundary.settle(creation: declarationURL, root: fixture.root)
     let model = await loadedModel(fixture)
     defer { _ = model.requestTermination() }
 
