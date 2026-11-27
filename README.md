@@ -14,6 +14,6 @@ Backups creates one portable package per selected client for Codex, Claude Code 
 
 Runtime inputs requested by a preview are supplied once for that apply and are not stored in preferences. Optional on-device assistance on macOS 26 or later explains a selected managed skill, translates its description, summarizes an update or explains configuration changes. Actions appear only when enabled and the system model is available. Review the minimal input before generating auxiliary text; generated text never changes configuration. There is no cloud fallback.
 
-Open `Agents.xcodeproj` in Xcode 27 and use the `AgentsApp` scheme. The project has app, unit-test and UI-test targets, uses Swift 6 and pins [Agents Core](https://github.com/agents-tools/core) to a full commit revision. Package resolution requires that revision to be available. Local Debug builds use ad hoc signing; release signing and distribution are not configured.
+Open `Agents.xcodeproj` in Xcode 27 and use the `AgentsApp` scheme. The project has app, unit-test and UI-test targets, uses Swift 6 and pins [Agents Core](https://github.com/agents-tools/core) to a full commit revision. Package resolution requires that revision to be available. Local Debug builds use ad hoc signing. See the [release procedure](Documentation/Release.md) for signed and notarized GitHub Releases.
 
 See [application behavior](Documentation/Application.md) for data ownership, action boundaries and operation lifetime.

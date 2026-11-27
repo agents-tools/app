@@ -1,0 +1,106 @@
+name: Release
+run-name: Agents App release ${{ inputs.tag }} (${{ inputs.source_commit }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Approved published tag, such as v0.1.0
+        required: true
+        type: string
+      source_commit:
+        description: Full approved commit SHA on main
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  SOURCE_COMMIT: ${{ inputs.source_commit }}
+
+jobs:
+  verify:
+    name: Verify trusted candidate source
+    if: github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout main dispatch commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify approved tag and commit
+        run: Scripts/verify-release-source.sh
+
+  release:
+    name: Build and publish notarized release
+    needs: verify
+    if: github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    runs-on: xcode-27
+    timeout-minutes: 120
+    environment: production
+    permissions:
+      contents: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Checkout verified source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source again before building
+        run: Scripts/verify-release-source.sh
+      - name: Archive universal application
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild archive \
+            -project Agents.xcodeproj -scheme AgentsApp -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/Agents App.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO 'ARCHS=arm64 x86_64'
+      - name: Sign, notarize, and verify distribution ZIP
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          SIGNING_IDENTITY: ${{ vars.DEVELOPER_ID_SIGNING_IDENTITY }}
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          API_KEY_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: Scripts/package-release.sh "$RUNNER_TEMP/Agents App.xcarchive" "$RUNNER_TEMP/distribution"
+      - name: Publish and verify immutable GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          Scripts/verify-release-source.sh
+          zip="Agents-App-${RELEASE_TAG#v}-universal.zip"
+          distribution="$RUNNER_TEMP/distribution"
+          gh release create "$RELEASE_TAG" "$distribution/$zip" "$distribution/$zip.sha256" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes \
+            --title "Agents App ${RELEASE_TAG#v}"
+          Scripts/verify-release-source.sh
+          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isImmutable,isDraft \
+            | jq -e '.isImmutable and (.isDraft | not)'
+          mkdir "$RUNNER_TEMP/public-release"
+          cd "$RUNNER_TEMP/public-release"
+          for asset in "$zip" "$zip.sha256"; do
+            curl --fail --location --silent --show-error --retry 2 --max-time 120 \
+              --output "$asset" "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$asset"
+            cmp "$asset" "$distribution/$asset"
+          done
+          shasum -a 256 -c "$zip.sha256"
