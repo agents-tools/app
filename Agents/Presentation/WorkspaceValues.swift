@@ -13,7 +13,7 @@ struct WorkspaceScope: Hashable, Codable, Sendable, Identifiable {
 }
 
 enum WorkspacePage: String, CaseIterable, Identifiable {
-  case overview, skills, instructions, mcp, other, packages, sources, changes, backups, diagnostics
+  case overview, skills, instructions, mcp, other, packages, sources, installedComponents, backups, diagnostics
   case components
 
   var id: Self { self }
@@ -26,7 +26,7 @@ enum WorkspacePage: String, CaseIterable, Identifiable {
     case .other: "Other Configuration"
     case .packages: "Packages"
     case .sources: "Sources"
-    case .changes: "Changes"
+    case .installedComponents: "Components"
     case .diagnostics: "Diagnostics"
     case .backups: "Backups"
     case .components: "Declaration"
@@ -41,7 +41,7 @@ enum WorkspacePage: String, CaseIterable, Identifiable {
     case .other: "slider.horizontal.3"
     case .packages: "shippingbox"
     case .sources: "externaldrive"
-    case .changes: "arrow.triangle.2.circlepath"
+    case .installedComponents: "square.stack.3d.up"
     case .diagnostics: "stethoscope"
     case .backups: "archivebox"
     case .components: "doc.text.magnifyingglass"

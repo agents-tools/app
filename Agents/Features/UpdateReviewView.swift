@@ -422,11 +422,10 @@ struct InstructionFileReview: View {
   }
 }
 
-struct ChangesView: View {
+struct InstalledComponentsView: View {
   @Bindable var model: AppModel
   @State private var selection: Set<ComponentSelection> = []
   @State private var showingPatches = false
-  @State private var showingHistory = false
   private struct Row: Identifiable {
     let component: ComponentInspection
     var id: String { component.record }
@@ -434,39 +433,7 @@ struct ChangesView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
-        Picker("View", selection: $showingHistory) {
-          Text("Changes").tag(false)
-          Text("History").tag(true)
-        }
-        .pickerStyle(.segmented).labelsHidden().fixedSize()
-        Spacer()
-        if !showingHistory {
-          Menu("Configuration") {
-            Button("Configure Default Clients…") { model.beginDraft(.defaults) }
-            Button("Preview Full Update…") {
-              model.previewUpdate(title: "Update Configuration", intent: .update)
-            }
-            Button("Preview Restore…") {
-              model.previewUpdate(title: "Restore Managed Outputs", request: .init(operation: .restore))
-            }
-          }.fixedSize().disabled(!model.canModify)
-          Button("Export Patches…") { showingPatches = true }
-        }
-      }
-      .padding()
-      Divider()
-      if showingHistory {
-        let records = model.updateRecords.filter { $0.scope == model.scope }
-        if records.isEmpty {
-          ContentUnavailableView("No Operations This Session", systemImage: "clock")
-        } else {
-          List(records.reversed()) { record in
-            LabeledContent(record.title, value: record.terminal.message)
-          }
-          .listStyle(.inset)
-        }
-      } else if model.availableComponentSelection.isEmpty {
+      if model.availableComponentSelection.isEmpty {
         ContentUnavailableView("No Installed Components", systemImage: "square.stack.3d.up")
       } else {
         componentTable
@@ -488,14 +455,31 @@ struct ChangesView: View {
         .padding()
       }
     }
-      .sheet(isPresented: $showingPatches) {
-        ProducerPatchSheet(
-          scope: model.scope.installScope, environment: model.actions.environment(for: model.scope)
-        )
-        .id(model.scope.id)
+    .toolbar {
+      ToolbarItem {
+        Menu("Configuration", systemImage: "slider.horizontal.3") {
+          Button("Configure Default Clients…") { model.beginDraft(.defaults) }
+          Button("Preview Full Update…") {
+            model.previewUpdate(title: "Update Configuration", intent: .update)
+          }
+          Button("Preview Restore…") {
+            model.previewUpdate(title: "Restore Managed Outputs", request: .init(operation: .restore))
+          }
+        }
+        .disabled(!model.canModify)
       }
-      .onChange(of: model.scope.id) { selection.removeAll() }
-      .onChange(of: model.snapshot?.inspection.generation) { selection.removeAll() }
+      ToolbarItem {
+        Button("Export Patches…") { showingPatches = true }
+      }
+    }
+    .sheet(isPresented: $showingPatches) {
+      ProducerPatchSheet(
+        scope: model.scope.installScope, environment: model.actions.environment(for: model.scope)
+      )
+      .id(model.scope.id)
+    }
+    .onChange(of: model.scope.id) { selection.removeAll() }
+    .onChange(of: model.snapshot?.inspection.generation) { selection.removeAll() }
   }
 
   private var componentTable: some View {
@@ -515,7 +499,7 @@ struct ChangesView: View {
       }
       TableColumn("Source") { row in CompactText(text: row.component.source) }
     }
-    .accessibilityIdentifier("changes.components")
+    .accessibilityIdentifier("installedComponents.table")
   }
 
 }

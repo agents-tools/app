@@ -203,62 +203,54 @@ private struct SkillGalleryContent: View {
   }
 
   private var itemCountSummary: String {
+    let unit = items.count == 1 ? "skill" : "skills"
     if trimmedSearch.isEmpty {
-      return items.count == 1 ? "1 skill" : "\(items.count) skills"
+      return "\(items.count) \(unit)"
     }
-    return "\(filteredItems.count) of \(items.count)"
+    return "\(filteredItems.count) of \(items.count) \(unit)"
+  }
+
+  private var navigationSubtitle: String {
+    guard !scope.title.isEmpty else { return itemCountSummary }
+    return "\(scope.title) · \(itemCountSummary)"
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      headerBar
-      Divider()
-      contentView
-    }
-    .background(Color(nsColor: .windowBackgroundColor))
-    .onAppear {
-      reconcileSelection(validIDs: visibleItemIDs)
-    }
-    .onChange(of: visibleItemIDs) { _, newIDs in
-      reconcileSelection(validIDs: newIDs)
-    }
-    .onChange(of: selection) { _, newSelection in
-      guard let newSelection else { return }
-      if !visibleItemIDs.contains(newSelection) {
-        selection = nil
+    contentView
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background(Color(nsColor: .windowBackgroundColor))
+      .navigationSubtitle(navigationSubtitle)
+      .searchable(
+        text: $searchText,
+        placement: .toolbar,
+        prompt: "Filter skills"
+      )
+      .toolbar {
+        ToolbarItem(placement: .automatic) {
+          Picker("Display Mode", selection: $displayMode) {
+            Label("Gallery", systemImage: "square.grid.2x2")
+              .tag(DisplayMode.gallery)
+            Label("Table", systemImage: "list.bullet")
+              .tag(DisplayMode.table)
+          }
+          .pickerStyle(.segmented)
+          .labelsHidden()
+          .help("Switch between Gallery and Table view")
+          .accessibilityLabel("Display Mode")
+        }
       }
-    }
-  }
-
-  private var headerBar: some View {
-    HStack(spacing: 12) {
-      HStack(alignment: .firstTextBaseline, spacing: 8) {
-        Text(itemCountSummary)
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-          .monospacedDigit()
-          .lineLimit(1)
+      .onAppear {
+        reconcileSelection(validIDs: visibleItemIDs)
       }
-
-      Spacer(minLength: 8)
-
-      NativeSearchField(text: $searchText, placeholder: "Filter skills")
-        .frame(minWidth: 150, idealWidth: 200, maxWidth: 240)
-        .fixedSize(horizontal: false, vertical: true)
-
-      Picker("Layout", selection: $displayMode) {
-        Label("Gallery", systemImage: "square.grid.2x2")
-          .tag(DisplayMode.gallery)
-        Label("Table", systemImage: "list.bullet")
-          .tag(DisplayMode.table)
+      .onChange(of: visibleItemIDs) { _, newIDs in
+        reconcileSelection(validIDs: newIDs)
       }
-      .pickerStyle(.segmented)
-      .labelsHidden()
-      .fixedSize()
-      .accessibilityLabel("Layout")
-    }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 8)
+      .onChange(of: selection) { _, newSelection in
+        guard let newSelection else { return }
+        if !visibleItemIDs.contains(newSelection) {
+          selection = nil
+        }
+      }
   }
 
   @ViewBuilder
@@ -564,62 +556,6 @@ private struct SkillCardButtonStyle: ButtonStyle {
             .fill(Color.primary.opacity(0.06))
         }
       }
-  }
-}
-
-private struct NativeSearchField: NSViewRepresentable {
-  @Binding var text: String
-  let placeholder: String
-
-  func makeCoordinator() -> Coordinator {
-    Coordinator(text: $text)
-  }
-
-  func makeNSView(context: Context) -> NSSearchField {
-    let field = NSSearchField(frame: .zero)
-    field.placeholderString = placeholder
-    field.sendsSearchStringImmediately = true
-    field.sendsWholeSearchString = false
-    field.controlSize = .regular
-    field.delegate = context.coordinator
-    field.target = context.coordinator
-    field.action = #selector(Coordinator.searchFieldAction(_:))
-    field.setAccessibilityIdentifier("skills.search")
-    return field
-  }
-
-  func updateNSView(_ nsView: NSSearchField, context: Context) {
-    context.coordinator.text = $text
-    if nsView.stringValue != text {
-      nsView.stringValue = text
-    }
-    if nsView.placeholderString != placeholder {
-      nsView.placeholderString = placeholder
-    }
-  }
-
-  @MainActor
-  final class Coordinator: NSObject, NSSearchFieldDelegate {
-    var text: Binding<String>
-
-    init(text: Binding<String>) {
-      self.text = text
-    }
-
-    func controlTextDidChange(_ obj: Notification) {
-      guard let field = obj.object as? NSSearchField else { return }
-      sync(field.stringValue)
-    }
-
-    @objc func searchFieldAction(_ sender: NSSearchField) {
-      sync(sender.stringValue)
-    }
-
-    private func sync(_ newValue: String) {
-      if text.wrappedValue != newValue {
-        text.wrappedValue = newValue
-      }
-    }
   }
 }
 

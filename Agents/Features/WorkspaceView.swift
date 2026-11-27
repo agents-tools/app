@@ -36,7 +36,7 @@ struct WorkspaceView: View {
         }
         Section("Distribution & Maintenance") {
           ForEach(
-            [WorkspacePage.packages, .sources, .changes, .backups]
+            [WorkspacePage.packages, .sources, .installedComponents, .backups]
           ) { page in pageRow(page) }
           if model.page == .diagnostics { pageRow(.diagnostics) }
         }
@@ -242,8 +242,8 @@ struct WorkspaceView: View {
         .id(snapshot.scope.id)
     case (.other, .loaded(let snapshot)):
       NativeCapabilityView(model: model, snapshot: snapshot, kind: nil).id(snapshot.scope.id)
-    case (.changes, .loaded):
-      ChangesView(model: model)
+    case (.installedComponents, .loaded):
+      InstalledComponentsView(model: model)
     }
   }
 

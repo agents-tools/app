@@ -121,7 +121,7 @@ struct DiagnosticsView: View {
               Button("Open Packages") { model.page = .packages }
             }
             if hasChanges {
-              Button("Review Changes") { model.page = .changes }
+              Button("Manage Components") { model.page = .installedComponents }
             }
             if hasDeclaration {
               Button("Show Declaration") { model.page = .components }
