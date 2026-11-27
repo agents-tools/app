@@ -1,6 +1,7 @@
 import AgentsCore
 import AgentsUpdates
 import AppKit
+import QuickLook
 import SwiftUI
 
 struct InstructionsView: View {
@@ -11,6 +12,7 @@ struct InstructionsView: View {
 
   @State private var presentation: Presentation = .units
   @State private var mappingID: String?
+  @State private var installedFile: URL?
 
   private var mapping: MappingItem? {
     snapshot.mappings.first { $0.id == mappingID }
@@ -58,7 +60,11 @@ struct InstructionsView: View {
     }
     .formStyle(.grouped)
     .textSelection(.enabled)
-    .onChange(of: snapshot.scope) { mappingID = nil }
+    .quickLookPreview($installedFile)
+    .onChange(of: snapshot.scope) {
+      mappingID = nil
+      installedFile = nil
+    }
     .toolbar {
       ToolbarItem {
         Button("Build Instructions…", systemImage: "hammer") {
@@ -250,11 +256,11 @@ struct InstructionsView: View {
           {
             Text("No instructions selected").foregroundStyle(.secondary)
           } else {
-            Button(model.hasBuiltInstructions(in: scope) ? "View Built Instructions…" : "Preview Instructions…") {
+            Button(model.hasBuiltInstructions(in: scope) ? "View Built Instructions…" : "Build Instructions…") {
               previewOutput(.app(recipient), in: scope)
             }
             .disabled(!canBuildDisplayedScope)
-            .accessibilityLabel("Preview " + recipient.displayName + " output")
+            .accessibilityLabel((model.hasBuiltInstructions(in: scope) ? "View built " : "Build ") + recipient.displayName + " instructions")
             .accessibilityIdentifier("instructions.output.preview." + recipient.rawValue)
           }
         }
@@ -304,7 +310,7 @@ struct InstructionsView: View {
           Text("No mapped instruction files.").foregroundStyle(.secondary)
         }
         if model.clientFilter?.supportsInstructions(in: mapping.scope.installScope) != false {
-          Button(model.hasBuiltInstructions(in: mapping.scope) ? "View Built Outputs…" : "Preview Local Outputs…") {
+          Button(model.hasBuiltInstructions(in: mapping.scope) ? "View Built Outputs…" : "Build Local Outputs…") {
             previewOutput(.local(recipient: model.clientFilter), in: mapping.scope)
           }
           .disabled(!canBuildDisplayedScope)
@@ -325,9 +331,16 @@ struct InstructionsView: View {
   @ViewBuilder private func outputFile(_ target: MappingTarget, in mapping: MappingItem)
     -> some View
   {
+    let deployment = mapping.deployment(for: target, in: snapshot)
     if let url = mapping.fileURL(for: target.id) {
       LabeledContent("Path") { PathView(url: url, scope: mapping.scope) }
-      Button(model.hasBuiltInstructions(in: mapping.scope) ? "View Built Output…" : "Preview Output…") {
+      if let deployment, !deployment.privateMaterialization,
+        deployment.status == .current || deployment.status == .drifted
+      {
+        Button("View Installed File…") { installedFile = deployment.location }
+          .accessibilityIdentifier("instructions.output.installed." + target.id)
+      }
+      Button(model.hasBuiltInstructions(in: mapping.scope) ? "View Built Output…" : "Build Output…") {
         previewOutput(.local(file: url, recipient: model.clientFilter), in: mapping.scope)
       }
       .disabled(!canBuildDisplayedScope)
@@ -340,7 +353,6 @@ struct InstructionsView: View {
       Label("Shared Output File", systemImage: "doc.on.doc")
         .font(.caption).foregroundStyle(.secondary)
     }
-    let deployment = mapping.deployment(for: target, in: snapshot)
     if let deployment {
       LabeledContent("On Disk", value: deployment.status.configurationLabel)
       if let diagnostic = deployment.diagnostic {
