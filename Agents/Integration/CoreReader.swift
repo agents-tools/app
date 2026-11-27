@@ -46,13 +46,6 @@ struct CoreReader: Sendable {
             message: "\($0.code): \($0.message) (line \($0.span.line), column \($0.span.column))",
             path: store.declarationURL.path)
         } ?? []
-      // Supplemental own-content and cross-project mapping reads have their own read admission.
-      func optionalRead<T>(_ name: String, _ body: () throws -> T) -> T? {
-        do { return try body() } catch {
-          diagnostics += Self.diagnostics(error, scope: scope, operation: name)
-          return nil
-        }
-      }
       if inspection.recovery.pending {
         diagnostics.append(
           AppDiagnostic(
@@ -82,19 +75,27 @@ struct CoreReader: Sendable {
       var readDependencies = inspection.readLocations.map(ReadDependency.subtree)
         + skills.dependencies
       readDependencies.append(.entry(SourceAccessSettingsEditor.settingsURL(environment: runtime)))
-      let ownInstructions: [OwnInstructionItem]? =
-        scope.kind == .project
-        ? optionalRead("Local instructions") {
+      var ownInstructions: [OwnInstructionItem]?
+      if scope.kind == .project {
+        do {
           let own = try InstructionOperations.inspectOwnInstructions(environment: runtime)
           readDependencies += own.readLocations.map(ReadDependency.subtree)
-          return own.units.map { unit in
+          ownInstructions = own.units.map { unit in
             OwnInstructionItem(
               id: .init(source: unit.record.source, name: unit.record.name, path: unit.record.path),
               heading: unit.section.heading, description: unit.section.description,
               paths: unit.section.paths, hash: unit.record.hash,
               authorFile: scope.root.appendingPathComponent(unit.record.path))
           }
-        } : nil
+        } catch {
+          diagnostics += Self.diagnostics(error, scope: scope, operation: "Local instructions")
+          // A failed inspection has no read locations to report. Keep observing its input.
+          let directory = runtime.projectDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent(store.directory.lastPathComponent)
+            .appendingPathComponent("instructions")
+          readDependencies.append(.subtree(directory))
+        }
+      }
       let mappingValues = InstructionOperations.export(
         projectRoots: scope.kind == .project ? [scope.root] : [], environment: runtime
       )

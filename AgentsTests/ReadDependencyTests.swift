@@ -107,6 +107,16 @@ struct ReadDependencyTests {
     #expect(!replacement.matches(repo.path, flags: changedRoot))
   }
 
+  @Test func volumeChangesMatchAncestorsOfWatchedSources() {
+    let source = URL(fileURLWithPath: "/Volumes/Work/repo")
+    let index = ReadDependencyIndex([.subtree(source)])
+    for flag in [kFSEventStreamEventFlagMount, kFSEventStreamEventFlagUnmount] {
+      let flags = FSEventStreamEventFlags(flag | kFSEventStreamEventFlagItemIsDir)
+      #expect(index.matches("/Volumes/Work", flags: flags))
+      #expect(!index.matches("/Volumes/Workspace", flags: flags))
+    }
+  }
+
   @Test func actualMappingDependenciesReachBothReaderAndExplicitCompletion() throws {
     let f = try TestFixture()
     defer { try? f.remove() }

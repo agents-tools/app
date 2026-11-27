@@ -147,7 +147,8 @@ struct ReadDependencyIndex: Equatable {
       & FSEventStreamEventFlags(
         kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemRemoved
           | kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagRootChanged
-          | kFSEventStreamEventFlagMustScanSubDirs) != 0
+          | kFSEventStreamEventFlagMustScanSubDirs | kFSEventStreamEventFlagMount
+          | kFSEventStreamEventFlagUnmount) != 0
     let directory = flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir) != 0
     let metadata =
       flags

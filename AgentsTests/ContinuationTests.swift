@@ -162,6 +162,34 @@ import Testing
     #expect(model.scope.root == fixture.project)
   }
 
+  @Test func fixingMalformedLocalInstructionsRefreshesAProjectWithoutADeclaration() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let author = fixture.project.appendingPathComponent(".agent/instructions/rules.md")
+    let events = try FixtureEventBoundary(root: fixture.root)
+    defer { events.stop() }
+    try fixture.externalWrite("# Missing front matter\n", to: author)
+    try await events.settle(creation: author, root: fixture.root)
+
+    let model = await loaded(fixture)
+    defer { _ = model.requestTermination() }
+    let initial = try #require(model.snapshot)
+    #expect(initial.document == nil)
+    #expect(initial.ownInstructions == nil)
+    #expect(initial.diagnostics.contains { $0.operation == "Local instructions" })
+
+    try fixture.externalWrite(
+      "---\ndescription: Project rules.\n---\n# Project Rules\nKeep changes focused.\n",
+      to: author)
+    try await eventually {
+      model.operations.isEmpty && model.snapshot?.ownInstructions?.first?.heading == "Project Rules"
+    }
+    let refreshed = try #require(model.snapshot)
+    #expect(refreshed.document == nil)
+    #expect(refreshed.ownInstructions?.first?.authorFile == author)
+    #expect(!refreshed.diagnostics.contains { $0.operation == "Local instructions" })
+  }
+
   @Test func releasedScopeDoesNotReactAndUnchangedNodeSelectionSurvivesRefresh() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
