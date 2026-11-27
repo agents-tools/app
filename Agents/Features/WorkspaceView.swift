@@ -365,37 +365,44 @@ struct OverviewView: View {
 
   private var summary: some View {
     let counts = OverviewCounts(snapshot: snapshot, client: model.clientFilter)
-    return List {
+    let problems = model.currentScopeProblems
+    return Form {
       if snapshot.isEmpty, snapshot.skillWorkspaceItems.isEmpty,
         snapshot.inspection.components.isEmpty
       {
         Section("Get Started") {
-          Button("Configure Default Clients…") { model.beginDraft(.defaults) }
-            .disabled(!model.canModify)
-          Button("Create a Local Skill…") { model.beginCreation(.skill) }
-            .disabled(!model.canModify)
-          Button("Add from Source…") { model.beginCatalog() }
-            .disabled(!model.canModify)
-          Button("Import Configuration…") { model.beginImport() }
-            .disabled(!model.canModify)
+          actionRow("Configure Default Clients…", symbol: "slider.horizontal.3") {
+            model.beginDraft(.defaults)
+          }
+          .disabled(!model.canModify)
+          actionRow("Create a Local Skill…", symbol: "plus.circle") {
+            model.beginCreation(.skill)
+          }
+          .disabled(!model.canModify)
+          actionRow("Add from Source…", symbol: "square.and.arrow.down") {
+            model.beginCatalog()
+          }
+          .disabled(!model.canModify)
+          actionRow("Import Configuration…", symbol: "tray.and.arrow.down") {
+            model.beginImport()
+          }
+          .disabled(!model.canModify)
         }
       }
 
       Section {
-        categoryLink(.skills, count: counts.skills)
-        if snapshot.scope.kind == .project, counts.userSkills > 0 {
-          Text("\(counts.skills - counts.userSkills) project · \(counts.userSkills) user")
-            .font(.caption).foregroundStyle(.secondary)
-        }
+        categoryLink(.skills, count: counts.skills, subtitle: skillBreakdown(counts))
         categoryLink(.instructions, count: counts.instructions)
         categoryLink(.mcp, count: counts.mcp)
         categoryLink(.other, count: counts.other)
       } header: {
         if let client = model.clientFilter {
-          HStack {
-            Text(client.displayName + " Configuration")
+          HStack(alignment: .firstTextBaseline) {
+            Text("\(client.displayName) Configuration")
             Spacer()
             Button("Show All Clients") { model.clientFilter = nil }
+              .buttonStyle(.link)
+              .controlSize(.small)
               .accessibilityIdentifier("overview.showAllClients")
           }
         } else {
@@ -412,28 +419,37 @@ struct OverviewView: View {
       }
 
       Section("Scope Issues") {
-        let problems = model.currentScopeProblems
         Button {
           model.refresh()
           model.page = .diagnostics
         } label: {
-          linkLabel(
+          navigationRowLabel(
             problems.isEmpty ? "Check Configuration…" : "Review Configuration Problems",
             symbol: problems.isEmpty ? "checkmark.circle" : "exclamationmark.triangle",
+            symbolColor: problems.isEmpty ? .green : .orange,
             count: problems.isEmpty ? nil : problems.count)
         }
+        .buttonStyle(RowButtonStyle())
         .accessibilityIdentifier("overview.diagnostics")
       }
 
-      Section("On This Mac") {
-        Toggle("On-Device Assistance", isOn: Binding(
-          get: { model.preferences.assistanceEnabled },
-          set: { model.setAssistanceEnabled($0) }))
+      Section {
+        Toggle(
+          "On-Device Assistance",
+          isOn: Binding(
+            get: { model.preferences.assistanceEnabled },
+            set: { model.setAssistanceEnabled($0) }))
           .help("Explain skills and configuration changes with an on-device model.")
+      } header: {
+        Text("On This Mac")
+      } footer: {
         if model.preferences.assistanceEnabled {
-          Text(AssistanceAvailability.status).font(.caption).foregroundStyle(.secondary)
+          Text(AssistanceAvailability.status)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
       }
+
       Section("Scope Details") {
         DetailsGroup("Configuration Files and Defaults") {
           LabeledContent("Location") { PathView(url: snapshot.scope.root, scope: snapshot.scope) }
@@ -446,45 +462,95 @@ struct OverviewView: View {
           LabeledContent("Subscriptions") {
             PathView(url: snapshot.watchURL, scope: snapshot.scope)
           }
-          LabeledContent(
-            "Read", value: snapshot.readAt.formatted(date: .abbreviated, time: .standard))
+          LabeledContent("Read") {
+            Text(snapshot.readAt.formatted(date: .abbreviated, time: .standard))
+              .monospacedDigit()
+              .foregroundStyle(.secondary)
+          }
           LabeledContent(
             "Default Agents",
             value: snapshot.effectiveDefaultAgents.isEmpty
               ? "None" : snapshot.effectiveDefaultAgents.map(\.displayName).joined(separator: ", "))
-          Button("Show Declaration") { model.page = .components }
+          Button {
+            model.page = .components
+          } label: {
+            navigationRowLabel("Show Declaration")
+          }
+          .buttonStyle(RowButtonStyle())
         }
         if model.clientFilter == nil, !snapshot.isEmpty || !snapshot.inspection.deployments.isEmpty
           || !snapshot.inspection.resources.isEmpty
         {
-          Button("Show Installation Records") { showingManagedState = true }
-            .accessibilityIdentifier("overview.managedState")
+          Button {
+            showingManagedState = true
+          } label: {
+            navigationRowLabel("Show Installation Records")
+          }
+          .buttonStyle(RowButtonStyle())
+          .accessibilityIdentifier("overview.managedState")
         }
       }
     }
-    .listStyle(.inset)
-    .buttonStyle(.borderless)
+    .formStyle(.grouped)
   }
 
   private var managedState: some View {
     VStack(spacing: 0) {
       HStack {
         Button("Back to Overview", systemImage: "chevron.backward") { showingManagedState = false }
+          .buttonStyle(.borderless)
           .keyboardShortcut(.cancelAction)
           .accessibilityIdentifier("overview.backFromManagedState")
         Spacer()
-      }.padding(8)
+      }
+      .padding(.horizontal, 16)
+      .padding(.vertical, 10)
+      .background(.bar)
       Divider()
       ManagedStateView(model: model, snapshot: snapshot)
     }
   }
 
-  private func categoryLink(_ page: WorkspacePage, count: Int) -> some View {
+  private func skillBreakdown(_ counts: OverviewCounts) -> String? {
+    guard snapshot.scope.kind == .project, counts.userSkills > 0 else { return nil }
+    return "\(counts.skills - counts.userSkills) project · \(counts.userSkills) user"
+  }
+
+  private func actionRow(
+    _ title: String,
+    symbol: String,
+    action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      HStack(spacing: 10) {
+        Image(systemName: symbol)
+          .font(.body)
+          .symbolRenderingMode(.hierarchical)
+          .foregroundStyle(Color.accentColor)
+          .frame(width: 20, alignment: .center)
+          .accessibilityHidden(true)
+        Text(title)
+        Spacer(minLength: 12)
+      }
+      .padding(.vertical, 2)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(RowButtonStyle())
+  }
+
+  private func categoryLink(_ page: WorkspacePage, count: Int, subtitle: String? = nil) -> some View {
     Button {
       model.page = page
     } label: {
-      linkLabel(page.title, symbol: page.symbol, count: count)
+      navigationRowLabel(
+        page.title,
+        symbol: page.symbol,
+        symbolColor: .accentColor,
+        subtitle: subtitle,
+        count: count)
     }
+    .buttonStyle(RowButtonStyle())
     .accessibilityIdentifier("overview.category.\(page.rawValue)")
   }
 
@@ -492,22 +558,71 @@ struct OverviewView: View {
     Button {
       model.showClientOverview(client)
     } label: {
-      linkLabel(client.displayName, symbol: "terminal", count: counts.total)
+      navigationRowLabel(
+        client.displayName,
+        symbol: "terminal",
+        symbolColor: .secondary,
+        count: counts.total)
     }
+    .buttonStyle(RowButtonStyle())
     .help("View \(client.displayName) configuration in this scope")
     .accessibilityIdentifier("overview.client.\(client.rawValue)")
   }
 
-  private func linkLabel(_ title: String, symbol: String, count: Int?) -> some View {
-    HStack {
-      Label(title, systemImage: symbol)
-      Spacer()
-      if let count {
-        Text(count, format: .number).monospacedDigit()
+  private func navigationRowLabel(
+    _ title: String,
+    symbol: String? = nil,
+    symbolColor: Color = .secondary,
+    subtitle: String? = nil,
+    count: Int? = nil
+  ) -> some View {
+    HStack(spacing: 10) {
+      if let symbol {
+        Image(systemName: symbol)
+          .font(.body)
+          .symbolRenderingMode(.hierarchical)
+          .foregroundStyle(symbolColor)
+          .frame(width: 20, alignment: .center)
+          .accessibilityHidden(true)
       }
-      Image(systemName: "chevron.forward").font(.caption).accessibilityHidden(true)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+        if let subtitle {
+          Text(subtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+      Spacer(minLength: 12)
+      if let count {
+        Text(count, format: .number)
+          .monospacedDigit()
+          .foregroundStyle(.secondary)
+      }
+      Image(systemName: "chevron.forward")
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.tertiary)
+        .accessibilityHidden(true)
     }
+    .padding(.vertical, 2)
+    .frame(maxWidth: .infinity, alignment: .leading)
     .contentShape(Rectangle())
+  }
+
+  private struct RowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+      RowBody(configuration: configuration)
+    }
+
+    private struct RowBody: View {
+      @Environment(\.isEnabled) private var isEnabled
+      let configuration: Configuration
+
+      var body: some View {
+        configuration.label
+          .opacity(isEnabled ? (configuration.isPressed ? 0.55 : 1) : 0.45)
+      }
+    }
   }
 }
 
