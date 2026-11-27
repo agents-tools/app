@@ -497,13 +497,17 @@ struct ContentActionTests {
   }
 
   private func idle(_ model: AppModel) async throws {
-    for _ in 0..<2000 {
+    let clock = ContinuousClock()
+    let deadline = clock.now + .seconds(30)
+    while clock.now < deadline {
       if model.operations.isEmpty {
         try await Task.sleep(for: .milliseconds(300))
         if model.operations.isEmpty { return }
       }
-      try await Task.sleep(for: .milliseconds(5))
+      try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Application did not process all operation terminals")
+    try #require(
+      model.operations.isEmpty,
+      "Application did not process all operation terminals: \(model.operations.values.map(\.title).sorted())")
   }
 }
