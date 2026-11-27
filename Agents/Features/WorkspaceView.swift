@@ -68,11 +68,9 @@ struct WorkspaceView: View {
           }
           if model.page == .sources {
             ToolbarItem {
-              Menu("Source Options", systemImage: "slider.horizontal.3") {
-                Button("User Source Access…") { panel = .access }
-                Button("Source Cache…") { panel = .cache }
-              }
-              .accessibilityIdentifier("sources.options")
+              SourceOptionsMenu(
+                model: model, openAccess: { panel = .access }, openCache: { panel = .cache }
+              ).id(model.scope.id)
             }
           }
           if model.page != .backups {

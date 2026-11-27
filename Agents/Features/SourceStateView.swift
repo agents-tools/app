@@ -6,25 +6,9 @@ import UniformTypeIdentifiers
 struct SourceStateView: View {
   let snapshot: WorkspaceSnapshot
   let model: AppModel
-  @State private var inventory: InventoryFile?
-  @State private var inventoryFilename = "inventory.cdx.json"
-  @State private var exportingInventory = false
-  @State private var exportError: String?
-  @State private var editingPolicy = false
-
   var body: some View {
     Form {
-      Section("Recorded Source State") {
-        Button("Edit Source Policy…") { editingPolicy = true }.disabled(!model.canModify)
-        Button("Review Declared Sources…") { model.discoverComponents() }
-          .disabled(!model.canModify || snapshot.inspection.declaration == nil)
-        Menu("Export Component Inventory…") {
-          Button("CycloneDX 1.6 (JSON)…") { exportInventory(.cycloneDX) }
-          Button("SPDX 2.3 (JSON)…") { exportInventory(.spdx) }
-        }
-        .disabled(snapshot.inspection.recovery.pending)
-        Button("Import Configuration…") { model.beginImport() }
-        Button("Subscribe to Source…") { model.beginWatch() }
+      Section("Resolved Versions") {
         ForEach(snapshot.inspection.sources, id: \.record) { source in
           DetailsGroup(source.identity) {
             LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
@@ -36,10 +20,11 @@ struct SourceStateView: View {
           }
         }
         if snapshot.inspection.sources.isEmpty {
-          Text("No sources recorded in resolved state.").foregroundStyle(.secondary)
+          Text("No source versions have been recorded yet.").foregroundStyle(.secondary)
         }
       }
-      Section("Subscription Baselines") {
+      Section("Subscriptions") {
+        Button("Subscribe to Source…") { model.beginWatch() }
         Button("Check Updates…") { model.checkSubscriptions() }
           .disabled(!model.canModify)
         if let watch = snapshot.watch {
@@ -47,7 +32,7 @@ struct SourceStateView: View {
             if let state = watch.sources[id] {
               DetailsGroup(id) {
                 switch state.seen {
-                case .revision(let revision): LabeledContent("Seen revision", value: revision)
+                case .revision(let revision): LabeledContent("Last seen revision", value: revision)
                 case .artifacts(let artifacts):
                   ForEach(artifacts.keys.sorted(), id: \.self) { name in
                     LabeledContent(name, value: artifacts[name] ?? "")
@@ -64,20 +49,49 @@ struct SourceStateView: View {
             }
           }
           if watch.sources.isEmpty {
-            Text("No subscription baselines recorded.").foregroundStyle(.secondary)
+            Text("No subscription history yet.").foregroundStyle(.secondary)
           }
         } else {
-          Text("Subscription baselines are unavailable. See Diagnostics.").foregroundStyle(
+          Text("Subscription history is unavailable. See Diagnostics.").foregroundStyle(
             .secondary)
         }
-        Text("Recorded baselines do not indicate whether a source has newer content.")
-          .font(.caption).foregroundStyle(.secondary)
       }
     }
     .formStyle(.grouped)
+  }
+}
+
+struct SourceOptionsMenu: View {
+  let model: AppModel
+  let openAccess: () -> Void
+  let openCache: () -> Void
+  @State private var inventory: InventoryFile?
+  @State private var inventoryFilename = "inventory.cdx.json"
+  @State private var exportingInventory = false
+  @State private var exportError: String?
+  @State private var editingPolicy = false
+
+  var body: some View {
+    Menu("Source Options", systemImage: "slider.horizontal.3") {
+      if let snapshot = model.snapshot {
+        Button("Edit Source Policy…") { editingPolicy = true }.disabled(!model.canModify)
+        Button("Review Declared Sources…") { model.discoverComponents() }
+          .disabled(!model.canModify || snapshot.inspection.declaration == nil)
+        Menu("Export Component Inventory…") {
+          Button("CycloneDX 1.6 (JSON)…") { exportInventory(.cycloneDX, snapshot: snapshot) }
+          Button("SPDX 2.3 (JSON)…") { exportInventory(.spdx, snapshot: snapshot) }
+        }
+        .disabled(snapshot.inspection.recovery.pending)
+        Button("Import Configuration…") { model.beginImport() }
+        Divider()
+      }
+      Button("User Source Access…", action: openAccess)
+      Button("Source Cache…", action: openCache)
+    }
+    .accessibilityIdentifier("sources.options")
     .sheet(isPresented: $editingPolicy) {
       SourcePolicySheet(
-        scope: snapshot.scope, environment: model.actions.environment(for: snapshot.scope)
+        scope: model.scope, environment: model.actions.environment(for: model.scope)
       ) {
         model.refresh()
       }
@@ -98,7 +112,7 @@ struct SourceStateView: View {
     }
   }
 
-  private func exportInventory(_ format: InventoryFormat) {
+  private func exportInventory(_ format: InventoryFormat, snapshot: WorkspaceSnapshot) {
     do {
       inventory = try InventoryFile(data: snapshot.inspection.inventory(format: format))
       inventoryFilename = format == .spdx ? "inventory.spdx.json" : "inventory.cdx.json"
