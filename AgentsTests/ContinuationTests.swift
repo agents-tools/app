@@ -79,11 +79,21 @@ import Testing
       gate.wait()
       return .init(disposition: .completed)
     }
+    model.previewPrompt(name: "example", in: scope)
+    model.chooseMappings()
+    model.readMappings()
+    let reads = model.operations.values.filter {
+      switch $0.purpose { case .prompt, .mappings: true; default: false }
+    }
+    model.promptSession = nil
+    model.mappingSession = nil
+    #expect(reads.count == 2 && reads.allSatisfy { !$0.admission.begin() })
     model.showInstructionOutput(.app(.chatGPTApp), in: scope)
     let abandoned = try #require(model.operations.values.first {
       if case .instructionOutputPreview = $0.purpose { return true }
       return false
     })
+    model.updateSession?.stage = .stale
     model.closeUpdateReview()
     #expect(!abandoned.admission.begin())
     model.showInstructionOutput(.app(.chatGPTApp), in: scope)

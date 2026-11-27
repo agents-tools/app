@@ -8,6 +8,8 @@ struct WorkspaceScope: Hashable, Codable, Sendable, Identifiable {
   let kind: Kind
   let root: URL
   var id: String { kind.rawValue + ":" + root.standardizedFileURL.path }
+  static func == (lhs: Self, rhs: Self) -> Bool { lhs.id == rhs.id }
+  func hash(into hasher: inout Hasher) { hasher.combine(id) }
   var title: String { kind == .user ? "User Configuration" : root.lastPathComponent }
   var installScope: InstallScope { kind == .user ? .user : .project }
 }

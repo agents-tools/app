@@ -119,22 +119,16 @@ final class AppModel {
   private var sourceAccessPresentation = UUID()
   var search = ""
   var creationSession: CreationSession?
-  var promptSession: PromptSession?
+  var promptSession: PromptSession? {
+    willSet { cancelDismissedRead(promptSession?.id, replacingWith: newValue?.id) }
+  }
   var manifestDraft: ManifestDraft?
-  var mappingSession: MappingSession?
+  var mappingSession: MappingSession? {
+    willSet { cancelDismissedRead(mappingSession?.id, replacingWith: newValue?.id) }
+  }
   private var instructionBuild: (scope: WorkspaceScope, date: Date, report: CombinedUpdateReport)?
   private var activeUpdateSession: UpdateSession? {
-    willSet {
-      guard let current = activeUpdateSession, current.stage == .preparing,
-        current.id != newValue?.id else { return }
-      for operation in operations.values {
-        switch operation.purpose {
-        case .preview(let id), .instructionOutputPreview(let id):
-          if id == current.id { operation.admission.cancel() }
-        default: break
-        }
-      }
-    }
+    willSet { cancelDismissedRead(activeUpdateSession?.id, replacingWith: newValue?.id) }
   }
   var updateSession: UpdateSession? {
     get { activeUpdateSession?.proposal.presentation == .workspace ? activeUpdateSession : nil }
@@ -567,6 +561,17 @@ final class AppModel {
       actions.apply(
         proposal, fingerprint: report.displayedFingerprint, admission: admission, bindings: bindings
       )
+    }
+  }
+
+  private func cancelDismissedRead(_ old: UUID?, replacingWith new: UUID?) {
+    guard let old, old != new else { return }
+    for operation in operations.values {
+      switch operation.purpose {
+      case .preview(let id), .instructionOutputPreview(let id), .prompt(let id), .mappings(let id):
+        if id == old { operation.admission.cancel() }
+      default: break
+      }
     }
   }
 

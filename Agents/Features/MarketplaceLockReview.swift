@@ -62,7 +62,10 @@ struct MarketplaceLockReview: View {
           }
         }.keyboardShortcut(.cancelAction)
         Spacer()
-        if working { ProgressView("Saving the package lock…").controlSize(.small) }
+        if working {
+          ProgressView(preview.report.hasChanges ? "Saving the package lock…" : "Running package actions…")
+            .controlSize(.small)
+        }
         if completion == nil {
           Button(preview.report.hasChanges ? "Save Lock" : "Run Package Actions") { save() }
             .keyboardShortcut(.defaultAction)

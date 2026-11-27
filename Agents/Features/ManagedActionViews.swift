@@ -44,7 +44,11 @@ struct WatchView: View {
                 session.busy || session.stale || session.scope != model.scope || !model.canModify)
           }
         }
-        if session.busy { ProgressView("Checking the source subscription…") }
+        if session.busy {
+          ProgressView(session.preview == nil ? "Checking the source subscription…"
+            : session.removing ? "Removing the subscription…" : "Saving the subscription…")
+            .controlSize(.small)
+        }
         if let terminal = session.terminal { Text(terminal.message) }
         ForEach(session.messages.filter { $0.message != session.terminal?.message }) {
           Text($0.message)
