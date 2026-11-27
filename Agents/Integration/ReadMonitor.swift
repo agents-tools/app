@@ -9,6 +9,7 @@ final class ReadMonitor: @unchecked Sendable {
   private let queueKey = DispatchSpecificKey<UInt8>()
   private var stream: FSEventStreamRef?
   private var dependencies: Set<ReadDependency> = []
+  private var dependencyIndex = ReadDependencyIndex([])
   private var roots: Set<String> = []
   private var lastNotification: FSEventStreamEventId = 0
   private let changed: @Sendable () -> Void
@@ -21,16 +22,10 @@ final class ReadMonitor: @unchecked Sendable {
 
   func replace(dependencies: [ReadDependency], since: FSEventStreamEventId) throws {
     try queue.sync {
-      let normalized = Set(
-        dependencies.map { dependency in
-          switch dependency {
-          case .entry(let url): ReadDependency.entry(url.standardizedFileURL)
-          case .subtree(let url): ReadDependency.subtree(url.standardizedFileURL)
-          }
-        })
+      let supplied = Set(dependencies)
+      let index = supplied == self.dependencies ? dependencyIndex : ReadDependencyIndex(supplied)
       var roots = Set<String>()
-      for dependency in normalized {
-        let path = dependency.url.path
+      for path in index.paths {
         var directory = URL(fileURLWithPath: path).deletingLastPathComponent()
         var isDirectory: ObjCBool = false
         while !FileManager.default.fileExists(atPath: directory.path, isDirectory: &isDirectory)
@@ -43,13 +38,22 @@ final class ReadMonitor: @unchecked Sendable {
         roots.insert(directory.path)
       }
       let minimal = roots.filter { path in
-        !roots.contains { $0 != path && Self.contains(path, in: $0) }
+        var next = ReadDependencyIndex.parent(of: path)
+        while let parent = next {
+          if roots.contains(parent) { return false }
+          next = ReadDependencyIndex.parent(of: parent)
+        }
+        return true
       }
-      if stream != nil, normalized == self.dependencies, minimal == self.roots { return }
+      if stream != nil, index == dependencyIndex, minimal == self.roots {
+        self.dependencies = supplied
+        return
+      }
       let replayFrom = max(since, lastNotification)
       stopOnQueue()
       guard !minimal.isEmpty else { return }
-      self.dependencies = normalized
+      self.dependencies = supplied
+      dependencyIndex = index
       self.roots = minimal
       var context = FSEventStreamContext(
         version: 0, info: Unmanaged.passUnretained(self).toOpaque(),
@@ -61,8 +65,7 @@ final class ReadMonitor: @unchecked Sendable {
         var changed = false
         for index in 0..<count where ids[index] == 0 || ids[index] > owner.lastNotification {
           guard
-            ReadMonitor.matches(
-              String(cString: paths[index]), flags: flags[index], dependencies: owner.dependencies)
+            owner.dependencyIndex.matches(String(cString: paths[index]), flags: flags[index])
           else { continue }
           if flags[index] & FSEventStreamEventFlags(kFSEventStreamEventFlagRootChanged) != 0 {
             owner.roots.removeAll()
@@ -104,12 +107,37 @@ final class ReadMonitor: @unchecked Sendable {
     }
     stream = nil
     dependencies = []
+    dependencyIndex = ReadDependencyIndex([])
     roots = []
   }
 
-  static func matches(
-    _ event: String, flags: FSEventStreamEventFlags, dependencies: some Sequence<ReadDependency>
-  ) -> Bool {
+  private struct MonitorFailure: LocalizedError {
+    var errorDescription: String? { "Automatic refresh could not watch these inputs. Use Refresh." }
+  }
+}
+
+struct ReadDependencyIndex: Equatable {
+  private var entries: Set<String> = []
+  private var subtrees: Set<String> = []
+  private var ancestors: Set<String> = []
+
+  var paths: Set<String> { entries.union(subtrees) }
+
+  init(_ dependencies: some Sequence<ReadDependency>) {
+    for dependency in dependencies {
+      let path = dependency.url.standardizedFileURL.path
+      switch dependency {
+      case .entry: entries.insert(path)
+      case .subtree: subtrees.insert(path)
+      }
+      var next = Self.parent(of: path)
+      while let parent = next, ancestors.insert(parent).inserted {
+        next = Self.parent(of: parent)
+      }
+    }
+  }
+
+  func matches(_ event: String, flags: FSEventStreamEventFlags) -> Bool {
     guard flags & FSEventStreamEventFlags(kFSEventStreamEventFlagHistoryDone) == 0 else {
       return false
     }
@@ -126,29 +154,26 @@ final class ReadMonitor: @unchecked Sendable {
       & FSEventStreamEventFlags(
         kFSEventStreamEventFlagItemInodeMetaMod | kFSEventStreamEventFlagItemChangeOwner
           | kFSEventStreamEventFlagItemXattrMod) != 0
+    if (structural || metadata) && ancestors.contains(event) { return true }
+    if (!directory || structural || metadata) && entries.contains(event) { return true }
+    guard !subtrees.isEmpty else { return false }
+
+    // An explicit cache dependency still matches before the walk reaches the working tree.
     let eventWithSeparator = event + "/"
-    let cacheRoot = eventWithSeparator.range(of: "/.git/lfs/objects/").map {
-      let root = String(eventWithSeparator[..<$0.lowerBound])
-      return root.isEmpty ? "/" : root
+    let cacheBoundary = eventWithSeparator.range(of: "/.git/lfs/objects/").map {
+      let path = eventWithSeparator[..<$0.lowerBound]
+      return path.isEmpty ? "/" : String(path)
     }
-    return dependencies.contains { dependency in
-      let path = dependency.url.standardizedFileURL.path
-      if event != path && (structural || metadata) && contains(path, in: event) { return true }
-      switch dependency {
-      case .entry:
-        return event == path && (!directory || structural || metadata)
-      case .subtree:
-        // Working-tree interests exclude incidental Git LFS object hydration.
-        // A dependency that explicitly addresses the cache still receives its events.
-        if let cacheRoot, contains(cacheRoot, in: path) { return false }
-        return contains(event, in: path)
-      }
+    var next: String? = event
+    while let path = next, path != cacheBoundary {
+      if subtrees.contains(path) { return true }
+      next = Self.parent(of: path)
     }
+    return false
   }
-  private static func contains(_ child: String, in parent: String) -> Bool {
-    child == parent || child.hasPrefix(parent == "/" ? "/" : parent + "/")
-  }
-  private struct MonitorFailure: LocalizedError {
-    var errorDescription: String? { "Automatic refresh could not watch these inputs. Use Refresh." }
+
+  fileprivate static func parent(of path: String) -> String? {
+    guard path != "/", let separator = path.lastIndex(of: "/") else { return nil }
+    return separator == path.startIndex ? "/" : String(path[..<separator])
   }
 }
