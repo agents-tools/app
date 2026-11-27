@@ -4,6 +4,14 @@ run-name: Agents App release ${{ inputs.tag }} (${{ inputs.source_commit }})
 on:
   workflow_dispatch:
     inputs:
+      operation:
+        description: Publish or verify an existing public release
+        type: choice
+        options: [publish, verify-public]
+        default: publish
+      candidate_run_id:
+        description: Run ID holding the signed candidate for recovery or verification
+        type: string
       tag:
         description: Approved published tag, such as v0.1.0
         required: true
@@ -15,6 +23,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag }}
@@ -23,6 +32,8 @@ concurrency:
 env:
   RELEASE_TAG: ${{ inputs.tag }}
   SOURCE_COMMIT: ${{ inputs.source_commit }}
+  OPERATION: ${{ inputs.operation }}
+  CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
 
 jobs:
   verify:
@@ -38,16 +49,26 @@ jobs:
           persist-credentials: false
       - name: Verify approved tag and commit
         run: Scripts/verify-release-source.sh
+      - name: Require successful check at the approved main commit
+        if: inputs.operation == 'publish'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?branch=main&event=push&status=success&head_sha=$SOURCE_COMMIT" \
+            | jq -e --arg commit "$SOURCE_COMMIT" 'any(.workflow_runs[]; .head_sha == $commit and .conclusion == "success")'
 
   release:
     name: Build and publish notarized release
     needs: verify
-    if: github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    if: inputs.operation == 'publish' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
     runs-on: xcode-27
     timeout-minutes: 120
     environment: production
     permissions:
       contents: write
+      actions: read
     env:
       DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
     steps:
@@ -59,6 +80,7 @@ jobs:
       - name: Verify source again before building
         run: Scripts/verify-release-source.sh
       - name: Archive universal application
+        if: inputs.candidate_run_id == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -71,6 +93,7 @@ jobs:
             -disableAutomaticPackageResolution \
             CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO 'ARCHS=arm64 x86_64'
       - name: Sign, notarize, and verify distribution ZIP
+        if: inputs.candidate_run_id == ''
         env:
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
           SIGNING_IDENTITY: ${{ vars.DEVELOPER_ID_SIGNING_IDENTITY }}
@@ -80,27 +103,46 @@ jobs:
           API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
           API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
         run: Scripts/package-release.sh "$RUNNER_TEMP/Agents App.xcarchive" "$RUNNER_TEMP/distribution"
-      - name: Publish and verify immutable GitHub Release
-        shell: bash
+      - name: Record candidate source and tag object
+        if: inputs.candidate_run_id == ''
+        run: |
+          Scripts/verify-release-source.sh
+          git rev-parse "$SOURCE_COMMIT" "refs/tags/$RELEASE_TAG" >"$RUNNER_TEMP/distribution/source"
+      - name: Preserve the signed ZIP and checksum
+        if: inputs.candidate_run_id == ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: agents-app-${{ inputs.tag }}-signed
+          path: ${{ runner.temp }}/distribution/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Restore the preserved signed candidate
+        if: inputs.candidate_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: Scripts/release-assets.sh restore
+      - name: Publish and verify GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -euo pipefail
           Scripts/verify-release-source.sh
-          zip="Agents-App-${RELEASE_TAG#v}-universal.zip"
-          distribution="$RUNNER_TEMP/distribution"
-          gh release create "$RELEASE_TAG" "$distribution/$zip" "$distribution/$zip.sha256" \
-            --repo "$GITHUB_REPOSITORY" --verify-tag --draft --generate-notes \
-            --title "Agents App ${RELEASE_TAG#v}"
+          Scripts/release-assets.sh publish
+
+  verify-public:
+    name: Verify public release against signed candidate
+    needs: verify
+    if: inputs.operation == 'verify-public' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main dispatch commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Retrieve signed candidate and check public files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
           Scripts/verify-release-source.sh
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isImmutable,isDraft \
-            | jq -e '.isImmutable and (.isDraft | not)'
-          mkdir "$RUNNER_TEMP/public-release"
-          cd "$RUNNER_TEMP/public-release"
-          for asset in "$zip" "$zip.sha256"; do
-            curl --fail --location --silent --show-error --retry 2 --max-time 120 \
-              --output "$asset" "https://github.com/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$asset"
-            cmp "$asset" "$distribution/$asset"
-          done
-          shasum -a 256 -c "$zip.sha256"
+          Scripts/release-assets.sh restore
+          Scripts/release-assets.sh verify-public
