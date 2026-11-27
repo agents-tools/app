@@ -815,15 +815,19 @@ struct UpdateFlowTests {
   @Test func draftFromAnotherScopeCannotBeAppliedToAnIdenticalDocument() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     let bytes = "version: 1\ndefaultAgents: []\n"
     try fixture.writeManifest(bytes, user: true)
-    try fixture.writeManifest(bytes)
+    let projectManifest = try fixture.writeManifest(bytes)
+    try await boundary.settle(creation: projectManifest, root: fixture.root)
     let model = AppModel(
       home: fixture.home, preferences: AppPreferences(defaults: nil),
       processEnvironment: fixture.environment)
     model.refresh()
     try await idle(model)
     model.beginDraft(.defaults)
+    try #require(model.manifestDraft?.scope.kind == .user)
     model.manifestDraft?.defaultAgents = [.codex]
     model.select(.init(kind: .project, root: fixture.project))
     try await idle(model)

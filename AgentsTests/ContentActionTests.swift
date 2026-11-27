@@ -59,12 +59,12 @@ struct ContentActionTests {
     model.confirmCreation()
     #expect(try fixture.entries() == created)
     model.selectCreationDirectory(fixture.root.appendingPathComponent("selected-skill-directory"))
-    model.reviewCreation()
+    try await confirmFreshCreation(model)
     try await idle(model)
-    model.confirmCreation()
-    try await idle(model)
-    guard case .created(let directory) = model.creationSession?.stage else {
-      Issue.record("Expected selected-directory skill creation")
+    let session = try #require(model.creationSession)
+    guard case .created(let directory) = session.stage else {
+      Issue.record(
+        "Expected selected-directory skill creation, got \(session.stage): \(session.messages.map(\.message))")
       return
     }
     #expect(directory.path == fixture.root.appendingPathComponent("selected-skill-directory").path)
@@ -476,6 +476,24 @@ struct ContentActionTests {
     #expect(mappings.allSatisfy { $0.status == "No resolved instruction mapping" })
     #expect(mappings.allSatisfy { $0.copyText.contains($0.scope.root.path) })
     #expect(try fixture.entries() == before)
+  }
+
+  private func confirmFreshCreation(_ model: AppModel) async throws {
+    for _ in 0..<4 {
+      model.reviewCreation()
+      try await idle(model)
+      let session = try #require(model.creationSession)
+      guard case .confirmation = session.stage else {
+        Issue.record(
+          "Expected starter review, got \(session.stage): \(session.messages.map(\.message))")
+        return
+      }
+      if !session.stale {
+        model.confirmCreation()
+        return
+      }
+    }
+    Issue.record("Native inputs did not settle enough to confirm starter content")
   }
 
   private func idle(_ model: AppModel) async throws {

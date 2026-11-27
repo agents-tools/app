@@ -17,7 +17,7 @@ on:
         required: true
         type: string
       source_commit:
-        description: Full approved commit SHA on main
+        description: Full approved commit SHA on master
         required: true
         type: string
 
@@ -38,31 +38,31 @@ env:
 jobs:
   verify:
     name: Verify trusted candidate source
-    if: github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    if: github.repository == 'agents-tools/app' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Checkout main dispatch commit
+      - name: Checkout master dispatch commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
       - name: Verify approved tag and commit
         run: Scripts/verify-release-source.sh
-      - name: Require successful check at the approved main commit
+      - name: Require successful check at the approved master commit
         if: inputs.operation == 'publish'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?branch=main&event=push&status=success&head_sha=$SOURCE_COMMIT" \
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?branch=master&event=push&status=success&head_sha=$SOURCE_COMMIT" \
             | jq -e --arg commit "$SOURCE_COMMIT" 'any(.workflow_runs[]; .head_sha == $commit and .conclusion == "success")'
 
   release:
     name: Build and publish notarized release
     needs: verify
-    if: inputs.operation == 'publish' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    if: inputs.operation == 'publish' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/master'
     runs-on: xcode-27
     timeout-minutes: 120
     environment: production
@@ -131,11 +131,11 @@ jobs:
   verify-public:
     name: Verify public release against signed candidate
     needs: verify
-    if: inputs.operation == 'verify-public' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/main'
+    if: inputs.operation == 'verify-public' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/master'
     runs-on: macos-26
     timeout-minutes: 10
     steps:
-      - name: Checkout main dispatch commit
+      - name: Checkout master dispatch commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0

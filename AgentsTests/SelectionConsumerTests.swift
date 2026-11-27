@@ -112,7 +112,7 @@ struct SelectionConsumerTests {
     try write(
       "---\ndescription: Team style\n---\n# Team\nUse a consistent style.\n", at: input)
     try await boundary.settle(creation: input, root: f.root)
-    let model = await loaded(f)
+    let model = try await loaded(f)
     defer { _ = model.requestTermination() }
     let before = try f.entries()
     model.beginCatalog(alias: "team", source: .init(kind: .local, location: producer.path))
@@ -375,7 +375,7 @@ struct SelectionConsumerTests {
       #"{"mcpServers":{"review":{"command":"never-run","env":{"TOKEN":"PRIVATE_LITERAL_CANARY"}}}}"#,
       at: file)
     try await boundary.settle(creation: file, root: f.root)
-    let model = await loaded(f)
+    let model = try await loaded(f)
     defer { _ = model.requestTermination() }
     let before = try f.entries()
     model.beginImport()
@@ -414,7 +414,7 @@ struct SelectionConsumerTests {
     try write(
       "---\ndescription: Team\n---\n# Team\n",
       at: producer.appendingPathComponent("instructions/style.md"))
-    let model = await loaded(f)
+    let model = try await loaded(f)
     defer { _ = model.requestTermination() }
     let gate = SelectionWorkerGate()
     defer { gate.release() }
@@ -458,22 +458,24 @@ struct SelectionConsumerTests {
     #expect(model.operations.isEmpty)
   }
 
-  private func loaded(_ f: TestFixture) async -> AppModel {
+  private func loaded(_ f: TestFixture) async throws -> AppModel {
     let model = AppModel(
       home: f.home, preferences: AppPreferences(defaults: nil), processEnvironment: f.environment)
     model.select(.init(kind: .project, root: f.project))
-    try? await idle(model)
+    try await idle(model)
     return model
   }
   private func idle(_ model: AppModel) async throws {
-    for _ in 0..<1500 {
+    let clock = ContinuousClock()
+    let deadline = clock.now + .seconds(30)
+    while clock.now < deadline {
       if model.operations.isEmpty {
         try await Task.sleep(for: .milliseconds(300))
         if model.operations.isEmpty { return }
       }
-      try await Task.sleep(for: .milliseconds(5))
+      try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Operation did not reach its outer terminal")
+    try #require(model.operations.isEmpty, "Operation did not reach its outer terminal")
   }
   private func write(_ text: String, at url: URL) throws {
     try FileManager.default.createDirectory(

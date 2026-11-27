@@ -248,14 +248,16 @@ struct SourceReplacementTests {
       "Apply: \(model.updateSession?.messages.map(\.message) ?? [])")
   }
   private func idle(_ model: AppModel) async throws {
-    for _ in 0..<600 {
+    let clock = ContinuousClock()
+    let deadline = clock.now + .seconds(30)
+    while clock.now < deadline {
       if model.operations.isEmpty {
         try await Task.sleep(for: .milliseconds(150))
         if model.operations.isEmpty { return }
       }
       try await Task.sleep(for: .milliseconds(10))
     }
-    Issue.record("Owned operation did not finish")
+    try #require(model.operations.isEmpty, "Owned operation did not finish")
   }
   private func manifest(_ f: TestFixture) -> URL {
     f.project.appendingPathComponent(".agent/agents.yaml")

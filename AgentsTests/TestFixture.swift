@@ -32,32 +32,39 @@ struct TestFixture: Sendable {
 
   func externalWrite(_ text: String, to url: URL, atomic: Bool = false) throws {
     precondition(url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/"))
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    process.arguments = [
-      "-c",
+    try runExternal("/bin/sh", arguments: [
+      "-ec",
       """
-      import base64, os, pathlib, sys, uuid
-      path = pathlib.Path(sys.argv[1])
-      path.parent.mkdir(parents=True, exist_ok=True)
-      target = path.with_name(path.name + '.' + str(uuid.uuid4())) if sys.argv[3] == '1' else path
-      target.write_bytes(base64.b64decode(sys.argv[2]))
-      if target != path: os.replace(target, path)
-      """, url.path, Data(text.utf8).base64EncodedString(), atomic ? "1" : "0",
-    ]
-    try process.run()
-    process.waitUntilExit()
-    guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
+      path=$1
+      /bin/mkdir -p "${path%/*}"
+      if [ "$3" = 1 ]; then
+        target=$(/usr/bin/mktemp "$path.XXXXXX")
+        trap '/bin/rm -f -- "$target"' EXIT
+      else
+        target=$path
+      fi
+      printf '%s' "$2" | /usr/bin/base64 -D > "$target"
+      if [ "$target" != "$path" ]; then /bin/mv -f -- "$target" "$path"; fi
+      """, "fixture-write", url.path, Data(text.utf8).base64EncodedString(), atomic ? "1" : "0",
+    ])
   }
 
   func externalRemove(_ url: URL) throws {
     precondition(url.standardizedFileURL.path.hasPrefix(root.standardizedFileURL.path + "/"))
+    try runExternal("/bin/rm", arguments: ["-r", "--", url.path])
+  }
+
+  private func runExternal(_ executable: String, arguments: [String]) throws {
     let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-    process.arguments = ["-c", "import shutil,sys; shutil.rmtree(sys.argv[1])", url.path]
+    process.executableURL = URL(fileURLWithPath: executable)
+    process.arguments = arguments
     try process.run()
     process.waitUntilExit()
-    guard process.terminationStatus == 0 else { throw CocoaError(.fileWriteUnknown) }
+    guard process.terminationStatus == 0 else {
+      throw CocoaError(.fileWriteUnknown, userInfo: [
+        NSLocalizedDescriptionKey: "\(executable) exited with status \(process.terminationStatus)",
+      ])
+    }
   }
 
   func remove() throws { try FileManager.default.removeItem(at: root) }

@@ -18,9 +18,9 @@ check_candidate() (
 restore_candidate() {
   [[ ${CANDIDATE_RUN_ID:-} =~ ^[0-9]+$ ]] || fail "Specify the run ID holding the signed candidate."
   gh api "$repo/actions/runs/$CANDIDATE_RUN_ID" | jq -e --arg commit "$SOURCE_COMMIT" '
-    .event == "workflow_dispatch" and .head_branch == "main" and .head_sha == $commit
+    .event == "workflow_dispatch" and .head_branch == "master" and .head_sha == $commit
     and .path == ".github/workflows/release-gate.yml"
-  ' >/dev/null || fail "Candidate run does not match the approved main workflow and source."
+  ' >/dev/null || fail "Candidate run does not match the approved master workflow and source."
   gh run download "$CANDIDATE_RUN_ID" --repo "$GITHUB_REPOSITORY" \
     --name "agents-app-$RELEASE_TAG-signed" --dir "$candidate"
   check_candidate
