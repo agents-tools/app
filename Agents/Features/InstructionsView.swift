@@ -245,12 +245,18 @@ struct InstructionsView: View {
     Section("App Destinations") {
       ForEach([InstructionRecipient.chatGPTApp, .geminiApp], id: \.self) { recipient in
         LabeledContent(recipient.displayName) {
-          Button("Preview Output…") {
-            previewOutput(.app(recipient), in: scope)
+          if scope == snapshot.scope, canBuildDisplayedScope,
+            snapshot.hasNoDeclaredAppInstructions(for: recipient)
+          {
+            Text("No instructions selected").foregroundStyle(.secondary)
+          } else {
+            Button("Preview Instructions…") {
+              previewOutput(.app(recipient), in: scope)
+            }
+            .disabled(!canBuildDisplayedScope)
+            .accessibilityLabel("Preview " + recipient.displayName + " output")
+            .accessibilityIdentifier("instructions.output.preview." + recipient.rawValue)
           }
-          .disabled(!canBuildDisplayedScope)
-          .accessibilityLabel("Preview " + recipient.displayName + " output")
-          .accessibilityIdentifier("instructions.output.preview." + recipient.rawValue)
         }
         .accessibilityIdentifier("instructions.output.app." + recipient.rawValue)
       }

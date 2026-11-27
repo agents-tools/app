@@ -165,6 +165,17 @@ struct WorkspaceSnapshot: Sendable {
   let readAt: Date
   var skillWorkspaceItems: [SkillWorkspaceItem] = []
 
+  func hasNoDeclaredAppInstructions(for recipient: InstructionRecipient) -> Bool {
+    // Indirect selections are resolved by the instruction builder.
+    guard scope.kind == .user, let declaration = inspection.declaration,
+      declaration.uses.isEmpty, declaration.packages.isEmpty, declaration.marketplaceRoots.isEmpty
+    else { return false }
+    return !declaration.components.contains { component in
+      guard case .instructions(let instructions) = component else { return false }
+      return instructions.sectionReferences.contains { $0.recipients?.contains(recipient) == true }
+    }
+  }
+
   var isEmpty: Bool { document == nil && !inspection.recovery.pending }
   var components: [DeclarationItem] { items.filter { $0.category == "Component" } }
   var sources: [DeclarationItem] { items.filter { $0.category == "Source" } }

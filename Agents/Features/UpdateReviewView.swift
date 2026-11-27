@@ -10,19 +10,23 @@ struct UpdateReviewView: View {
     if let session = model.updateSession {
       VStack(alignment: .leading, spacing: 12) {
         Text(session.proposal.title).font(.headline)
-        LabeledContent("Scope") {
-          PathView(url: session.proposal.scope.root, scope: session.proposal.scope)
-        }
+        Text(session.proposal.scope.title).font(.subheadline).foregroundStyle(.secondary)
+          .help(session.proposal.scope.root.path)
         switch session.stage {
-        case .preparing where session.isInstructionOutputPreview:
-          ProgressView("Compiling instructions…")
         case .preparing, .applying:
-          ProgressView(
-            session.stage == .applying ? "Preparing again and applying…" : "Preparing preview…")
-          Text("Waiting for the operation, including recovery and cleanup, to finish.")
-            .foregroundStyle(.secondary)
+          HStack(spacing: 10) {
+            ProgressView().controlSize(.small)
+            Text(session.progressLabel)
+          }
+          if session.stage == .preparing, let hint = session.previewHint {
+            Text(hint).foregroundStyle(.secondary)
+          }
         case .review:
-          if session.isInstructionOutputPreview {
+          if session.isInstructionOutputPreview, session.instructionOutputs.isEmpty,
+            let focus = session.instructionOutputFocus
+          {
+            Text(focus.emptyMessage).foregroundStyle(.secondary)
+          } else if session.isInstructionOutputPreview {
             Form {
               builtOutputs(session)
               if session.instructionOutputFocus == nil, !session.instructionOutputs.isEmpty,
@@ -31,8 +35,10 @@ struct UpdateReviewView: View {
                 Text("To build app output, choose an app in a section’s Recipients picker.")
                   .font(.caption).foregroundStyle(.secondary)
               }
-              Text("Use Review Local Changes under Instruction Actions to check local files.")
-                .font(.caption).foregroundStyle(.secondary)
+              if session.instructionOutputFocus == nil {
+                Text("Use Review Local Changes under Instruction Actions to check local files.")
+                  .font(.caption).foregroundStyle(.secondary)
+              }
             }.formStyle(.grouped)
           } else if let report = session.report {
             let showsInstructionOutputs = session.showsInstructionOutputs(
@@ -166,7 +172,11 @@ struct UpdateReviewView: View {
             .accessibilityIdentifier("update.apply")
           }
         }
-      }.padding(24).frame(width: 680, height: 620)
+      }
+      .padding(24)
+      .frame(width: 680, height: session.stage == .review
+        && !(session.instructionOutputFocus != nil && session.instructionOutputs.isEmpty)
+        ? 620 : nil, alignment: .topLeading)
         .sheet(item: $model.assistanceSession) { _ in AssistanceView(model: model) }
         .interactiveDismissDisabled(model.isApplying)
     }
@@ -446,9 +456,9 @@ struct InstalledComponentsView: View {
               title: "Remove Selected Components",
               request: .init(operation: .remove, selections: Array(selection)))
           }
-          Button("Preview Update…") {
+          Button("Preview Updates…") {
             model.previewUpdate(
-              title: "Update Selected Components", request: .init(selections: Array(selection)))
+              title: "Updates for Selected Components", request: .init(selections: Array(selection)))
           }
         }
         .disabled(selection.isEmpty || !model.canModify)

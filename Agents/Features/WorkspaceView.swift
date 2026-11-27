@@ -332,12 +332,6 @@ struct WorkspaceView: View {
         systemImage: "exclamationmark.triangle"
       )
       .padding(12).frame(maxWidth: .infinity, alignment: .leading).background(.bar)
-    } else if !model.operations.isEmpty {
-      HStack {
-        ProgressView().controlSize(.small)
-        Text(model.operations.values.first?.title ?? "Waiting for operations to finish…")
-        Spacer()
-      }.padding(8).background(.bar)
     } else if model.page == .overview && model.didApplyExistingConfiguration {
       Label("Configuration imported", systemImage: "checkmark.circle")
         .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.bar)

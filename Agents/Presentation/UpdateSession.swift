@@ -9,7 +9,7 @@ enum InstructionOutputFocus: Sendable {
 
   var title: String {
     switch self {
-    case .app(let recipient): "Preview " + recipient.displayName
+    case .app(let recipient): "Instructions for " + recipient.displayName
     case .local: "Preview Local Instructions"
     }
   }
@@ -159,6 +159,40 @@ struct UpdateSession: Identifiable {
     case .finished, .failed, .cancelled: "Done"
     }
   }
+  var progressLabel: String {
+    if stage == .applying { return "Applying the reviewed changes…" }
+    switch proposal.contents {
+    case .instructionOutputs(.app(let recipient)):
+      return "Gathering instructions for " + recipient.displayName + "…"
+    case .instructionOutputs:
+      return "Gathering text from the selected instruction sections…"
+    case .localInstructionChanges:
+      return "Comparing instructions with the local files…"
+    case .update(let request), .packageRequest(let request, _):
+      switch request.operation {
+      case .update where !request.selections.isEmpty:
+        let count = request.selections.count
+        return count == 1 ? "Comparing the selected component with its source…"
+          : "Comparing \(count) selected components with their sources…"
+      case .update: return "Checking configured sources for updates…"
+      case .remove: return "Checking which components and files would be removed…"
+      case .restore: return "Checking which managed files need to be restored…"
+      case .edit, .declaration: return "Checking how your edits affect the configuration…"
+      }
+    case .packageReview: return "Checking the proposed package changes…"
+    }
+  }
+
+  var previewHint: String? {
+    if case .app(let recipient) = instructionOutputFocus {
+      return "You can copy the finished text into " + recipient.displayName + "."
+    }
+    if case .update(let request) = proposal.contents, !request.selections.isEmpty {
+      return "Review the changes before applying them."
+    }
+    return nil
+  }
+
   var bindingsReady: Bool { requiredBindings.allSatisfy { bindingInputs[$0] != nil } }
   var applyingCancelTitle: String {
     switch proposal.contents {
