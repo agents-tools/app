@@ -35,7 +35,7 @@ struct AgentsApp: App {
         .onReceive(
           NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
         ) { _ in
-          if model.operations.isEmpty { model.refresh() }
+          model.refreshOnActivation()
         }
     }
     .defaultSize(width: 1160, height: 760)

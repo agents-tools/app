@@ -79,6 +79,7 @@ final class AppModel {
   private var workspaceReadDependencies: [ReadDependency] = []
   private var supplementalReadDependencies: Set<ReadDependency> = []
   private var monitorID: UUID?
+  private var isMonitoringConfiguration = false
   private var readBoundary: FSEventStreamEventId = 0
   private(set) var readsStale = false
   private var refreshPending = false
@@ -254,6 +255,18 @@ final class AppModel {
     backupProjects.remove(url.standardizedFileURL)
     if scope.root == url, scope.kind == .project {
       select(WorkspaceScope(kind: .user, root: home))
+    }
+  }
+
+  func refreshOnActivation() {
+    guard operations.isEmpty else { return }
+    switch loadState {
+    case .idle, .failed:
+      refresh()
+    case .loaded(let snapshot) where snapshot.inspection.recovery.pending:
+      refresh()
+    default:
+      if !isMonitoringConfiguration { refresh() }
     }
   }
 
@@ -885,7 +898,9 @@ final class AppModel {
       .union(workspaceReadDependencies).union(supplementalReadDependencies)
     do {
       try readMonitor?.replace(dependencies: Array(dependencies), since: readBoundary)
+      isMonitoringConfiguration = true
     } catch {
+      isMonitoringConfiguration = false
       diagnostics.append(
         .init(
           scope: scope, operation: "Automatic refresh", severity: .warning,
@@ -897,6 +912,7 @@ final class AppModel {
     readMonitor?.stop()
     readMonitor = nil
     monitorID = nil
+    isMonitoringConfiguration = false
   }
 
   private func inputsChanged() {

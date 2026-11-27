@@ -8,6 +8,38 @@ import Testing
 @testable import AgentsApp
 
 @MainActor struct ContinuationTests {
+  @Test func activationRetriesFailedReadsAndSkipsObservedConfiguration() async throws {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    try fixture.writeManifest("version: [broken\n", user: true)
+    let model = AppModel(
+      home: fixture.home, preferences: AppPreferences(defaults: nil),
+      processEnvironment: fixture.environment)
+    defer { _ = model.requestTermination() }
+
+    model.refreshOnActivation()
+    #expect(model.operations.count == 1)
+    model.refreshOnActivation()
+    #expect(model.operations.count == 1)
+    try await eventually { model.operations.isEmpty }
+    guard case .failed = model.loadState else {
+      Issue.record("Expected the invalid configuration to fail its first read")
+      return
+    }
+
+    try fixture.writeManifest("version: 1\n", user: true)
+    model.refreshOnActivation()
+    try await eventually { model.operations.isEmpty && model.canModify }
+    let loadedAt = try #require(model.snapshot?.readAt)
+    model.refreshOnActivation()
+    #expect(model.operations.isEmpty)
+    #expect(model.snapshot?.readAt == loadedAt)
+
+    model.refresh()
+    try await eventually { model.operations.isEmpty && model.canModify }
+    #expect(model.snapshot?.readAt != loadedAt)
+  }
+
   @Test func nativeCacheEventsDoNotRefreshAndInstructionSnapshotsSurviveWorkspaceReads()
     async throws
   {
