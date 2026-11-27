@@ -48,9 +48,8 @@ struct WorkspaceView: View {
       .navigationSplitViewColumnWidth(min: 210, ideal: 230, max: 300)
       .disabled(model.isTerminating || model.isApplying)
     } detail: {
-      workspace
+      workspaceWithSubtitle
         .navigationTitle(model.page.title)
-        .navigationSubtitle(model.page == .backups ? "" : model.scope.title)
         .toolbar {
           if model.page.showsClientFilter, model.snapshot != nil {
             ToolbarItem {
@@ -174,6 +173,14 @@ struct WorkspaceView: View {
     .sheet(item: $model.manifestDraft) { draft in ManifestDraftView(model: model, fallback: draft) }
     .sheet(item: $model.creationSession) { _ in CreationView(model: model) }
     .sheet(item: $model.promptSession) { _ in PromptPreviewView(model: model) }
+  }
+
+  @ViewBuilder private var workspaceWithSubtitle: some View {
+    if model.page == .skills, case .loaded = model.loadState {
+      workspace
+    } else {
+      workspace.navigationSubtitle(model.page == .backups ? "" : model.scope.title)
+    }
   }
 
   @ViewBuilder private var workspace: some View {

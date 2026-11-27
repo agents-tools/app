@@ -228,9 +228,9 @@ private struct SkillGalleryContent: View {
       .toolbar {
         ToolbarItem(placement: .automatic) {
           Picker("Display Mode", selection: $displayMode) {
-            Label("Gallery", systemImage: "square.grid.2x2")
+            Text("Gallery")
               .tag(DisplayMode.gallery)
-            Label("Table", systemImage: "list.bullet")
+            Text("Table")
               .tag(DisplayMode.table)
           }
           .pickerStyle(.segmented)
