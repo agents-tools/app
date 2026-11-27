@@ -434,16 +434,19 @@ struct UpdateFlowTests {
   @Test func resolvingASelectedSkillKeepsItsInspector() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let boundary = try FixtureEventBoundary(root: fixture.root)
+    defer { boundary.stop() }
     let folder = fixture.project.appendingPathComponent("toolkit/skills/review")
     try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
     try Data("---\nname: code-review\ndescription: Review changes.\n---\n".utf8)
       .write(to: folder.appendingPathComponent("SKILL.md"))
-    _ = try fixture.writeManifest("""
+    let manifest = try fixture.writeManifest("""
       version: 1
       sources: {toolkit: {path: ./toolkit}}
       components:
         - {kind: skills, source: toolkit, select: [review], agents: [codex]}
       """)
+    try await boundary.settle(creation: manifest, root: fixture.root)
     let model = await loadedModel(fixture)
     defer { _ = model.requestTermination() }
     let pending = try #require(model.snapshot?.skillWorkspaceItems.first)
@@ -451,6 +454,7 @@ struct UpdateFlowTests {
     model.selectedSkillID = pending.id
     let id = try #require(model.previewSkillTargets(for: pending, recipients: [.codex, .geminiCLI]))
     try await idle(model)
+    try #require(model.skillTargetsUpdateSession?.stage == .review)
     model.confirmUpdate(id: id)
     try await idle(model)
     let resolved = try #require(model.snapshot?.skillWorkspaceItems.first { $0.isResolved })

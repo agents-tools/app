@@ -45,6 +45,8 @@ import Testing
   {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }
+    let events = try FixtureEventBoundary(root: fixture.root)
+    defer { events.stop() }
     let scope = WorkspaceScope(kind: .project, root: fixture.project)
     let runtime = RuntimeEnvironment(
       projectDirectory: fixture.project, homeDirectory: fixture.home,
@@ -53,7 +55,7 @@ import Testing
     let producer = fixture.project.appendingPathComponent("producer")
     let cache = producer.appendingPathComponent(".git/lfs/objects/a3/f0")
     try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
-    try fixture.writeManifest(
+    let manifest = try fixture.writeManifest(
       """
       version: 1
       sources: {local: {path: ./producer}}
@@ -61,11 +63,10 @@ import Testing
         - kind: instructions
           sections: [{name: rules, recipients: [chatgpt-app]}]
       """)
+    try await events.settle(creation: manifest, root: fixture.root)
     let model = await loaded(fixture)
     defer { _ = model.requestTermination() }
     let initial = try #require(model.snapshot?.readAt)
-    let events = try FixtureEventBoundary(root: fixture.root)
-    defer { events.stop() }
     let object = cache.appendingPathComponent("object")
     try fixture.externalWrite("LFS cache payload", to: object)
     try await events.settle(creation: object, root: fixture.root)

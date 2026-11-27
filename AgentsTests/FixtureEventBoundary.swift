@@ -32,7 +32,7 @@ final class FixtureEventBoundary: @unchecked Sendable {
   }
   func settle(creation: URL, root: URL) async throws {
     try await wait(for: creation)
-    let sentinel = root.appendingPathComponent("creation-observed-sentinel")
+    let sentinel = root.appendingPathComponent("creation-observed-\(UUID().uuidString)")
     try Data("boundary".utf8).write(to: sentinel)
     try await wait(for: sentinel)
     let boundary = FSEventsGetCurrentEventId()
