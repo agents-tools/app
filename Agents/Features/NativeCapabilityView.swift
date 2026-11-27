@@ -82,9 +82,13 @@ struct NativeCapabilityView: View {
       }
       ToolbarItem {
         if capability == .permissions {
-          Button("Organization Policy…") { policyScope = snapshot.scope }
+          Button("Organization Policy…", systemImage: "checkmark.shield") { policyScope = snapshot.scope }
+            .labelStyle(.iconOnly)
+            .help("Organization Policy")
         } else if capability == .plugin {
-          Button("Manage Packages…") { model.packageScope = snapshot.scope }
+          Button("Manage Packages…", systemImage: "shippingbox") { model.packageScope = snapshot.scope }
+            .labelStyle(.iconOnly)
+            .help("Manage Packages")
             .disabled(!model.canModify)
         }
       }

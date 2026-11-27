@@ -52,7 +52,10 @@ struct DeclarationListView: View {
       }
       ToolbarItem {
         if model.page == .sources {
-          Button("Add from Source…") { model.beginCatalog() }.disabled(!model.canModify)
+          Button("Add from Source…", systemImage: "square.and.arrow.down") { model.beginCatalog() }
+            .labelStyle(.iconOnly)
+            .help("Add from Source")
+            .disabled(!model.canModify)
         }
       }
       ToolbarItem {

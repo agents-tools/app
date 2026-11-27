@@ -61,9 +61,11 @@ struct InstructionsView: View {
     .onChange(of: snapshot.scope) { mappingID = nil }
     .toolbar {
       ToolbarItem {
-        Button("Build Instructions…") {
+        Button("Build Instructions…", systemImage: "hammer") {
           model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: displayedScope))
         }
+        .labelStyle(.iconOnly)
+        .help("Build Instructions")
         .disabled(!canBuildDisplayedScope)
         .accessibilityIdentifier("instructions.build")
       }

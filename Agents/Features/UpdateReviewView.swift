@@ -469,7 +469,9 @@ struct InstalledComponentsView: View {
         .disabled(!model.canModify)
       }
       ToolbarItem {
-        Button("Export Patches…") { showingPatches = true }
+        Button("Export Patches…", systemImage: "square.and.arrow.up") { showingPatches = true }
+          .labelStyle(.iconOnly)
+          .help("Export Patches")
       }
     }
     .sheet(isPresented: $showingPatches) {

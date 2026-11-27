@@ -66,15 +66,19 @@ struct ClientBackupsView: View {
     .background(OpenPanelAnchor(view: panelAnchor))
     .toolbar {
       ToolbarItemGroup {
-        Button("Restore Package…") {
+        Button("Restore Package…", systemImage: "shippingbox.and.arrow.backward") {
           chooseBackupLocation(from: panelAnchor, title: "Open Backup Package", folder: false) {
             model.openBackupPackage($0)
           }
         }
+        .labelStyle(.iconOnly)
+        .help("Restore Package")
         .accessibilityIdentifier("backup.openPackage")
         .disabled(!model.canStartBackup)
 
-        Button("Back Up") { model.backUpSelectedClients() }
+        Button("Back Up", systemImage: "externaldrive.badge.timemachine") { model.backUpSelectedClients() }
+          .labelStyle(.iconOnly)
+          .help("Back Up")
           .buttonStyle(.borderedProminent)
           .accessibilityIdentifier("backup.create")
           .disabled(
