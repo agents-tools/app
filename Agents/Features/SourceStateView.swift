@@ -25,6 +25,7 @@ struct SourceStateView: View {
       }
       Section("Subscriptions") {
         Button("Subscribe to Source…") { model.beginWatch() }
+          .disabled(!model.canModify)
         Button("Check Updates…") { model.checkSubscriptions() }
           .disabled(!model.canModify)
         if let watch = snapshot.watch {
@@ -47,6 +48,7 @@ struct SourceStateView: View {
             Button("Unsubscribe “" + alias + "”…") {
               model.beginWatch(source: alias, removing: true)
             }
+            .disabled(!model.canModify)
           }
           if watch.sources.isEmpty {
             Text("No subscription history yet.").foregroundStyle(.secondary)
@@ -83,6 +85,7 @@ struct SourceOptionsMenu: View {
         }
         .disabled(snapshot.inspection.recovery.pending)
         Button("Import Configuration…") { model.beginImport() }
+          .disabled(!model.canModify)
         Divider()
       }
       Button("User Source Access…", action: openAccess)

@@ -75,9 +75,13 @@ struct WorkspaceView: View {
           }
           if model.page != .backups {
             ToolbarItem {
-              Button("Refresh", systemImage: "arrow.clockwise") { model.refresh() }
-                .disabled(model.isTerminating || model.isApplying)
-                .help("Read configuration again")
+              if model.requestedRefreshID != nil {
+                ProgressView().controlSize(.small).accessibilityLabel("Refreshing configuration")
+              } else {
+                Button("Refresh", systemImage: "arrow.clockwise") { model.refresh(userInitiated: true) }
+                  .disabled(model.isTerminating || model.isApplying)
+                  .help("Read configuration again")
+              }
             }
           }
           if model.page.hasInspector, model.snapshot != nil {

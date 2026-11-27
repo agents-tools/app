@@ -81,6 +81,7 @@ final class AppModel {
   private var monitorID: UUID?
   private var isMonitoringConfiguration = false
   private var readBoundary: FSEventStreamEventId = 0
+  private(set) var requestedRefreshID: UUID?
   private(set) var readsStale = false
   private var refreshPending = false
   private var refreshScheduled = false
@@ -270,7 +271,7 @@ final class AppModel {
     }
   }
 
-  func refresh() {
+  func refresh(userInitiated: Bool = false) {
     guard !isTerminating, !isApplying else { return }
     refreshPending = false
     discardSourceAccess()
@@ -292,11 +293,12 @@ final class AppModel {
     monitor()
     let scope = scope
     let reader = reader
-    startOperation(
+    let readID = startOperation(
       title: "Read configuration", scope: scope, generation: generation, purpose: .workspace
     ) {
       reader.read(scope: scope)
     }
+    requestedRefreshID = userInitiated && snapshot?.scope == scope ? readID : nil
   }
 
   @discardableResult
@@ -998,6 +1000,7 @@ final class AppModel {
   }
 
   private func finish(_ id: UUID, result: CoreCompletion) {
+    if requestedRefreshID == id { requestedRefreshID = nil }
     guard let operation = operations[id] else { return }
     // Terminal evidence belongs to the original operation even when its content is obsolete.
     for diagnostic in result.diagnostics + (result.snapshot?.diagnostics ?? []) {

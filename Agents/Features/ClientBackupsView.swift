@@ -45,7 +45,9 @@ struct ClientBackupsView: View {
         .accessibilityIdentifier("backup.chooseFolder")
       }
 
-      if !model.backupOutcomes.isEmpty {
+      if model.isBackingUp {
+        ProgressView("Creating backup packages…")
+      } else if !model.backupOutcomes.isEmpty {
         Section("Backup Results") {
           ForEach(model.backupOutcomes) { outcome in
             LabeledContent(outcome.client.displayName) {

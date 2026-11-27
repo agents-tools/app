@@ -54,7 +54,7 @@ struct AgentsApp: App {
           .disabled(model.isTerminating || model.isApplying)
       }
       CommandGroup(after: .toolbar) {
-        Button("Refresh Configuration") { model.refresh() }
+        Button("Refresh Configuration") { model.refresh(userInitiated: true) }
           .keyboardShortcut("r", modifiers: .command)
           .disabled(model.isTerminating || model.isApplying)
         Toggle(
