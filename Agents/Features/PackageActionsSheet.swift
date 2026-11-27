@@ -75,7 +75,10 @@ struct PackageActionsSheet: View {
         Text(verbatim: diagnostic.message).foregroundStyle(.red).textSelection(.enabled)
       }
       HStack {
-        if working { ProgressView().controlSize(.small) }
+        if working {
+          ProgressView(page == .simulation ? "Testing package actions…" : "Revoking project access…")
+            .controlSize(.small)
+        }
         Spacer()
         Button(working ? "Stop" : "Done") {
           if working { model.cancelQueuedOperations() } else { dismiss() }

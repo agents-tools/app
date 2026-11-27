@@ -163,6 +163,15 @@ struct UpdateReviewView: View {
             }
           }.keyboardShortcut(.cancelAction)
           Spacer()
+          if let builtAt = session.builtAt, session.stage == .review {
+            Text("Built \(builtAt.formatted(date: .omitted, time: .standard))")
+              .font(.caption).foregroundStyle(.secondary)
+            Button("Build Again") {
+              model.previewUpdate(UpdateProposal(
+                previewingInstructionOutputsIn: session.proposal.scope, focus: session.instructionOutputFocus))
+            }
+            .disabled(!model.canModify || model.scope != session.proposal.scope)
+          }
           if session.stage == .review, session.offersApply {
             Button(session.applyTitle(whileEditing: model.manifestDraft)) {
               model.confirmUpdate()

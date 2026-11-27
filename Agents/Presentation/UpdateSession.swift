@@ -144,6 +144,7 @@ struct UpdateSession: Identifiable {
   let proposal: UpdateProposal
   var id: UUID { proposal.id }
   var stage: Stage = .preparing
+  var builtAt: Date?
   var report: CombinedUpdateReport?
   var packageReview: PackageUpdateReview?
   var terminal: UpdateTerminal?

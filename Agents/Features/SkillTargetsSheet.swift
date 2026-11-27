@@ -52,7 +52,7 @@ struct SkillTargetsSheet: View {
       }
     }
     .padding(24)
-    .frame(width: review == nil ? 475 : 680, height: review == nil ? editorHeight : 595)
+    .frame(width: review == nil ? 475 : 680, height: review == nil ? editorHeight : (review?.stage == .preparing ? 210 : 595))
     .interactiveDismissDisabled(model.isApplying)
     .onDisappear { closeReview() }
   }
@@ -144,7 +144,8 @@ struct SkillTargetsSheet: View {
   @ViewBuilder private func reviewContent(_ review: UpdateSession) -> some View {
     switch review.stage {
     case .preparing:
-      ProgressView("Preparing preview…")
+      ProgressView(field == .targets ? "Checking installation locations…" : "Checking how the skill will be installed…")
+        .controlSize(.small)
     case .review:
       if let report = review.report {
         Form {
@@ -167,7 +168,7 @@ struct SkillTargetsSheet: View {
         }.formStyle(.grouped)
       }
     case .applying:
-      ProgressView("Checking and applying changes…")
+      ProgressView("Updating the skill installation…")
     case .stale:
       Text("Inputs changed. Go back and preview your selections again.")
     case .finished:

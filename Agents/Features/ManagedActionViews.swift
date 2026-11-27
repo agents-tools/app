@@ -44,7 +44,7 @@ struct WatchView: View {
                 session.busy || session.stale || session.scope != model.scope || !model.canModify)
           }
         }
-        if session.busy { ProgressView("Waiting for the complete operation…") }
+        if session.busy { ProgressView("Checking the source subscription…") }
         if let terminal = session.terminal { Text(terminal.message) }
         ForEach(session.messages.filter { $0.message != session.terminal?.message }) {
           Text($0.message)
@@ -122,7 +122,7 @@ struct ImportView: View {
             ImportInspectionView(model: model, inspection: value)
           }
         }.formStyle(.grouped).disabled(session.busy)
-        if session.busy { ProgressView("Inspecting captured input…") }
+        if session.busy { ProgressView("Reading components from the selected file…") }
         ForEach(session.messages) { Text($0.message) }
         Button("Cancel") {
           if session.busy { model.cancelQueuedOperations() } else { model.importSession = nil }
@@ -176,7 +176,7 @@ struct ConnectionView: View {
           if session.busy {
             ProgressView(
               session.testing
-                ? "Testing and releasing owned resources…" : "Preparing exact managed selection…")
+                ? "Testing the MCP server connection…" : "Reading connection settings…")
           }
           if let result = session.result {
             LabeledContent(

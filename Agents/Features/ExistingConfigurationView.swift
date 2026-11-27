@@ -13,7 +13,7 @@ struct ExistingConfigurationView: View {
           .padding(.top, 16)
         Form {
           if session.stage == .preparing {
-            ProgressView("Preparing configuration preview…").controlSize(.small)
+            ProgressView("Reading the configuration to import…").controlSize(.small)
           }
           if let preview = session.preview {
             Section("Import Summary") {
@@ -75,7 +75,7 @@ struct ExistingConfigurationView: View {
         }
         .padding([.horizontal, .bottom], 16)
       }
-      .frame(width: 520, height: 520)
+      .frame(width: 520, height: session.stage == .preparing ? 185 : 520)
       .interactiveDismissDisabled(session.stage == .applying)
     }
   }

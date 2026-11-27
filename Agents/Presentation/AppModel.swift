@@ -101,6 +101,7 @@ final class AppModel {
   var page: WorkspacePage = .overview {
     didSet {
       guard page != oldValue else { return }
+      selectedSourceRecord = nil
       if selectedItem != nil {
         selectedItem = nil
       } else {
@@ -109,6 +110,7 @@ final class AppModel {
     }
   }
   var clientFilter: AgentID?
+  var selectedSourceRecord: String?
   var selectedSkillID: String?
   var selectedItem: NodeID? {
     didSet { if selectedItem != oldValue { discardSourceAccess() } }
@@ -120,7 +122,20 @@ final class AppModel {
   var promptSession: PromptSession?
   var manifestDraft: ManifestDraft?
   var mappingSession: MappingSession?
-  private var activeUpdateSession: UpdateSession?
+  private var instructionBuild: (scope: WorkspaceScope, date: Date, report: CombinedUpdateReport)?
+  private var activeUpdateSession: UpdateSession? {
+    willSet {
+      guard let current = activeUpdateSession, current.stage == .preparing,
+        current.id != newValue?.id else { return }
+      for operation in operations.values {
+        switch operation.purpose {
+        case .preview(let id), .instructionOutputPreview(let id):
+          if id == current.id { operation.admission.cancel() }
+        default: break
+        }
+      }
+    }
+  }
   var updateSession: UpdateSession? {
     get { activeUpdateSession?.proposal.presentation == .workspace ? activeUpdateSession : nil }
     set {
@@ -238,6 +253,7 @@ final class AppModel {
     didApplyExistingConfiguration = false
     self.scope = scope
     preferences.selectedScopeID = scope.id
+    selectedSourceRecord = nil
     selectedItem = nil
     selectedSkillID = nil
     search = ""
@@ -274,6 +290,7 @@ final class AppModel {
   func refresh(userInitiated: Bool = false) {
     guard !isTerminating, !isApplying else { return }
     refreshPending = false
+    instructionBuild = nil
     discardSourceAccess()
     // Superseded queued reads still report a terminal; running reads are allowed to finish.
     for operation in operations.values where operation.title == "Read configuration" {
@@ -485,12 +502,31 @@ final class AppModel {
       id: UUID(), scope: scope, title: title, request: request, intent: intent))
   }
 
+  func hasBuiltInstructions(in scope: WorkspaceScope) -> Bool {
+    instructionBuild?.scope == scope
+  }
+
+  func showInstructionOutput(_ focus: InstructionOutputFocus, in scope: WorkspaceScope) {
+    guard canModify, scope == self.scope, skillTargetsUpdateSession == nil else { return }
+    let proposal = UpdateProposal(previewingInstructionOutputsIn: scope, focus: focus)
+    if let build = instructionBuild, build.scope == scope {
+      var session = UpdateSession(proposal: proposal)
+      session.stage = .review
+      session.report = build.report
+      session.builtAt = build.date
+      activeUpdateSession = session
+    } else {
+      previewUpdate(proposal)
+    }
+  }
+
   func previewUpdate(_ proposal: UpdateProposal) {
     guard canModify, proposal.scope == scope, skillTargetsUpdateSession == nil else { return }
     activeUpdateSession = UpdateSession(proposal: proposal)
     let actions = actions
     let purpose: OperationPurpose
     if case .instructionOutputs = proposal.contents {
+      instructionBuild = nil
       purpose = .instructionOutputPreview(proposal.id)
     } else {
       purpose = .preview(proposal.id)
@@ -775,6 +811,11 @@ final class AppModel {
         activeUpdateSession?.stage = .review
       } else if case .updatePreview(_, let report) = result.output {
         activeUpdateSession?.report = report
+        if case .instructionOutputPreview = operation.purpose {
+          let date = Date()
+          activeUpdateSession?.builtAt = date
+          if currentSelection { instructionBuild = (scope, date, report) }
+        }
         activeUpdateSession?.stage = .review
       } else {
         activeUpdateSession?.stage = result.disposition == .cancelled ? .cancelled : .failed
@@ -919,6 +960,7 @@ final class AppModel {
 
   private func inputsChanged() {
     guard !isTerminating else { return }
+    instructionBuild = nil
     discardSourceAccess()
     readsStale = true
     manifestDraft?.isStale = true
@@ -1044,6 +1086,9 @@ final class AppModel {
         let previousSkill = self.snapshot?.skillWorkspaceItems.first { $0.id == selectedSkillID }
         loadState = .loaded(snapshot)
         readsStale = refreshPending
+        if let record = selectedSourceRecord, !snapshot.sourceRows.contains(where: { $0.id == .resolved(record) }) {
+          selectedSourceRecord = nil
+        }
         if let selectedItem, !snapshot.items.contains(where: { $0.id == selectedItem }) {
           self.selectedItem = nil
         }

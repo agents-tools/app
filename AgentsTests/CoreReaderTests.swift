@@ -74,6 +74,8 @@ struct CoreReaderTests {
     let snapshot = try #require(result.snapshot)
     #expect(snapshot.effectiveDefaultAgents.isEmpty)
     #expect(snapshot.sources.first?.title == "local")
+    #expect(snapshot.sourceRows.first?.name == "local")
+    #expect(snapshot.sourceRows.first?.versions.isEmpty == true)
     let server = try #require(snapshot.components.first { $0.record.kind == "mcpServer" })
     #expect(server.record["condition"]?.record?["agents"]?.elements == [])
     #expect(snapshot.items.contains { $0.category == "Group Reference" && $0.title == "common" })
@@ -311,7 +313,16 @@ struct CoreReaderTests {
     let scope = WorkspaceScope(kind: .user, root: fixture.home)
     let completion = CoreReader(home: fixture.home, processEnvironment: fixture.environment)
       .read(scope: scope)
-    let items = try #require(completion.snapshot?.skillWorkspaceItems)
+    let snapshot = try #require(completion.snapshot)
+    let declarations = snapshot.sourceRows.filter { row in
+      if case .declaration = row.id { return true }
+      return false
+    }
+    #expect(Set(declarations.map(\.name)) == ["first", "second"])
+    #expect(declarations.allSatisfy { $0.versions.count == 1 })
+    let records = snapshot.sourceRows.flatMap(\.versions).map(\.record)
+    #expect(records.sorted() == snapshot.inspection.sources.map(\.record).sorted())
+    let items = snapshot.skillWorkspaceItems
     #expect(items.count == 2)
     #expect(Set(items.map(\.id)).count == 2)
     let shared = try #require(items.first { $0.title == "Review changes" })

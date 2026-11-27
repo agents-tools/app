@@ -115,7 +115,10 @@ struct PackageActionConfigurationSheet: View {
           }.disabled(working)
         }
         Spacer()
-        if preparing || working { ProgressView().controlSize(.small) }
+        if preparing || working {
+          ProgressView(working ? "Applying package action settings…" : "Reading package action settings…")
+            .controlSize(.small)
+        }
         switch review {
         case .save(let review):
           Button(mode.saveTitle) {

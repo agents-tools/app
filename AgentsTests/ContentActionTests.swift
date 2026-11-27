@@ -256,14 +256,16 @@ struct ContentActionTests {
     #expect(model.updateSession?.stage == .review)
     #expect(try fixture.entries() == beforeBuild)
 
+    let builtAt = try #require(model.updateSession?.builtAt)
     model.clientFilter = .codex
     for (focus, expected) in [
       (InstructionOutputFocus.app(.geminiApp), gemini),
       (.local(file: localFile, recipient: .codex), local),
     ] {
       model.closeUpdateReview()
-      model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: scope, focus: focus))
-      try await idle(model)
+      model.showInstructionOutput(focus, in: scope)
+      #expect(model.operations.isEmpty)
+      #expect(model.updateSession?.builtAt == builtAt)
       let preview = try #require(model.updateSession)
       #expect(preview.stage == .review)
       #expect(preview.proposal.scope == scope)

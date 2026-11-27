@@ -12,7 +12,8 @@ struct BundleAuthoringSheet: View {
   @State private var name = ""
   @State private var version = "1.0.0"
   @State private var dependencies: [BundleDependencyDraft] = []
-  @State private var working = false
+  @State private var activity: String?
+  private var working: Bool { activity != nil }
   @State private var notice: String?
   @State private var failure: String?
 
@@ -69,7 +70,7 @@ struct BundleAuthoringSheet: View {
       HStack {
         Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
         Spacer()
-        if working { ProgressView().controlSize(.small) }
+        if let activity { ProgressView(activity).controlSize(.small) }
         Button("Export File…") { chooseDestination(publishing: false) }.disabled(!ready)
         Button("Publish to Marketplace…") { chooseDestination(publishing: true) }.disabled(!ready)
       }
@@ -110,11 +111,11 @@ struct BundleAuthoringSheet: View {
     let entries = components.filter { selection.contains($0.record) }.map(\.selection)
     let scope = snapshot.scope.installScope
     let runtime = environment
-    working = true
+    activity = publishing ? "Publishing the bundle…" : "Exporting the bundle…"
     failure = nil
     notice = nil
     Task {
-      defer { working = false }
+      defer { activity = nil }
       do {
         try await Task.detached(priority: .userInitiated) {
           let archive = try BundleOperations.export(

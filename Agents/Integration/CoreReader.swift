@@ -102,13 +102,15 @@ struct CoreReader: Sendable {
       readDependencies += mappingValues.flatMap(\.readDependencies)
       let mappings = mappingValues.map { Self.mapping($0) }
       let defaults = inspection.declaration?.defaultAgents ?? Declaration().defaultAgents
+      let items = document.map(Self.items) ?? []
       let snapshot = WorkspaceSnapshot(
         scope: scope, manifestURL: store.declarationURL, resolvedURL: store.resolvedURL,
         watchURL: store.watchURL, document: document, effectiveDefaultAgents: defaults,
-        items: document.map(Self.items) ?? [], inventory: skills.inventory, inspection: inspection,
+        items: items, inventory: skills.inventory, inspection: inspection,
         watch: inspection.watch,
         mappings: mappings, ownInstructions: ownInstructions, diagnostics: diagnostics,
-        readAt: Date(), skillWorkspaceItems: skills.items)
+        readAt: Date(), skillWorkspaceItems: skills.items,
+        sourceRows: SourceListRow.rows(items: items, inspection: inspection, environment: runtime))
       return CoreCompletion(
         disposition: .completed, snapshot: snapshot, diagnostics: [],
         readDependencies: readDependencies)

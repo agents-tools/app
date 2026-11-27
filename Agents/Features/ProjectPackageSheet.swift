@@ -21,7 +21,8 @@ struct ProjectPackageSheet: View {
   @State private var marketplaceCategory = ""
   @State private var capture: AuthorPackageArtifact?
   @State private var plugin: NativePluginArtifact?
-  @State private var busy = false
+  @State private var activity: String?
+  private var busy: Bool { activity != nil }
   @State private var failure: String?
   @State private var saved: URL?
 
@@ -132,7 +133,7 @@ struct ProjectPackageSheet: View {
       HStack {
         Button("Done") { dismiss() }.keyboardShortcut(.cancelAction)
         Spacer()
-        if busy { ProgressView().controlSize(.small) }
+        if let activity { ProgressView(activity).controlSize(.small) }
         if let capture {
           Button("Edit Selection") {
             self.capture = nil
@@ -219,7 +220,7 @@ struct ProjectPackageSheet: View {
         name: marketplace, category: target == .codex ? marketplaceCategory : nil)
     let format = target
     let runtime = environment
-    run {
+    run("Collecting package contents…") {
       let package =
         try usingFile
         ? AuthorPackageOperations.preview(environment: runtime)
@@ -256,7 +257,7 @@ struct ProjectPackageSheet: View {
     }
     let runtime = environment
     let native = plugin
-    run {
+    run("Writing the package…") {
       if let native {
         try NativePluginOperations.write(native, to: output, environment: runtime)
       } else if destination == .hosting {
@@ -275,12 +276,13 @@ struct ProjectPackageSheet: View {
   }
 
   private func run<T: Sendable>(
+    _ label: String,
     _ work: @escaping @Sendable () throws -> T, receive: @escaping (T) -> Void
   ) {
-    busy = true
+    activity = label
     failure = nil
     Task {
-      defer { busy = false }
+      defer { activity = nil }
       do { receive(try await Task.detached(priority: .userInitiated, operation: work).value) } catch
       { failure = String(describing: error) }
     }

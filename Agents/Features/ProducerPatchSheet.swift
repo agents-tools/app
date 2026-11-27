@@ -10,7 +10,8 @@ struct ProducerPatchSheet: View {
   @State private var preview: ProducerPatchPreview?
   @State private var selection: String?
   @State private var report: ProducerPatchExport?
-  @State private var busy = false
+  @State private var activity: String?
+  private var busy: Bool { activity != nil }
   @State private var errorMessage: String?
 
   var body: some View {
@@ -81,7 +82,7 @@ struct ProducerPatchSheet: View {
         Spacer()
       }
       HStack {
-        if busy { ProgressView().controlSize(.small) }
+        if let activity { ProgressView(activity).controlSize(.small) }
         Button("Refresh") { Task { await refresh() } }.disabled(busy)
         Spacer()
         Button("Done") { dismiss() }.keyboardShortcut(.cancelAction).disabled(busy)
@@ -120,8 +121,8 @@ struct ProducerPatchSheet: View {
 
   @MainActor private func refresh() async {
     guard !busy else { return }
-    busy = true
-    defer { busy = false }
+    activity = "Comparing source files…"
+    defer { activity = nil }
     errorMessage = nil
     preview = nil
     report = nil
@@ -143,10 +144,10 @@ struct ProducerPatchSheet: View {
     panel.allowsMultipleSelection = false
     panel.prompt = "Export"
     guard panel.runModal() == .OK, let directory = panel.url else { return }
-    busy = true
+    activity = "Exporting patches…"
     errorMessage = nil
     Task {
-      defer { busy = false }
+      defer { activity = nil }
       do {
         report = try await Task.detached {
           try UpdateOperations.exportProducerPatches(preview, to: directory)

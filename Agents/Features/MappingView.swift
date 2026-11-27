@@ -28,7 +28,7 @@ struct MappingView: View {
         case .loading:
           HStack {
             ProgressView().controlSize(.small)
-            Text("Reading selected scopes…")
+            Text("Reading instruction mappings for the selected scopes…")
           }
         case .loaded(let mappings):
           List {
@@ -80,7 +80,14 @@ struct MappingView: View {
         }
       }
       .padding(24)
-      .frame(width: 600, height: 560)
+      .frame(width: 600, height: sheetHeight(session))
+    }
+  }
+
+  private func sheetHeight(_ session: MappingSession) -> CGFloat? {
+    switch session.stage {
+    case .input, .loaded: 560
+    default: nil
     }
   }
 }

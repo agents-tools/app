@@ -41,7 +41,8 @@ struct PackageInstallSheet: View {
   @State private var userHostedIndices: Set<URL> = []
   @State private var downloadOrigins: [URL] = []
   @State private var editingOrigins = false
-  @State private var busy = false
+  @State private var activity: String?
+  private var busy: Bool { activity != nil }
   @State private var errorText: String?
 
   private var replacesBundlePin: Bool {
@@ -62,7 +63,7 @@ struct PackageInstallSheet: View {
           if !registrations.isEmpty { Divider() }
           if hasDeclaredPackages || installedGraph != nil || pendingDeployment != nil {
             Button("Review Declared Package Lock…") {
-              runWithMarketAccess { access in
+              runWithMarketAccess("Checking the declared package lock…") { access in
                 try MarketplaceOperations.previewLockOnlyLifecycle(
                   .reconcile, intent: .update, scope: scope.installScope,
                   environment: environment, hostedAccess: access)
@@ -137,7 +138,7 @@ struct PackageInstallSheet: View {
           Label("Package lock awaiting deployment", systemImage: "clock")
           Spacer()
           Button("Review Offline Deployment…") {
-            run {
+            run("Comparing locked packages with installed files…") {
               try MarketplaceOperations.previewFrozenLifecycle(
                 intent: .install, scope: scope.installScope, environment: environment)
             } receive: { preview in
@@ -226,10 +227,10 @@ struct PackageInstallSheet: View {
           Button("Back to Releases") { clearPackage() }
         }
         Spacer()
-        if busy { ProgressView().controlSize(.small) }
+        if let activity { ProgressView(activity).controlSize(.small) }
         if let graphDraft {
           Button("Save to Lock…") {
-            runWithMarketAccess { access in
+            runWithMarketAccess("Reviewing the package lock…") { access in
               try graphDraft.previewLock(scope: scope.installScope, environment: environment, hostedAccess: access)
             } receive: { preview in
               lockReview = preview
@@ -374,7 +375,7 @@ struct PackageInstallSheet: View {
     origin = pin.dependency.catalog
     selectedRegistration = nil
     updatingPin = pin
-    runWithMarketAccess { access in
+    runWithMarketAccess("Checking for package updates…") { access in
       let registration = try MarketplaceRegistration(name: pin.dependency.name, origin: pin.dependency.catalog)
       return try MarketplaceOperations.browse(
         registration, scope: scope.installScope, environment: environment, hostedAccess: access
@@ -391,7 +392,7 @@ struct PackageInstallSheet: View {
   }
 
   private func storeMarketplace(name: String, origin: MarketplaceOrigin, token: String?, connect: Bool) {
-    run {
+    run("Saving the marketplace…") {
       let entry = try MarketplaceRegistration(name: name, origin: origin)
       try MarketplaceDirectory.register(entry, scope: scope.installScope, environment: environment)
       return try MarketplaceDirectory.list(scope: scope.installScope, environment: environment)
@@ -408,7 +409,7 @@ struct PackageInstallSheet: View {
   }
 
   private func forget(_ entry: RegisteredMarketplace) {
-    run {
+    run("Removing the marketplace…") {
       try MarketplaceDirectory.unregister(
         entry.registration.name, scope: scope.installScope, environment: environment)
       return try MarketplaceDirectory.list(scope: scope.installScope, environment: environment)
@@ -437,7 +438,7 @@ struct PackageInstallSheet: View {
     clearPackage()
     releases = []
     origin = source
-    runWithMarketAccess { access in
+    runWithMarketAccess("Reading marketplace releases…") { access in
       let registration =
         try registered?.registration
         ?? MarketplaceRegistration(name: "team", origin: source)
@@ -456,7 +457,7 @@ struct PackageInstallSheet: View {
   private func openBundle() {
     let panel = NSOpenPanel()
     guard panel.runModal() == .OK, let file = panel.url else { return }
-    run {
+    run("Opening the bundle…") {
       try BundleOperations.inspect(Data(contentsOf: file))
     } receive: { contents in
       origin = nil
@@ -476,7 +477,7 @@ struct PackageInstallSheet: View {
 
   private func inspect(_ release: MarketplaceRelease) {
     let selectedPin = updatingPin
-    runWithMarketAccess { access -> InspectedRelease in
+    runWithMarketAccess("Reading the selected release…") { access -> InspectedRelease in
       let inspection = try UpdateOperations.inspect(
         scope: scope.installScope, environment: environment)
       let roots =
@@ -530,7 +531,7 @@ struct PackageInstallSheet: View {
       return
     }
     let resolvingPending = pendingDeployment != nil
-    runWithMarketAccess { access in
+    runWithMarketAccess("Resolving package dependencies…") { access in
       let request = try draft.request()
       if resolvingPending {
         return try MarketplaceOperations.previewLockOnly(request, scope: scope.installScope, environment: environment, hostedAccess: access).resolution
@@ -543,7 +544,7 @@ struct PackageInstallSheet: View {
   }
 
   private func prepareGraph(_ draft: MarketplacePackageDraft) {
-    runWithMarketAccess { access in
+    runWithMarketAccess("Checking package installation changes…") { access in
       try draft.preview(scope: scope.installScope, environment: environment, hostedAccess: access)
     } receive: { preview in
       review(UpdateProposal(
@@ -552,7 +553,7 @@ struct PackageInstallSheet: View {
   }
 
   private func reviewRemoval(_ name: String) {
-    runWithMarketAccess { access in
+    runWithMarketAccess("Checking which packages will be removed…") { access in
       try MarketplaceOperations.previewResolutionLifecycle(
         .remove(name), intent: .uninstall, scope: scope.installScope, environment: environment,
         hostedAccess: access)
@@ -573,7 +574,7 @@ struct PackageInstallSheet: View {
       return BundleImportSelection(
         componentID: item.id, targets: AgentID.allCases.filter(choices.contains))
     }
-    run {
+    run("Checking bundle installation changes…") {
       if let package {
         return try package.previewImportLifecycle(
           as: name, selections: selections, intent: intent, scope: scope.installScope,
@@ -601,28 +602,30 @@ struct PackageInstallSheet: View {
   }
 
   private func runWithMarketAccess<T: Sendable>(
+    _ label: String,
     _ work: @escaping @Sendable (HostedMarketplaceAccess) throws -> T, receive: @escaping (T) -> Void
   ) {
     let tokens = hostedTokens
     let origins = downloadOrigins
-    run {
+    run(label) {
       try work(HostedMarketplaceAccess(trustedDownloadOrigins: origins, credentialProvider: { tokens[$0] }))
     } receive: { receive($0) }
   }
 
   private func run<T: Sendable>(
+    _ label: String,
     _ work: @escaping @Sendable () throws -> T, receive: @escaping (T) -> Void
   ) {
     guard !busy else { return }
-    busy = true
+    activity = label
     errorText = nil
     Task {
       do {
         let value = try await Task.detached(priority: .userInitiated, operation: work).value
-        busy = false
+        activity = nil
         receive(value)
       } catch {
-        busy = false
+        activity = nil
         errorText = String(describing: error)
       }
     }

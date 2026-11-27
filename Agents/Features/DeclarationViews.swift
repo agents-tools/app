@@ -1,4 +1,5 @@
 import AgentsCore
+import AgentsUpdates
 import SwiftUI
 
 struct DeclarationListView: View {
@@ -6,7 +7,9 @@ struct DeclarationListView: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      if model.filteredItems.isEmpty {
+      if model.page == .sources, let snapshot = model.snapshot {
+        sourceTable(snapshot)
+      } else if model.filteredItems.isEmpty {
         if model.search.isEmpty {
           ContentUnavailableView(
             "No \(model.page.title)", systemImage: model.page.symbol,
@@ -69,6 +72,46 @@ struct DeclarationListView: View {
       }
     }
   }
+
+  @ViewBuilder private func sourceTable(_ snapshot: WorkspaceSnapshot) -> some View {
+    let rows = snapshot.sourceRows.filter { row in
+      model.search.isEmpty || [row.name, row.kind, row.versionLabel].contains {
+        $0.localizedCaseInsensitiveContains(model.search)
+      } || row.versions.contains { $0.identity.localizedCaseInsensitiveContains(model.search) }
+    }
+    if rows.isEmpty {
+      if model.search.isEmpty {
+        ContentUnavailableView("No Sources", systemImage: "externaldrive")
+      } else {
+        ContentUnavailableView.search(text: model.search)
+      }
+    } else {
+      Table(rows, selection: Binding<SourceListRow.ID?>(
+        get: {
+          model.selectedItem.map(SourceListRow.ID.declaration)
+            ?? model.selectedSourceRecord.map(SourceListRow.ID.resolved)
+        },
+        set: { id in
+          switch id {
+          case .declaration(let node):
+            model.selectedSourceRecord = nil
+            model.selectedItem = node
+          case .resolved(let record):
+            model.selectedItem = nil
+            model.selectedSourceRecord = record
+          case nil:
+            model.selectedItem = nil
+            model.selectedSourceRecord = nil
+          }
+        })
+      ) {
+        TableColumn("Source", value: \.name)
+        TableColumn("Kind", value: \.kind)
+        TableColumn("Current Version", value: \.versionLabel)
+      }
+      .accessibilityIdentifier("declaration.table")
+    }
+  }
 }
 
 struct InspectorView: View {
@@ -77,6 +120,22 @@ struct InspectorView: View {
   var body: some View {
     let sourceAccess = model.sourceAccessSelection
     Form {
+      if model.page == .sources, let snapshot = model.snapshot,
+        let id = model.selectedItem.map(SourceListRow.ID.declaration)
+          ?? model.selectedSourceRecord.map(SourceListRow.ID.resolved),
+        let row = snapshot.sourceRows.first(where: { $0.id == id }), !row.versions.isEmpty
+      {
+        Section("Current Version") {
+          ForEach(row.versions, id: \.record) { source in
+            LabeledContent("Source") { CompactText(text: source.identity) }
+            if let version = source.version { LabeledContent("Version", value: version) }
+            LabeledContent("Revision") { CompactText(text: source.revision) }
+            if let location = source.location {
+              LabeledContent("Location") { PathView(url: location, scope: snapshot.scope) }
+            }
+          }
+        }
+      }
       if let item = model.selectedDeclaration {
         Section(item.title) {
           LabeledContent("Kind", value: DeclarationLabels.kind(item.record.kind))
@@ -115,7 +174,7 @@ struct InspectorView: View {
             }
           }
         }
-      } else {
+      } else if model.selectedSourceRecord == nil {
         Section("Scope") {
           LabeledContent("Name", value: model.scope.title)
           LabeledContent("Location") { PathView(url: model.scope.root, scope: model.scope) }

@@ -250,7 +250,7 @@ struct InstructionsView: View {
           {
             Text("No instructions selected").foregroundStyle(.secondary)
           } else {
-            Button("Preview Instructions…") {
+            Button(model.hasBuiltInstructions(in: scope) ? "View Built Instructions…" : "Preview Instructions…") {
               previewOutput(.app(recipient), in: scope)
             }
             .disabled(!canBuildDisplayedScope)
@@ -304,7 +304,7 @@ struct InstructionsView: View {
           Text("No mapped instruction files.").foregroundStyle(.secondary)
         }
         if model.clientFilter?.supportsInstructions(in: mapping.scope.installScope) != false {
-          Button("Preview Local Outputs…") {
+          Button(model.hasBuiltInstructions(in: mapping.scope) ? "View Built Outputs…" : "Preview Local Outputs…") {
             previewOutput(.local(recipient: model.clientFilter), in: mapping.scope)
           }
           .disabled(!canBuildDisplayedScope)
@@ -327,7 +327,7 @@ struct InstructionsView: View {
   {
     if let url = mapping.fileURL(for: target.id) {
       LabeledContent("Path") { PathView(url: url, scope: mapping.scope) }
-      Button("Preview Output…") {
+      Button(model.hasBuiltInstructions(in: mapping.scope) ? "View Built Output…" : "Preview Output…") {
         previewOutput(.local(file: url, recipient: model.clientFilter), in: mapping.scope)
       }
       .disabled(!canBuildDisplayedScope)
@@ -362,7 +362,7 @@ struct InstructionsView: View {
   }
 
   private func previewOutput(_ focus: InstructionOutputFocus, in scope: WorkspaceScope) {
-    model.previewUpdate(UpdateProposal(previewingInstructionOutputsIn: scope, focus: focus))
+    model.showInstructionOutput(focus, in: scope)
   }
 
   private func namedPrompts(_ mapping: MappingItem) -> some View {

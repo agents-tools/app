@@ -12,7 +12,7 @@ struct PromptPreviewView: View {
         case .loading:
           HStack {
             ProgressView().controlSize(.small)
-            Text("Generating prompt preview…")
+            Text("Assembling the selected prompt sections…")
           }
         case .ready(let text):
           ScrollView {
@@ -41,7 +41,13 @@ struct PromptPreviewView: View {
         }
       }
       .padding(24)
-      .frame(minWidth: 520, idealWidth: 640, minHeight: 280, idealHeight: 500)
+      .frame(width: 600)
+      .frame(height: previewHeight(session))
     }
+  }
+
+  private func previewHeight(_ session: PromptSession) -> CGFloat? {
+    if case .ready = session.stage { return 450 }
+    return nil
   }
 }

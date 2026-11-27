@@ -148,6 +148,52 @@ struct OwnInstructionItem: Identifiable, Sendable {
   let authorFile: URL
 }
 
+struct SourceListRow: Identifiable, Sendable {
+  enum ID: Hashable, Sendable {
+    case declaration(NodeID)
+    case resolved(String)
+  }
+
+  let id: ID
+  let name: String
+  let kind: String
+  let versions: [SourceInspection]
+
+  var versionLabel: String {
+    guard let first = versions.first else { return "Not resolved" }
+    if versions.count > 1 { return "\(versions.count) revisions" }
+    if let version = first.version { return version }
+    let revision = first.revision
+    return [40, 64].contains(revision.count) && revision.allSatisfy(\.isHexDigit)
+      ? String(revision.prefix(12)) : revision
+  }
+
+  static func rows(
+    items: [DeclarationItem], inspection: ScopeInspection, environment: RuntimeEnvironment
+  ) -> [Self] {
+    let byIdentity = Dictionary(grouping: inspection.sources, by: \.identity)
+    let declarations = inspection.declaration?.sources ?? [:]
+    var matched = Set<String>()
+    var rows = items.filter { $0.category == "Source" }.map { item in
+      let source = declarations[item.record["name"]?.string ?? item.title]
+      let identity = try? source?.identity(environment: environment)
+      let versions = identity.flatMap { byIdentity[$0] }?.filter { record in
+        record.container == nil && (record.uses.isEmpty || record.uses.contains {
+          $0.root == (source?.path ?? ".") && $0.requirement == source?.requirement
+        })
+      } ?? []
+      matched.formUnion(versions.map(\.record))
+      return Self(id: .declaration(item.id), name: item.title,
+                  kind: DeclarationLabels.kind(item.record.kind), versions: versions)
+    }
+    for source in inspection.sources where !matched.contains(source.record) {
+      rows.append(Self(id: .resolved(source.record), name: source.identity,
+                       kind: DeclarationLabels.kind(source.kind.rawValue), versions: [source]))
+    }
+    return rows
+  }
+}
+
 struct WorkspaceSnapshot: Sendable {
   let scope: WorkspaceScope
   let manifestURL: URL
@@ -164,6 +210,7 @@ struct WorkspaceSnapshot: Sendable {
   let diagnostics: [AppDiagnostic]
   let readAt: Date
   var skillWorkspaceItems: [SkillWorkspaceItem] = []
+  var sourceRows: [SourceListRow] = []
 
   func hasNoDeclaredAppInstructions(for recipient: InstructionRecipient) -> Bool {
     // Indirect selections are resolved by the instruction builder.

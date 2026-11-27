@@ -8,21 +8,6 @@ struct SourceStateView: View {
   let model: AppModel
   var body: some View {
     Form {
-      Section("Resolved Versions") {
-        ForEach(snapshot.inspection.sources, id: \.record) { source in
-          DetailsGroup(source.identity) {
-            LabeledContent("Kind", value: DeclarationLabels.kind(source.kind.rawValue))
-            LabeledContent("Revision") { CompactText(text: source.revision) }
-            if let version = source.version { LabeledContent("Version", value: version) }
-            if let location = source.location {
-              LabeledContent("Location") { PathView(url: location, scope: snapshot.scope) }
-            }
-          }
-        }
-        if snapshot.inspection.sources.isEmpty {
-          Text("No source versions have been recorded yet.").foregroundStyle(.secondary)
-        }
-      }
       Section("Subscriptions") {
         Button("Subscribe to Source…") { model.beginWatch() }
           .disabled(!model.canModify)

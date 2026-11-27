@@ -10,7 +10,8 @@ struct PromptAuditSheet: View {
   @State private var report: ContentAuditReport?
   @State private var selectedFile: URL?
   @State private var strip: ContentAuditStripPreview?
-  @State private var busy = false
+  @State private var activity: String?
+  private var busy: Bool { activity != nil }
   @State private var message: String?
 
   var body: some View {
@@ -20,7 +21,7 @@ struct PromptAuditSheet: View {
       HStack {
         Button("Scan Scope") { scan(file: nil) }
         Button("Choose File…") { chooseFile() }
-        if busy { ProgressView().controlSize(.small) }
+        if let activity { ProgressView(activity).controlSize(.small) }
         Spacer()
         if let report {
           Menu("Export Report") {
@@ -103,7 +104,7 @@ struct PromptAuditSheet: View {
     selectedFile = file
     strip = nil
     report = nil
-    work {
+    work("Scanning prompt content…") {
       if let file {
         return ContentAuditOperations.scan(
           file: file, scope: scope.installScope, environment: environment)
@@ -115,7 +116,7 @@ struct PromptAuditSheet: View {
   }
 
   private func review(_ file: URL) {
-    work {
+    work("Reviewing file changes…") {
       try ContentAuditOperations.previewStrip(
         file: file, scope: scope.installScope, environment: environment)
     } receive: { preview in
@@ -124,7 +125,7 @@ struct PromptAuditSheet: View {
   }
 
   private func apply(_ preview: ContentAuditStripPreview) {
-    work {
+    work("Applying reviewed changes…") {
       try ContentAuditOperations.applyStrip(preview)
       return ContentAuditOperations.scan(
         file: preview.file, scope: scope.installScope, environment: environment)
@@ -141,7 +142,7 @@ struct PromptAuditSheet: View {
     let panel = NSSavePanel()
     panel.nameFieldStringValue = filename
     guard panel.runModal() == .OK, let file = panel.url else { return }
-    work {
+    work("Exporting the report…") {
       try report.export(format).write(to: file, options: .atomic)
     } receive: { _ in
       message = "Exported " + file.lastPathComponent
@@ -149,13 +150,14 @@ struct PromptAuditSheet: View {
   }
 
   private func work<T: Sendable>(
+    _ label: String,
     _ operation: @escaping @Sendable () throws -> T, receive: @escaping (T) -> Void
   ) {
     guard !busy else { return }
-    busy = true
+    activity = label
     message = nil
     Task {
-      defer { busy = false }
+      defer { activity = nil }
       do {
         receive(try await Task.detached(priority: .userInitiated, operation: operation).value)
       } catch { message = String(describing: error) }

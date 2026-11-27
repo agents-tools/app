@@ -78,7 +78,7 @@ struct RegistryBrowserSheet: View {
               }
             }
           } else if busy {
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProgressView("Loading registry entries…").frame(maxWidth: .infinity, maxHeight: .infinity)
           } else {
             ContentUnavailableView(
               didSearch ? "No Matching Servers" : "Search the Registry",

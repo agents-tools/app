@@ -79,8 +79,14 @@ import Testing
       gate.wait()
       return .init(disposition: .completed)
     }
-    model.previewUpdate(
-      UpdateProposal(previewingInstructionOutputsIn: scope, focus: .app(.chatGPTApp)))
+    model.showInstructionOutput(.app(.chatGPTApp), in: scope)
+    let abandoned = try #require(model.operations.values.first {
+      if case .instructionOutputPreview = $0.purpose { return true }
+      return false
+    })
+    model.closeUpdateReview()
+    #expect(!abandoned.admission.begin())
+    model.showInstructionOutput(.app(.chatGPTApp), in: scope)
     try fixture.externalWrite(
       "Genuine authored input", to: producer.appendingPathComponent("input.md"))
     try await eventually { model.operations.values.contains { $0.title == "Read configuration" } }
@@ -97,6 +103,7 @@ import Testing
     try await eventually { model.operations.isEmpty }
     #expect(model.updateSession?.stage == .review)
     #expect(model.updateSession?.instructionOutputs == [output])
+    #expect(!model.hasBuiltInstructions(in: scope))
     #expect(model.updateSession?.canApplyReport == false)
 
     model.select(.init(kind: .user, root: fixture.home))

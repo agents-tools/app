@@ -40,7 +40,7 @@ struct CreationView: View {
                 session.kind == .instructions ? session.name.isEmpty : !session.directorySelected)
           }
         case .describing:
-          ProgressView("Preparing starter content preview…")
+          ProgressView("Checking which starter files to create…")
         case .confirmation:
           Form {
             LabeledContent("Scope", value: session.scope.title)
@@ -70,7 +70,6 @@ struct CreationView: View {
             ProgressView().controlSize(.small)
             Text("Creating starter content…")
           }
-          Text("Waiting for the operation to finish.").foregroundStyle(.secondary)
         case .created(let url):
           Label("Starter content created", systemImage: "checkmark.circle")
           if let terminal = session.terminal, terminal.recovery.pending {
@@ -107,7 +106,7 @@ struct CreationView: View {
       .background(OpenPanelAnchor(view: pickerAnchor))
       .padding(24)
       .frame(width: 520)
-      .frame(minHeight: 220)
+      .frame(minHeight: isRunning(session) ? nil : 220)
       .interactiveDismissDisabled(isRunning(session))
     }
   }

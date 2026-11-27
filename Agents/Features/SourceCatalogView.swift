@@ -230,7 +230,7 @@ struct SourceCatalogView: View {
             }
           }
         }.formStyle(.grouped).disabled(session.busy)
-        if session.busy { ProgressView("Waiting for source inspection and cleanup…") }
+        if session.busy { ProgressView("Checking the selected source content…") }
         if session.stale {
           Text("Source or destination inputs changed. Inspect again before selecting content.")
         }
