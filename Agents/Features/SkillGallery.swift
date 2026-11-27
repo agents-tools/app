@@ -228,14 +228,19 @@ private struct SkillGalleryContent: View {
       .toolbar {
         ToolbarItem(placement: .automatic) {
           Picker("Display Mode", selection: $displayMode) {
-            Text("Gallery")
+            Label("Gallery", systemImage: "square.grid.2x2")
+              .labelStyle(.iconOnly)
+              .accessibilityLabel("Gallery")
+              .help("Gallery")
               .tag(DisplayMode.gallery)
-            Text("Table")
+            Label("Table", systemImage: "list.bullet")
+              .labelStyle(.iconOnly)
+              .accessibilityLabel("Table")
+              .help("Table")
               .tag(DisplayMode.table)
           }
           .pickerStyle(.segmented)
           .labelsHidden()
-          .help("Switch between Gallery and Table view")
           .accessibilityLabel("Display Mode")
         }
       }
