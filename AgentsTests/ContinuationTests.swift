@@ -1,4 +1,5 @@
 import AgentsCore
+import AgentsInstructions
 import AgentsManifest
 import AgentsUpdates
 import Foundation
@@ -7,6 +8,72 @@ import Testing
 @testable import AgentsApp
 
 @MainActor struct ContinuationTests {
+  @Test func nativeCacheEventsDoNotRefreshAndInstructionSnapshotsSurviveWorkspaceReads()
+    async throws
+  {
+    let fixture = try TestFixture()
+    defer { try? fixture.remove() }
+    let scope = WorkspaceScope(kind: .project, root: fixture.project)
+    let runtime = RuntimeEnvironment(
+      projectDirectory: fixture.project, homeDirectory: fixture.home,
+      environment: fixture.environment)
+    _ = try InstructionOperations.initializeInstructions(named: "rules", environment: runtime)
+    let producer = fixture.project.appendingPathComponent("producer")
+    let cache = producer.appendingPathComponent(".git/lfs/objects/a3/f0")
+    try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+    try fixture.writeManifest(
+      """
+      version: 1
+      sources: {local: {path: ./producer}}
+      components:
+        - kind: instructions
+          sections: [{name: rules, recipients: [chatgpt-app]}]
+      """)
+    let model = await loaded(fixture)
+    defer { _ = model.requestTermination() }
+    let initial = try #require(model.snapshot?.readAt)
+    let events = try FixtureEventBoundary(root: fixture.root)
+    defer { events.stop() }
+    let object = cache.appendingPathComponent("object")
+    try fixture.externalWrite("LFS cache payload", to: object)
+    try await events.settle(creation: object, root: fixture.root)
+    try await Task.sleep(for: .milliseconds(500))
+    #expect(model.snapshot?.readAt == initial)
+    #expect(model.operations.isEmpty)
+
+    let gate = DispatchSemaphore(value: 0)
+    defer { gate.signal() }
+    model.startOperation(title: "Hold the Core worker", scope: scope) {
+      gate.wait()
+      return .init(disposition: .completed)
+    }
+    model.previewUpdate(
+      UpdateProposal(previewingInstructionOutputsIn: scope, focus: .app(.chatGPTApp)))
+    try fixture.externalWrite(
+      "Genuine authored input", to: producer.appendingPathComponent("input.md"))
+    try await eventually { model.operations.values.contains { $0.title == "Read configuration" } }
+    #expect(model.updateSession?.stage == .preparing)
+    gate.signal()
+    try await eventually { model.operations.isEmpty }
+    #expect(model.snapshot?.readAt != initial)
+    #expect(model.updateSession?.stage == .review)
+    let output = try #require(model.updateSession?.instructionOutputs.first)
+    #expect(output.recipient == .chatGPTApp)
+    #expect(output.fullText?.contains("# rules") == true)
+
+    model.refresh()
+    try await eventually { model.operations.isEmpty }
+    #expect(model.updateSession?.stage == .review)
+    #expect(model.updateSession?.instructionOutputs == [output])
+    #expect(model.updateSession?.canApplyReport == false)
+
+    model.select(.init(kind: .user, root: fixture.home))
+    model.select(scope)
+    try await eventually { model.operations.isEmpty }
+    #expect(model.updateSession?.stage == .stale)
+    #expect(model.updateSession?.instructionOutputs.isEmpty == true)
+  }
+
   @Test func atomicExternalReplacementRetainsDirtyDraftAndInvalidatesPreview() async throws {
     let fixture = try TestFixture()
     defer { try? fixture.remove() }

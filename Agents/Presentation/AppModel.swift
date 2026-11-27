@@ -33,6 +33,7 @@ final class AppModel {
     case prompt(UUID)
     case discovery(UUID)
     case preview(UUID)
+    case instructionOutputPreview(UUID)
     case apply(UUID)
     case packageActionTest
     case packageActionWrite
@@ -75,10 +76,12 @@ final class AppModel {
       MCPConnectionTestResult
   @ObservationIgnored private var asyncTasks: [UUID: Task<Void, Never>] = [:]
   @ObservationIgnored private var readMonitor: ReadMonitor?
+  private var workspaceReadDependencies: [ReadDependency] = []
   private var supplementalReadDependencies: Set<ReadDependency> = []
-  private var monitoredScope: WorkspaceScope?
+  private var monitorID: UUID?
   private var readBoundary: FSEventStreamEventId = 0
   private(set) var readsStale = false
+  private var refreshPending = false
   private var refreshScheduled = false
   var assistanceSession: AssistanceSession?
   var assistanceAvailable: Bool { preferences.assistanceEnabled && assistance.available() }
@@ -220,7 +223,12 @@ final class AppModel {
   func select(_ scope: WorkspaceScope) {
     guard self.scope != scope, !isTerminating, !isApplying else { return }
     stopMonitoring()
+    workspaceReadDependencies = []
     supplementalReadDependencies = []
+    if activeUpdateSession?.isInstructionOutputPreview == true {
+      activeUpdateSession?.stage = .stale
+      activeUpdateSession?.report = nil
+    }
     cancelAssistance()
     cancelConnection()
     cancelExistingConfiguration()
@@ -251,12 +259,15 @@ final class AppModel {
 
   func refresh() {
     guard !isTerminating, !isApplying else { return }
+    refreshPending = false
     discardSourceAccess()
     // Superseded queued reads still report a terminal; running reads are allowed to finish.
     for operation in operations.values where operation.title == "Read configuration" {
       operation.admission.cancel()
     }
-    if case .review = activeUpdateSession?.stage {
+    if let session = activeUpdateSession, session.stage == .review,
+      !session.isInstructionOutputPreview
+    {
       activeUpdateSession?.stage = .stale
       activeUpdateSession?.packageReview = nil
       activeUpdateSession?.bindingInputs = [:]
@@ -265,7 +276,7 @@ final class AppModel {
     readsStale = true
     if snapshot?.scope != scope { loadState = .loading }
     readBoundary = FSEventsGetCurrentEventId()
-    monitor(reader.stateDependencies(scope: scope), since: readBoundary)
+    monitor()
     let scope = scope
     let reader = reader
     startOperation(
@@ -463,8 +474,13 @@ final class AppModel {
     guard canModify, proposal.scope == scope, skillTargetsUpdateSession == nil else { return }
     activeUpdateSession = UpdateSession(proposal: proposal)
     let actions = actions
-    startOperation(title: "Prepare " + proposal.title, scope: scope, purpose: .preview(proposal.id))
-    {
+    let purpose: OperationPurpose
+    if case .instructionOutputs = proposal.contents {
+      purpose = .instructionOutputPreview(proposal.id)
+    } else {
+      purpose = .preview(proposal.id)
+    }
+    startOperation(title: "Prepare " + proposal.title, scope: scope, purpose: purpose) {
       actions.preview(proposal)
     }
   }
@@ -582,7 +598,7 @@ final class AppModel {
       sourceAccessSettings.finish(id: id, result: result)
       switch result.output {
       case .sourceAccessSettings(.saved), .sourceAccessSettings(.failed(.core(.changed))):
-        inputsChanged(in: scope)
+        inputsChanged()
       default: break
       }
     case .clientBackup:
@@ -727,9 +743,16 @@ final class AppModel {
             scope: operation.scope, operation: "Discovery",
             message: "Selection changed. Discover again for the selected scope."))
       }
-    case .preview(let id) where activeUpdateSession?.id == id:
+    case .preview(let id), .instructionOutputPreview(let id):
+      guard activeUpdateSession?.id == id else { return }
       activeUpdateSession?.messages = result.diagnostics
-      if !currentSelection || activeUpdateSession?.stage == .stale {
+      let admissible: Bool
+      if case .instructionOutputPreview = operation.purpose {
+        admissible = operation.selectionScope == scope
+      } else {
+        admissible = currentSelection
+      }
+      if !admissible || activeUpdateSession?.stage == .stale {
         activeUpdateSession?.stage = .stale
       } else if case .packageUpdatePreview(_, let review) = result.output {
         activeUpdateSession?.report = review.report
@@ -846,19 +869,22 @@ final class AppModel {
     }
   }
 
-  private func monitor(_ dependencies: [ReadDependency], since: FSEventStreamEventId) {
+  private func monitor() {
     guard !isTerminating else { return }
-    if readMonitor == nil || monitoredScope != scope {
-      stopMonitoring()
-      let watchedScope = scope
+    if readMonitor == nil {
+      let id = UUID()
       readMonitor = ReadMonitor { [weak self] in
-        Task { @MainActor [weak self] in self?.inputsChanged(in: watchedScope) }
+        Task { @MainActor [weak self] in
+          guard let self, monitorID == id else { return }
+          inputsChanged()
+        }
       }
-      monitoredScope = scope
+      monitorID = id
     }
+    let dependencies = Set(reader.stateDependencies(scope: scope))
+      .union(workspaceReadDependencies).union(supplementalReadDependencies)
     do {
-      try readMonitor?.replace(
-        dependencies: Array(Set(dependencies).union(supplementalReadDependencies)), since: since)
+      try readMonitor?.replace(dependencies: Array(dependencies), since: readBoundary)
     } catch {
       diagnostics.append(
         .init(
@@ -870,11 +896,11 @@ final class AppModel {
   private func stopMonitoring() {
     readMonitor?.stop()
     readMonitor = nil
-    monitoredScope = nil
+    monitorID = nil
   }
 
-  private func inputsChanged(in watchedScope: WorkspaceScope) {
-    guard watchedScope == scope, !isTerminating else { return }
+  private func inputsChanged() {
+    guard !isTerminating else { return }
     discardSourceAccess()
     readsStale = true
     manifestDraft?.isStale = true
@@ -887,19 +913,35 @@ final class AppModel {
     connectionSession?.stale = true
     connectionSession?.inputs = [:]
     invalidateExistingConfigurationIfChanged()
-    if let session = activeUpdateSession, session.stage == .review || session.stage == .preparing {
+    if let session = activeUpdateSession, !session.isInstructionOutputPreview,
+      session.stage == .review || session.stage == .preparing
+    {
       activeUpdateSession?.stage = .stale
       activeUpdateSession?.packageReview = nil
       activeUpdateSession?.bindingInputs = [:]
     }
-    guard !isApplying, !refreshScheduled else { return }
+    refreshPending = true
+    scheduleRefresh()
+  }
+
+  private var hasWorkspaceRead: Bool {
+    operations.values.contains { operation in
+      guard operation.generation == generation else { return false }
+      if case .workspace = operation.purpose { return true }
+      return false
+    }
+  }
+
+  private func scheduleRefresh() {
+    guard refreshPending, !refreshScheduled, !isApplying, !hasWorkspaceRead, !isTerminating else {
+      return
+    }
     refreshScheduled = true
     Task { @MainActor [weak self] in
       guard let self else { return }
-      // Coalesce one native event batch without polling the file system.
       await Task.yield()
       refreshScheduled = false
-      if !isTerminating && !isApplying { refresh() }
+      if refreshPending, !isTerminating, !isApplying, !hasWorkspaceRead { refresh() }
     }
   }
 
@@ -963,18 +1005,26 @@ final class AppModel {
     operations.removeValue(forKey: id)
     let currentSelection = operation.selectionScope == scope && operation.generation == generation
     finishContent(operation, result: result, currentSelection: currentSelection)
-    if currentSelection && !result.readDependencies.isEmpty {
-      supplementalReadDependencies.formUnion(result.readDependencies)
-      monitor(
-        snapshot?.inspection.readLocations.map(ReadDependency.subtree)
-          ?? reader.stateDependencies(scope: scope),
-        since: readBoundary)
+    if currentSelection {
+      switch operation.purpose {
+      case .instructionOutputPreview:
+        // The rendered snapshot owns no live inputs or publication capability.
+        break
+      case .workspace where result.snapshot != nil:
+        workspaceReadDependencies = result.readDependencies
+        monitor()
+      default:
+        if !result.readDependencies.isEmpty {
+          supplementalReadDependencies.formUnion(result.readDependencies)
+          monitor()
+        }
+      }
     }
     if currentSelection {
       if let snapshot = result.snapshot, snapshot.scope == scope {
         let previousSkill = self.snapshot?.skillWorkspaceItems.first { $0.id == selectedSkillID }
         loadState = .loaded(snapshot)
-        readsStale = false
+        readsStale = refreshPending
         if let selectedItem, !snapshot.items.contains(where: { $0.id == selectedItem }) {
           self.selectedItem = nil
         }
@@ -987,8 +1037,9 @@ final class AppModel {
           }
           self.selectedSkillID = matches.count == 1 ? matches[0].id : nil
         }
-        monitor(snapshot.inspection.readLocations.map(ReadDependency.subtree), since: readBoundary)
-        if case .workspace = operation.purpose, scope.kind == .project, !isTerminating {
+        if case .workspace = operation.purpose, scope.kind == .project, !isTerminating,
+          !refreshPending
+        {
           let reader = reader
           startOperation(title: "Read user skills", scope: scope) { reader.readUserSkillReferences() }
         }
@@ -999,7 +1050,7 @@ final class AppModel {
         case .existingConfigurationAvailable = result.output
       {
         loadState = .existingConfigurationAvailable
-        readsStale = false
+        readsStale = refreshPending
         selectedSkillID = nil
       } else if case .workspace = operation.purpose, case .failed = result.disposition {
         loadState = .failed(result.diagnostics)
@@ -1017,15 +1068,13 @@ final class AppModel {
       default: break
       }
     }
+    scheduleRefresh()
     if isTerminating, operations.isEmpty {
       let mayQuit = !hasBlockingCleanup
       terminationBlocked = !mayQuit
       if !mayQuit {
         isTerminating = false
-        monitor(
-          snapshot?.inspection.readLocations.map(ReadDependency.subtree)
-            ?? reader.stateDependencies(scope: scope),
-          since: readBoundary)
+        monitor()
       }
       terminationReply?(mayQuit)
     }

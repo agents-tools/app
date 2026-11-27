@@ -8,41 +8,69 @@ import Testing
 
 @Suite("Typed read dependencies", .serialized)
 struct ReadDependencyTests {
+  private let modified = FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+  private let renamed = FSEventStreamEventFlags(kFSEventStreamEventFlagItemRenamed)
+
   @Test func entryAndSubtreeKeepTheirIndependentInterests() {
     let home = URL(fileURLWithPath: "/fixture/home")
     let fetch = home.appendingPathComponent(".agents/cache/mirrors/demo.git/FETCH_HEAD").path
     let entry = ReadDependency.entry(home)
     let subtree = ReadDependency.subtree(home)
-    #expect(!ReadMonitor.matches(fetch, dependencies: [entry]))
-    #expect(ReadMonitor.matches(fetch, dependencies: [subtree]))
+    #expect(!ReadMonitor.matches(fetch, flags: modified, dependencies: [entry]))
+    #expect(ReadMonitor.matches(fetch, flags: modified, dependencies: [subtree]))
     let union = Set([entry]).union([subtree, entry])
     #expect(union.count == 2)
-    #expect(ReadMonitor.matches(fetch, dependencies: Array(union)))
-    #expect(!ReadMonitor.matches("/fixture/homestead/file", dependencies: Array(union)))
+    #expect(ReadMonitor.matches(fetch, flags: modified, dependencies: Array(union)))
+    #expect(
+      !ReadMonitor.matches("/fixture/homestead/file", flags: modified, dependencies: Array(union)))
   }
 
   @Test func absentLeavesAndRecoveryAnchorsMatchTheirEntriesAndAncestors() {
     let absent = URL(fileURLWithPath: "/fixture/external/absent/transaction.new")
     let dependencies: [ReadDependency] = [.entry(absent)]
     for event in [absent.path, "/fixture/external/absent", "/fixture/external", "/fixture", "/"] {
-      #expect(ReadMonitor.matches(event, dependencies: dependencies))
+      #expect(ReadMonitor.matches(event, flags: renamed, dependencies: dependencies))
     }
-    #expect(!ReadMonitor.matches(absent.path + "/child", dependencies: dependencies))
     #expect(
-      !ReadMonitor.matches("/fixture/external/absent/transaction.newer", dependencies: dependencies)
+      !ReadMonitor.matches(absent.path + "/child", flags: modified, dependencies: dependencies))
+    #expect(
+      !ReadMonitor.matches(
+        "/fixture/external/absent/transaction.newer", flags: modified, dependencies: dependencies)
     )
-    #expect(!ReadMonitor.matches("/unrelated", dependencies: dependencies))
+    #expect(!ReadMonitor.matches("/unrelated", flags: modified, dependencies: dependencies))
     #expect(
-      !ReadMonitor.matches("/fixture/other", dependencies: [.entry(URL(fileURLWithPath: "/"))]))
+      !ReadMonitor.matches(
+        "/fixture/other", flags: modified, dependencies: [.entry(URL(fileURLWithPath: "/"))]))
   }
 
   @Test func logicalAndPhysicalAliasEntriesRemainDistinct() {
     let logical = URL(fileURLWithPath: "/fixture/alias/.agent/agents.yaml")
     let physical = URL(fileURLWithPath: "/fixture/physical/.agent/agents.yaml")
     let dependencies: [ReadDependency] = [.entry(logical), .entry(physical)]
-    #expect(ReadMonitor.matches("/fixture/alias", dependencies: dependencies))
-    #expect(ReadMonitor.matches(physical.path, dependencies: dependencies))
-    #expect(!ReadMonitor.matches("/fixture/physical/other", dependencies: dependencies))
+    #expect(ReadMonitor.matches("/fixture/alias", flags: renamed, dependencies: dependencies))
+    #expect(ReadMonitor.matches(physical.path, flags: modified, dependencies: dependencies))
+    #expect(
+      !ReadMonitor.matches("/fixture/physical/other", flags: modified, dependencies: dependencies))
+  }
+
+  @Test func directoryBookkeepingAndLFSCacheDoNotInvalidateAuthoredInputs() {
+    let root = URL(fileURLWithPath: "/fixture/producer")
+    let source = ReadDependency.subtree(root)
+    let home = ReadDependency.entry(root.deletingLastPathComponent())
+    let object = root.appendingPathComponent(".git/lfs/objects/a3/f0")
+    let bookkeeping = modified | FSEventStreamEventFlags(kFSEventStreamEventFlagItemIsDir)
+    #expect(
+      !ReadMonitor.matches(
+        root.deletingLastPathComponent().path, flags: bookkeeping,
+        dependencies: [home, source]))
+    #expect(!ReadMonitor.matches(object.path, flags: bookkeeping, dependencies: [source]))
+    #expect(!ReadMonitor.matches(object.path, flags: renamed, dependencies: [source]))
+    #expect(
+      ReadMonitor.matches(object.path, flags: renamed, dependencies: [source, .entry(object)]))
+    #expect(
+      ReadMonitor.matches(
+        root.appendingPathComponent("instructions/rules.md").path,
+        flags: modified, dependencies: [source]))
   }
 
   @Test func actualMappingDependenciesReachBothReaderAndExplicitCompletion() throws {
@@ -60,7 +88,7 @@ struct ReadDependencyTests {
     let read = CoreReader(home: f.home, processEnvironment: f.environment).read(scope: scope)
     #expect(dependencies.isSubset(of: Set(read.readDependencies)))
     let fetch = f.home.appendingPathComponent(".agents/cache/mirrors/demo.git/FETCH_HEAD").path
-    #expect(!ReadMonitor.matches(fetch, dependencies: Array(dependencies)))
+    #expect(!ReadMonitor.matches(fetch, flags: modified, dependencies: Array(dependencies)))
     #expect(
       read.readDependencies.contains(
         .subtree(f.project.appendingPathComponent(".agent/agents.yaml"))))
