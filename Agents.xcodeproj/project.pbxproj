@@ -1,0 +1,524 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000081 /* AgentsCore in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000071 /* AgentsCore */; };
+		A00000000000000000000082 /* AgentsManifest in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000072 /* AgentsManifest */; };
+		A00000000000000000000083 /* AgentsSkills in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000073 /* AgentsSkills */; };
+		A00000000000000000000084 /* AgentsInstructions in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000074 /* AgentsInstructions */; };
+		A00000000000000000000085 /* AgentsCore in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000075 /* AgentsCore */; };
+		A00000000000000000000086 /* AgentsManifest in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000076 /* AgentsManifest */; };
+		A00000000000000000000087 /* AgentsUpdates in Frameworks */ = {isa = PBXBuildFile; productRef = A00000000000000000000077 /* AgentsUpdates */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A00000000000000000000042 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000010;
+			remoteInfo = AgentsApp;
+		};
+		A00000000000000000000043 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A00000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A00000000000000000000010;
+			remoteInfo = AgentsApp;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		A00000000000000000000020 /* Agents App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Agents App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000021 /* AgentsTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentsTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A00000000000000000000022 /* AgentsUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AgentsUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		A00000000000000000000004 /* Agents */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = Agents;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000005 /* AgentsTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = AgentsTests;
+			sourceTree = "<group>";
+		};
+		A00000000000000000000006 /* AgentsUITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			path = AgentsUITests;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A00000000000000000000031 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000081 /* AgentsCore in Frameworks */,
+				A00000000000000000000082 /* AgentsManifest in Frameworks */,
+				A00000000000000000000083 /* AgentsSkills in Frameworks */,
+				A00000000000000000000084 /* AgentsInstructions in Frameworks */,
+				A00000000000000000000087 /* AgentsUpdates in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000034 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A00000000000000000000085 /* AgentsCore in Frameworks */,
+				A00000000000000000000086 /* AgentsManifest in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000037 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A00000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000004 /* Agents */,
+				A00000000000000000000005 /* AgentsTests */,
+				A00000000000000000000006 /* AgentsUITests */,
+				A00000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A00000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A00000000000000000000020 /* Agents App.app */,
+				A00000000000000000000021 /* AgentsTests.xctest */,
+				A00000000000000000000022 /* AgentsUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A00000000000000000000010 /* AgentsApp */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000051 /* Build configuration list for PBXNativeTarget "AgentsApp" */;
+			buildPhases = (
+				A00000000000000000000030 /* Sources */,
+				A00000000000000000000031 /* Frameworks */,
+				A00000000000000000000032 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				A00000000000000000000004 /* Agents */,
+			);
+			name = AgentsApp;
+			packageProductDependencies = (
+				A00000000000000000000071 /* AgentsCore */,
+				A00000000000000000000072 /* AgentsManifest */,
+				A00000000000000000000073 /* AgentsSkills */,
+				A00000000000000000000074 /* AgentsInstructions */,
+				A00000000000000000000077 /* AgentsUpdates */,
+			);
+			productName = "Agents App";
+			productReference = A00000000000000000000020 /* Agents App.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A00000000000000000000011 /* AgentsTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000052 /* Build configuration list for PBXNativeTarget "AgentsTests" */;
+			buildPhases = (
+				A00000000000000000000033 /* Sources */,
+				A00000000000000000000034 /* Frameworks */,
+				A00000000000000000000035 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000040 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A00000000000000000000005 /* AgentsTests */,
+			);
+			name = AgentsTests;
+			packageProductDependencies = (
+				A00000000000000000000075 /* AgentsCore */,
+				A00000000000000000000076 /* AgentsManifest */,
+			);
+			productName = AgentsTests;
+			productReference = A00000000000000000000021 /* AgentsTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		A00000000000000000000012 /* AgentsUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A00000000000000000000053 /* Build configuration list for PBXNativeTarget "AgentsUITests" */;
+			buildPhases = (
+				A00000000000000000000036 /* Sources */,
+				A00000000000000000000037 /* Frameworks */,
+				A00000000000000000000038 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A00000000000000000000041 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				A00000000000000000000006 /* AgentsUITests */,
+			);
+			name = AgentsUITests;
+			productName = AgentsUITests;
+			productReference = A00000000000000000000022 /* AgentsUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A00000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					A00000000000000000000010 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+					A00000000000000000000011 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A00000000000000000000010;
+					};
+					A00000000000000000000012 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = A00000000000000000000010;
+					};
+				};
+			};
+			buildConfigurationList = A00000000000000000000050 /* Build configuration list for PBXProject "Agents" */;
+			compatibilityVersion = "Xcode 16.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = A00000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = A00000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A00000000000000000000010 /* AgentsApp */,
+				A00000000000000000000011 /* AgentsTests */,
+				A00000000000000000000012 /* AgentsUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A00000000000000000000032 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000035 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000038 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A00000000000000000000030 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000033 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A00000000000000000000036 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A00000000000000000000040 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000010 /* AgentsApp */;
+			targetProxy = A00000000000000000000042 /* PBXContainerItemProxy */;
+		};
+		A00000000000000000000041 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A00000000000000000000010 /* AgentsApp */;
+			targetProxy = A00000000000000000000043 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A00000000000000000000054 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		A00000000000000000000055 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_IDENTITY = "-";
+				CODE_SIGN_STYLE = Manual;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		A00000000000000000000056 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Agents App";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = tools.agents.app;
+				PRODUCT_MODULE_NAME = AgentsApp;
+				PRODUCT_NAME = "Agents App";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		A00000000000000000000057 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Agents App";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = tools.agents.app;
+				PRODUCT_MODULE_NAME = AgentsApp;
+				PRODUCT_NAME = "Agents App";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
+		A00000000000000000000058 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = tools.agents.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agents App.app/Contents/MacOS/Agents App";
+			};
+			name = Debug;
+		};
+		A00000000000000000000059 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = tools.agents.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Agents App.app/Contents/MacOS/Agents App";
+			};
+			name = Release;
+		};
+		A00000000000000000000060 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = tools.agents.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = AgentsApp;
+			};
+			name = Debug;
+		};
+		A00000000000000000000061 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = tools.agents.app.uitests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TEST_TARGET_NAME = AgentsApp;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A00000000000000000000050 /* Build configuration list for PBXProject "Agents" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000054 /* Debug */,
+				A00000000000000000000055 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000051 /* Build configuration list for PBXNativeTarget "AgentsApp" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000056 /* Debug */,
+				A00000000000000000000057 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000052 /* Build configuration list for PBXNativeTarget "AgentsTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000058 /* Debug */,
+				A00000000000000000000059 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A00000000000000000000053 /* Build configuration list for PBXNativeTarget "AgentsUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A00000000000000000000060 /* Debug */,
+				A00000000000000000000061 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/agents-tools/core";
+			requirement = {
+				kind = revision;
+				revision = 7ccd7cb955fc168e4dd5a61d42bc12f292c58a01; /* 0.3.0 */
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A00000000000000000000071 /* AgentsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsCore;
+		};
+		A00000000000000000000072 /* AgentsManifest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsManifest;
+		};
+		A00000000000000000000073 /* AgentsSkills */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsSkills;
+		};
+		A00000000000000000000074 /* AgentsInstructions */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsInstructions;
+		};
+		A00000000000000000000075 /* AgentsCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsCore;
+		};
+		A00000000000000000000076 /* AgentsManifest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsManifest;
+		};
+		A00000000000000000000077 /* AgentsUpdates */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A00000000000000000000070 /* XCRemoteSwiftPackageReference "core" */;
+			productName = AgentsUpdates;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = A00000000000000000000001 /* Project object */;
+}

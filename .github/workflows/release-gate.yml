@@ -1,0 +1,149 @@
+name: Release
+run-name: Agents App release ${{ inputs.tag }} (${{ inputs.source_commit }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Publish or verify an existing public release
+        type: choice
+        options: [publish, verify-public]
+        default: publish
+      candidate_run_id:
+        description: Run ID holding the signed candidate for recovery or verification
+        type: string
+      tag:
+        description: Approved published tag, such as v0.1.0
+        required: true
+        type: string
+      source_commit:
+        description: Full approved commit SHA on master
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  SOURCE_COMMIT: ${{ inputs.source_commit }}
+  OPERATION: ${{ inputs.operation }}
+  CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+
+jobs:
+  verify:
+    name: Verify trusted candidate source
+    if: github.repository == 'agents-tools/app' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout master dispatch commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify approved tag and commit
+        run: Scripts/verify-release-source.sh
+      - name: Require successful check at the approved master commit
+        if: inputs.operation == 'publish'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/check.yml/runs?branch=master&event=push&status=success&head_sha=$SOURCE_COMMIT" \
+            | jq -e --arg commit "$SOURCE_COMMIT" 'any(.workflow_runs[]; .head_sha == $commit and .conclusion == "success")'
+
+  release:
+    name: Build and publish notarized release
+    needs: verify
+    if: inputs.operation == 'publish' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/master'
+    runs-on: xcode-27
+    timeout-minutes: 120
+    environment: production
+    permissions:
+      contents: write
+      actions: read
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.app/Contents/Developer
+    steps:
+      - name: Checkout verified source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify source again before building
+        run: Scripts/verify-release-source.sh
+      - name: Archive universal application
+        if: inputs.candidate_run_id == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild archive \
+            -project Agents.xcodeproj -scheme AgentsApp -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -archivePath "$RUNNER_TEMP/Agents App.xcarchive" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            -disableAutomaticPackageResolution \
+            CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO 'ARCHS=arm64 x86_64'
+      - name: Sign, notarize, and verify distribution ZIP
+        if: inputs.candidate_run_id == ''
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          SIGNING_IDENTITY: ${{ vars.DEVELOPER_ID_SIGNING_IDENTITY }}
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+          API_KEY_BASE64: ${{ secrets.ASC_API_KEY_P8_BASE64 }}
+          API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: Scripts/package-release.sh "$RUNNER_TEMP/Agents App.xcarchive" "$RUNNER_TEMP/distribution"
+      - name: Record candidate source and tag object
+        if: inputs.candidate_run_id == ''
+        run: |
+          Scripts/verify-release-source.sh
+          git rev-parse "$SOURCE_COMMIT" "refs/tags/$RELEASE_TAG" >"$RUNNER_TEMP/distribution/source"
+      - name: Preserve the signed ZIP and checksum
+        if: inputs.candidate_run_id == ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: agents-app-${{ inputs.tag }}-signed
+          path: ${{ runner.temp }}/distribution/*
+          if-no-files-found: error
+          retention-days: 30
+      - name: Restore the preserved signed candidate
+        if: inputs.candidate_run_id != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: Scripts/release-assets.sh restore
+      - name: Publish and verify GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Scripts/verify-release-source.sh
+          Scripts/release-assets.sh publish
+
+  verify-public:
+    name: Verify public release against signed candidate
+    needs: verify
+    if: inputs.operation == 'verify-public' && github.repository == 'agents-tools/app' && github.ref == 'refs/heads/master'
+    runs-on: macos-26
+    timeout-minutes: 10
+    steps:
+      - name: Checkout master dispatch commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Retrieve signed candidate and check public files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          Scripts/verify-release-source.sh
+          Scripts/release-assets.sh restore
+          Scripts/release-assets.sh verify-public
