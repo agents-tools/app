@@ -6,7 +6,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/agents-tools/core",
       "state" : {
-        "revision" : "ac40235e141d0e76b26db154157cf1055883a0d7"
+        "revision" : "7ccd7cb955fc168e4dd5a61d42bc12f292c58a01"
       }
     },
     {
